@@ -11,8 +11,17 @@
 :root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
 *{box-sizing:border-box;}
 body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
-#topbar{display:flex;justify-content:space-between;align-items:center;padding:14px 24px;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap;gap:10px;}
-#topbar .brand{font-weight:700;font-size:18px;color:var(--primary);}
+#menubar{background:#1f2430;color:#e5e7eb;display:flex;align-items:center;padding:0 12px;font-size:13px;position:relative;z-index:20;}
+#menubar .brand{font-weight:700;color:#fff;padding:10px 16px 10px 0;font-size:15px;}
+.menu-item{position:relative;}
+.menu-item > span{display:block;padding:10px 14px;cursor:pointer;}
+.menu-item:hover > span, .menu-item.abierto > span{background:#374151;}
+.menu-drop{display:none;position:absolute;top:100%;left:0;background:#fff;color:var(--text);min-width:220px;box-shadow:0 10px 30px -10px rgba(0,0,0,.4);border-radius:0 0 8px 8px;overflow:hidden;}
+.menu-item.abierto .menu-drop{display:block;}
+.menu-drop a{display:block;padding:10px 16px;color:var(--text);text-decoration:none;font-size:13px;border-bottom:1px solid var(--border);}
+.menu-drop a:hover{background:var(--bg);}
+#toolbar{display:flex;gap:8px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center;}
+#toolbar .spacer{flex:1;}
 button{background:var(--primary);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;}
 button:hover{opacity:.9;}
 button.secondary{background:#fff;color:var(--text);border:1px solid var(--border);}
@@ -49,12 +58,37 @@ canvas#firma_canvas{border:1px solid var(--border);border-radius:8px;width:100%;
 </head>
 <body>
 
-<div id="topbar">
-  <div class="brand">ALMMA · Mis montajes</div>
-  <div style="display:flex;gap:10px;flex-wrap:wrap;">
-    <button class="secondary" onclick="window.location.href='pedidos.html'">Pedidos</button>
-    <button class="secondary" onclick="logout()">Cerrar sesión</button>
+<div id="menubar">
+  <div class="brand">ALMMA</div>
+  <div class="menu-item" data-menu="sistema">
+    <span>Sistema</span>
+    <div class="menu-drop">
+      <a href="sistema.html?cat=tiendas">Tiendas</a>
+      <a href="sistema.html?cat=fabricantes">Fabricantes</a>
+      <a href="sistema.html?cat=dependientes">Dependientes</a>
+      <a href="sistema.html?cat=montadores">Montadores</a>
+      <a href="sistema.html?cat=articulos">Artículos</a>
+    </div>
   </div>
+  <div class="menu-item" data-menu="ordenes">
+    <span>Ordenes de Trabajo</span>
+    <div class="menu-drop">
+      <a href="pedidos.html">Introducción/Consulta</a>
+      <a href="punteo.html">Punteo de Ordenes</a>
+      <a href="#" onclick="proximamente('Listado de Rutas');return false;">Listado de Rutas</a>
+      <a href="#" onclick="proximamente('Realizar Montajes');return false;">Realizar Montajes</a>
+      <a href="#" onclick="proximamente('Gestión de Incidencias');return false;">Gestión de Incidencias</a>
+      <a href="#" onclick="proximamente('Contacto Cliente');return false;">Contacto Cliente</a>
+    </div>
+  </div>
+</div>
+
+<div id="toolbar">
+  <button class="secondary" onclick="window.location.href='pedidos.html'">Ordenes</button>
+  <button class="secondary" onclick="window.location.href='recepcion.html'">Entradas Almacén</button>
+  <button class="secondary" onclick="window.location.href='montador.html'">Mis montajes</button>
+  <div class="spacer"></div>
+  <button class="secondary" onclick="logout()">Salir</button>
 </div>
 
 <div class="tabla-scroll"><div id="tabla_montajes"></div></div>
@@ -109,6 +143,20 @@ const client = supabase.createClient(
 let tabla = null;
 let pedidoActivo = null;
 let montadorUserId = null;
+
+document.querySelectorAll(".menu-item").forEach(item => {
+  item.querySelector("span").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const yaAbierto = item.classList.contains("abierto");
+    document.querySelectorAll(".menu-item").forEach(i => i.classList.remove("abierto"));
+    if (!yaAbierto) item.classList.add("abierto");
+  });
+});
+document.addEventListener("click", () => document.querySelectorAll(".menu-item").forEach(i => i.classList.remove("abierto")));
+
+function proximamente(nombre) {
+  alert(`"${nombre}" todavía no está construido en la app nueva — próximamente.`);
+}
 
 async function comprobarSesion() {
   const { data: { user } } = await client.auth.getUser();

@@ -99,7 +99,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 <div id="toolbar">
   <button class="secondary" onclick="window.location.href='pedidos.html'">Ordenes</button>
   <button class="secondary" onclick="window.location.href='recepcion.html'">Entradas Almacén</button>
-  <button id="btn_montajes" class="secondary" style="display:none;" onclick="window.location.href='montador.html'">Mis montajes</button>
+  <button class="secondary" onclick="window.location.href='montador.html'">Mis montajes</button>
   <div class="spacer"></div>
   <button class="secondary" onclick="logout()">Salir</button>
 </div>
@@ -318,7 +318,6 @@ async function comprobarSesion() {
   const { data: staffRow } = await client.from("staff").select("user_id, es_montador").eq("user_id", user.id).maybeSingle();
   if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
   staffUserId = staffRow.user_id;
-  if (staffRow.es_montador) document.getElementById("btn_montajes").style.display = "inline-block";
   await llenarSelectEstado("filtro_estado", "");
   await cargarPedidos();
 
