@@ -11,12 +11,25 @@
 :root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
 *{box-sizing:border-box;}
 body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
-#topbar{display:flex;justify-content:space-between;align-items:center;padding:14px 24px;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap;gap:10px;}
-#topbar .brand{font-weight:700;font-size:18px;color:var(--primary);}
 button{background:var(--primary);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;}
 button:hover{opacity:.9;}
 button.secondary{background:#fff;color:var(--text);border:1px solid var(--border);}
-input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;}
+button:disabled{opacity:.5;cursor:default;}
+input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;}
+
+/* --- menu superior estilo sistema viejo --- */
+#menubar{background:#1f2430;color:#e5e7eb;display:flex;align-items:center;padding:0 12px;font-size:13px;position:relative;z-index:20;}
+#menubar .brand{font-weight:700;color:#fff;padding:10px 16px 10px 0;font-size:15px;}
+.menu-item{position:relative;}
+.menu-item > span{display:block;padding:10px 14px;cursor:pointer;}
+.menu-item:hover > span, .menu-item.abierto > span{background:#374151;}
+.menu-drop{display:none;position:absolute;top:100%;left:0;background:#fff;color:var(--text);min-width:220px;box-shadow:0 10px 30px -10px rgba(0,0,0,.4);border-radius:0 0 8px 8px;overflow:hidden;}
+.menu-item.abierto .menu-drop{display:block;}
+.menu-drop a{display:block;padding:10px 16px;color:var(--text);text-decoration:none;font-size:13px;border-bottom:1px solid var(--border);}
+.menu-drop a:hover{background:var(--bg);}
+#toolbar{display:flex;gap:8px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center;}
+#toolbar .spacer{flex:1;}
+
 .barra{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:16px 24px;}
 .barra input{flex:1;min-width:220px;max-width:420px;}
 .tabla-scroll{margin:0 24px 24px;overflow-x:auto;}
@@ -27,13 +40,20 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
 .estado-agendado{background:#f5f3ff;color:#6d28d9;}
 .estado-completado{background:#f0fdf4;color:#15803d;}
 .estado-incidencia{background:#fef2f2;color:#dc2626;}
-#panel_detalle{display:none;position:fixed;top:0;right:0;bottom:0;width:480px;background:var(--card);border-left:1px solid var(--border);box-shadow:-10px 0 30px -20px rgba(0,0,0,.3);padding:24px;overflow-y:auto;}
-#panel_detalle h3{margin-top:0;}
-#panel_detalle h4{margin:22px 0 8px;font-size:14px;border-top:1px solid var(--border);padding-top:16px;}
-#panel_detalle .campo{margin-bottom:14px;}
-#panel_detalle label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;}
-#panel_detalle select,#panel_detalle textarea,#panel_detalle input{width:100%;}
-#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.15);}
+
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.15);z-index:30;}
+#panel_detalle{display:none;position:fixed;top:0;right:0;bottom:0;width:min(820px,100vw);background:var(--card);border-left:1px solid var(--border);box-shadow:-10px 0 30px -20px rgba(0,0,0,.3);z-index:31;display:flex;flex-direction:column;}
+#panel_detalle .panel-head{padding:18px 24px 0;}
+#panel_detalle .panel-head h3{margin:0 0 4px;}
+#panel_detalle .tabs{display:flex;gap:2px;padding:0 24px;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+#panel_detalle .tab-btn{background:none;border:none;color:var(--muted);padding:10px 14px;font-size:13px;font-weight:600;border-bottom:2px solid transparent;border-radius:0;}
+#panel_detalle .tab-btn.activa{color:var(--primary);border-bottom-color:var(--primary);}
+#panel_detalle .tab-panel{display:none;padding:18px 24px;overflow-y:auto;flex:1;}
+#panel_detalle .tab-panel.activa{display:block;}
+.campo{margin-bottom:14px;}
+.campo label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;}
+.campo select,.campo textarea,.campo input{width:100%;}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px 16px;}
 .lineas-table{width:100%;font-size:13px;border-collapse:collapse;margin-top:8px;}
 .lineas-table th,.lineas-table td{border-bottom:1px solid var(--border);padding:6px 4px;text-align:left;}
 .btn-mini{padding:4px 8px;font-size:12px;border-radius:5px;}
@@ -43,18 +63,45 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
 .pill-recibida{background:#f0fdf4;color:#15803d;padding:2px 8px;border-radius:999px;font-size:11px;}
 .form-inline{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
 .form-inline > *{flex:1;min-width:100px;}
+.buscador-articulo{position:relative;}
+.sugerencias{display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 10px 20px -10px rgba(0,0,0,.2);max-height:220px;overflow-y:auto;z-index:5;}
+.sugerencias div{padding:8px 10px;cursor:pointer;font-size:13px;}
+.sugerencias div:hover{background:#f5f6fa;}
 </style>
 </head>
 <body>
 
-<div id="topbar">
-  <div class="brand">ALMMA · Pedidos</div>
-  <div style="display:flex;gap:10px;flex-wrap:wrap;">
-    <button class="secondary" onclick="window.location.href='pedidos.html'">Pedidos</button>
-    <button class="secondary" onclick="window.location.href='recepcion.html'">Recepción</button>
-    <button id="btn_montajes" class="secondary" style="display:none;" onclick="window.location.href='montador.html'">Mis montajes</button>
-    <button class="secondary" onclick="logout()">Cerrar sesión</button>
+<div id="menubar">
+  <div class="brand">ALMMA</div>
+  <div class="menu-item" data-menu="sistema">
+    <span>Sistema</span>
+    <div class="menu-drop">
+      <a href="#" onclick="proximamente('Tiendas');return false;">Tiendas</a>
+      <a href="#" onclick="proximamente('Fabricantes');return false;">Fabricantes</a>
+      <a href="#" onclick="proximamente('Dependientes');return false;">Dependientes</a>
+      <a href="#" onclick="proximamente('Montadores');return false;">Montadores</a>
+      <a href="#" onclick="proximamente('Artículos');return false;">Artículos</a>
+    </div>
   </div>
+  <div class="menu-item" data-menu="ordenes">
+    <span>Ordenes de Trabajo</span>
+    <div class="menu-drop">
+      <a href="pedidos.html">Introducción/Consulta</a>
+      <a href="#" onclick="proximamente('Punteo de Ordenes');return false;">Punteo de Ordenes</a>
+      <a href="#" onclick="proximamente('Listado de Rutas');return false;">Listado de Rutas</a>
+      <a href="#" onclick="proximamente('Realizar Montajes');return false;">Realizar Montajes</a>
+      <a href="#" onclick="proximamente('Gestión de Incidencias');return false;">Gestión de Incidencias</a>
+      <a href="#" onclick="proximamente('Contacto Cliente');return false;">Contacto Cliente</a>
+    </div>
+  </div>
+</div>
+
+<div id="toolbar">
+  <button class="secondary" onclick="window.location.href='pedidos.html'">Ordenes</button>
+  <button class="secondary" onclick="window.location.href='recepcion.html'">Entradas Almacén</button>
+  <button id="btn_montajes" class="secondary" style="display:none;" onclick="window.location.href='montador.html'">Mis montajes</button>
+  <div class="spacer"></div>
+  <button class="secondary" onclick="logout()">Salir</button>
 </div>
 
 <div class="barra">
@@ -74,60 +121,177 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
 
 <div id="overlay" onclick="cerrarPanel()"></div>
 <div id="panel_detalle">
-  <button class="secondary" onclick="cerrarPanel()" style="float:right;">✕</button>
-  <h3 id="d_titulo"></h3>
-  <div id="d_auditoria" class="meta" style="color:var(--muted);font-size:11px;margin-bottom:14px;"></div>
-  <div class="campo">
-    <label>Estado</label>
-    <select id="d_estado">
-      <option value="en_proceso">En proceso</option>
-      <option value="recepcionado_parcial">Recepcionado parcial</option>
-      <option value="recepcionado_total">Recepcionado total</option>
-      <option value="agendado">Agendado</option>
-      <option value="completado">Completado</option>
-      <option value="incidencia">Incidencia</option>
-    </select>
+  <div class="panel-head">
+    <button class="secondary" onclick="cerrarPanel()" style="float:right;">✕</button>
+    <h3 id="d_titulo"></h3>
+    <div id="d_auditoria" style="color:var(--muted);font-size:11px;margin-bottom:10px;"></div>
   </div>
-  <div class="campo">
-    <label>Cliente</label>
-    <div id="d_cliente"></div>
-  </div>
-  <div class="campo">
-    <label>Nº pedido / Albarán</label>
-    <div id="d_pedido"></div>
-  </div>
-  <div class="campo">
-    <label>Montador asignado</label>
-    <select id="d_montador"><option value="">-- sin asignar --</option></select>
-  </div>
-  <button onclick="guardarEstado()">Guardar cambios</button>
 
-  <div class="campo" style="margin-top:20px;">
-    <label>Líneas del pedido</label>
+  <div class="tabs">
+    <button class="tab-btn activa" data-tab="tab_cabecera" onclick="cambiarTab('tab_cabecera')">Cabecera</button>
+    <button class="tab-btn" data-tab="tab_lineas" onclick="cambiarTab('tab_lineas')">Líneas</button>
+    <button class="tab-btn" data-tab="tab_observaciones" onclick="cambiarTab('tab_observaciones')">Observaciones</button>
+    <button class="tab-btn" data-tab="tab_citas" onclick="cambiarTab('tab_citas')">Citas</button>
+    <button class="tab-btn" data-tab="tab_incidencias" onclick="cambiarTab('tab_incidencias')">Incidencias</button>
+    <button class="tab-btn" data-tab="tab_historial" onclick="cambiarTab('tab_historial')">Historial</button>
+    <button class="tab-btn" data-tab="tab_llamadas" onclick="cambiarTab('tab_llamadas')">Llamadas</button>
+  </div>
+
+  <!-- CABECERA -->
+  <div class="tab-panel activa" id="tab_cabecera">
+    <div class="form-grid">
+      <div class="campo"><label>Tienda</label><div id="ch_tienda">-</div></div>
+      <div class="campo"><label>Dependiente</label><div id="ch_dependiente">-</div></div>
+      <div class="campo"><label>Tipo de Orden</label><input id="ch_tipo_orden" type="number" value="1"></div>
+      <div class="campo"><label>Nº Pedido</label><input id="ch_num_pedido"></div>
+    </div>
+
+    <h4 style="margin-bottom:6px;">Datos Cliente</h4>
+    <div class="form-grid">
+      <div class="campo" style="grid-column:1/3;"><label>Nombre</label><input id="ch_nombre_cli"></div>
+      <div class="campo" style="grid-column:1/3;"><label>Dirección</label><input id="ch_domicilio_cli"></div>
+      <div class="campo"><label>Localidad</label><input id="ch_localidad_cli"></div>
+      <div class="campo"><label>Provincia (cód.)</label><input id="ch_provincia_cli" type="number"></div>
+      <div class="campo"><label>Teléfono</label><input id="ch_telefono_cli"></div>
+      <div class="campo"><label>Teléfono 2</label><input id="ch_telefono2_cli"></div>
+      <div class="campo"><label>D.N.I.</label><input id="ch_dni_cli"></div>
+    </div>
+
+    <h4 style="margin-bottom:6px;">Fechas y situación</h4>
+    <div class="form-grid">
+      <div class="campo"><label>F. Creación</label><div id="ch_fecha_creacion">-</div></div>
+      <div class="campo"><label>Prev. Recepción</label><input id="ch_fecha_prev_recepcion" type="date"></div>
+      <div class="campo"><label>F. Recepción</label><input id="ch_fecha_recepcion" type="date"></div>
+      <div class="campo"><label>F. Prev. Montaje</label><input id="ch_fecha_prev_montaje" type="date"></div>
+      <div class="campo"><label>F. Montaje</label><input id="ch_fecha_montaje" type="date"></div>
+      <div class="campo"><label>Hora Montaje</label><input id="ch_horamont" placeholder="ej. 10.30"></div>
+      <div class="campo">
+        <label>Situación</label>
+        <select id="ch_estado">
+          <option value="en_proceso">En proceso</option>
+          <option value="recepcionado_parcial">Recepcionado parcial</option>
+          <option value="recepcionado_total">Recepcionado total</option>
+          <option value="agendado">Agendado</option>
+          <option value="completado">Completado</option>
+          <option value="incidencia">Incidencia</option>
+        </select>
+      </div>
+      <div class="campo"><label>Montador asignado</label><select id="ch_montador"><option value="">-- sin asignar --</option></select></div>
+      <div class="campo"><label>Bultos (total líneas)</label><div id="ch_bultos">0</div></div>
+    </div>
+
+    <h4 style="margin-bottom:6px;">Importes y facturación</h4>
+    <div class="form-grid">
+      <div class="campo"><label>Importe Total</label><input id="ch_importe_total" type="number" step="0.01"></div>
+      <div class="campo"><label>Entrega a Cuenta</label><input id="ch_entrega_a_cuenta" type="number" step="0.01"></div>
+      <div class="campo"><label>Importe Pendiente</label><input id="ch_importe_pendiente" type="number" step="0.01"></div>
+      <div class="campo"><label>Forma de Cobro</label><input id="ch_tipo_cobro" placeholder="ej. Efectivo, Transferencia"></div>
+      <div class="campo"><label>Facturada</label><div id="ch_facturada">-</div></div>
+    </div>
+    <div class="form-grid">
+      <div class="campo" style="grid-column:1/3;"><label>Texto Factura</label><input id="ch_textofactura"></div>
+      <div class="campo" style="grid-column:1/3;"><label>Texto Albarán</label><input id="ch_obs_albaran"></div>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:10px;">
+      <button onclick="guardarCabecera()">Grabar</button>
+      <button class="secondary" onclick="consultarFacturas()">Consulta facturas emitidas</button>
+    </div>
+  </div>
+
+  <!-- LINEAS -->
+  <div class="tab-panel" id="tab_lineas">
     <table class="lineas-table" id="tabla_lineas"></table>
+
+    <h4>Añadir línea</h4>
+    <div class="form-grid">
+      <div class="campo">
+        <label>Tipo de línea</label>
+        <select id="ln_tipo">
+          <option value="1">1 - Normal</option>
+          <option value="3">3 - Texto</option>
+          <option value="4">4 - Servicio/Ajuste</option>
+        </select>
+      </div>
+      <div class="campo buscador-articulo">
+        <label>Fabricante</label>
+        <input id="ln_fabricante_buscar" placeholder="Buscar fabricante...">
+        <div id="ln_fabricante_sugerencias" class="sugerencias"></div>
+      </div>
+      <div class="campo buscador-articulo">
+        <label>Artículo</label>
+        <input id="ln_articulo_buscar" placeholder="Buscar código o descripción...">
+        <div id="ln_articulo_sugerencias" class="sugerencias"></div>
+      </div>
+      <div class="campo"><label>Descripción (si es línea de texto/ajuste)</label><input id="ln_descripcion"></div>
+      <div class="campo"><label>Cantidad</label><input id="ln_cantidad" type="number" value="1"></div>
+      <div class="campo"><label>Importe</label><input id="ln_importe" type="number" step="0.01"></div>
+      <div class="campo"><label>Nº Albarán proveedor</label><input id="ln_albaran"></div>
+      <div class="campo"><label>Ubicación</label><input id="ln_ubicacion"></div>
+      <div class="campo"><label>Bultos</label><input id="ln_bultos" type="number" value="0"></div>
+      <div class="campo"><label><input id="ln_control_stock" type="checkbox" style="width:auto;"> Controlamos Stock</label></div>
+    </div>
+    <button class="secondary btn-mini" onclick="anyadirLineaOrden()">+ Añadir línea</button>
+
+    <div style="margin-top:16px;">
+      <button class="secondary" onclick="traspasarAIncidencia()">Traspasar a Incidencias</button>
+    </div>
   </div>
 
-  <h4>Citas de montaje</h4>
-  <div id="lista_citas" class="mini-list"></div>
-  <div class="form-inline">
-    <input id="cita_fecha" type="datetime-local">
-    <select id="cita_canal">
-      <option value="telefono">Teléfono</option>
-      <option value="whatsapp">WhatsApp</option>
-      <option value="email">Email</option>
-      <option value="presencial">Presencial</option>
-    </select>
+  <!-- OBSERVACIONES -->
+  <div class="tab-panel" id="tab_observaciones">
+    <div class="campo">
+      <label>Observaciones (curso de la orden: llegó roto, no funcionaba ascensor, etc.)</label>
+      <textarea id="ch_observaciones" rows="10"></textarea>
+    </div>
+    <button onclick="guardarObservaciones()">Guardar observaciones</button>
   </div>
-  <textarea id="cita_notas" rows="2" placeholder="Notas (opcional)" style="margin-top:8px;"></textarea>
-  <button class="secondary btn-mini" style="margin-top:8px;" onclick="agendarCita()">+ Agendar cita</button>
 
-  <h4>Incidencias</h4>
-  <div id="lista_incidencias" class="mini-list"></div>
-  <div class="form-inline">
-    <input id="inc_tipo" placeholder="Tipo (rotura, defecto...)">
+  <!-- CITAS -->
+  <div class="tab-panel" id="tab_citas">
+    <div id="lista_citas" class="mini-list"></div>
+    <div class="form-inline">
+      <input id="cita_fecha" type="datetime-local">
+      <select id="cita_canal">
+        <option value="telefono">Teléfono</option>
+        <option value="whatsapp">WhatsApp</option>
+        <option value="email">Email</option>
+        <option value="presencial">Presencial</option>
+      </select>
+    </div>
+    <textarea id="cita_notas" rows="2" placeholder="Notas (opcional)" style="margin-top:8px;"></textarea>
+    <button class="secondary btn-mini" style="margin-top:8px;" onclick="agendarCita()">+ Agendar cita</button>
   </div>
-  <textarea id="inc_descripcion" rows="2" placeholder="Descripción de la incidencia" style="margin-top:8px;"></textarea>
-  <button class="secondary btn-mini" style="margin-top:8px;" onclick="crearIncidencia()">+ Registrar incidencia</button>
+
+  <!-- INCIDENCIAS -->
+  <div class="tab-panel" id="tab_incidencias">
+    <div id="lista_incidencias" class="mini-list"></div>
+    <div class="form-inline">
+      <input id="inc_tipo" placeholder="Tipo (rotura, defecto...)">
+    </div>
+    <textarea id="inc_descripcion" rows="2" placeholder="Descripción de la incidencia" style="margin-top:8px;"></textarea>
+    <button class="secondary btn-mini" style="margin-top:8px;" onclick="crearIncidencia()">+ Registrar incidencia</button>
+  </div>
+
+  <!-- HISTORIAL -->
+  <div class="tab-panel" id="tab_historial">
+    <div id="lista_historial" class="mini-list"></div>
+  </div>
+
+  <!-- LLAMADAS -->
+  <div class="tab-panel" id="tab_llamadas">
+    <div id="lista_llamadas" class="mini-list"></div>
+    <div class="form-inline">
+      <select id="llamada_canal">
+        <option value="llamada">Llamada</option>
+        <option value="whatsapp">WhatsApp</option>
+        <option value="email">Email</option>
+        <option value="presencial">Presencial</option>
+      </select>
+    </div>
+    <textarea id="llamada_notas" rows="2" placeholder="¿Qué se ha hablado/enviado?" style="margin-top:8px;"></textarea>
+    <button class="secondary btn-mini" style="margin-top:8px;" onclick="registrarLlamada()">+ Registrar contacto</button>
+  </div>
 </div>
 
 <script>
@@ -140,6 +304,30 @@ let pedidoActivo = null;
 let tabla = null;
 let staffUserId = null;
 let montadoresCache = null;
+let fabricanteSeleccionado = null;
+let articuloSeleccionado = null;
+
+// --- menu desplegable ---
+document.querySelectorAll(".menu-item").forEach(item => {
+  item.querySelector("span").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const yaAbierto = item.classList.contains("abierto");
+    document.querySelectorAll(".menu-item").forEach(i => i.classList.remove("abierto"));
+    if (!yaAbierto) item.classList.add("abierto");
+  });
+});
+document.addEventListener("click", () => document.querySelectorAll(".menu-item").forEach(i => i.classList.remove("abierto")));
+
+function proximamente(nombre) {
+  alert(`"${nombre}" todavía no está construido en la app nueva — próximamente.`);
+}
+
+function cambiarTab(id) {
+  document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("activa"));
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("activa"));
+  document.getElementById(id).classList.add("activa");
+  document.querySelector(`.tab-btn[data-tab="${id}"]`).classList.add("activa");
+}
 
 async function comprobarSesion() {
   const { data: { user } } = await client.auth.getUser();
@@ -206,7 +394,7 @@ async function cargarPedidos() {
 
   if (!tabla) {
     tabla = new Tabulator("#tabla_pedidos", {
-      data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 160px)",
+      data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 210px)",
       rowClick: (e, row) => abrirPanel(row.getData()),
     });
   } else {
@@ -215,57 +403,177 @@ async function cargarPedidos() {
   }
 }
 
+function fechaInput(v) { return v ? v.slice(0, 10) : ""; }
+
 async function abrirPanel(orden) {
-  pedidoActivo = { anyo: orden.anyo, orden: orden.orden };
-  document.getElementById("d_titulo").textContent = `Pedido ${orden.anyo}/${orden.orden}`;
-  document.getElementById("d_estado").value = orden.estado || "en_proceso";
-  document.getElementById("d_cliente").textContent = orden.nombre_cli || "-";
-  document.getElementById("d_pedido").textContent = orden.num_pedido || "-";
+  // recargamos la fila completa por si el listado no trae todos los campos
+  const { data: full } = await client.from("ordenes").select("*").eq("anyo", orden.anyo).eq("orden", orden.orden).maybeSingle();
+  const o = full || orden;
+  pedidoActivo = { anyo: o.anyo, orden: o.orden };
+
+  document.getElementById("d_titulo").textContent = `Orden ${o.anyo}/${o.orden}`;
+  cambiarTab("tab_cabecera");
 
   const auditoriaBox = document.getElementById("d_auditoria");
-  if (orden.creado_por || orden.modificado_por) {
+  if (o.creado_por || o.modificado_por) {
     const [creadorNombre, modificadorNombre] = await Promise.all([
-      nombrePorUserId(orden.creado_por),
-      nombrePorUserId(orden.modificado_por),
+      nombrePorUserId(o.creado_por), nombrePorUserId(o.modificado_por),
     ]);
     const partes = [];
     if (creadorNombre) partes.push(`Creado por ${creadorNombre}`);
-    if (modificadorNombre && orden.modificado_at) {
-      partes.push(`última modificación por ${modificadorNombre} el ${new Date(orden.modificado_at).toLocaleString("es-ES")}`);
-    }
+    if (modificadorNombre && o.modificado_at) partes.push(`última modificación por ${modificadorNombre} el ${new Date(o.modificado_at).toLocaleString("es-ES")}`);
     auditoriaBox.textContent = partes.join(" · ");
-  } else {
-    auditoriaBox.textContent = "";
-  }
+  } else auditoriaBox.textContent = "";
+
+  document.getElementById("ch_tienda").textContent = o.tienda_id ? await nombrePorTienda(o.tienda_id) : "-";
+  document.getElementById("ch_dependiente").textContent = o.dependiente_id ? await nombrePorUserIdDependiente(o.dependiente_id) : "-";
+  document.getElementById("ch_tipo_orden").value = o.tipo_orden ?? 1;
+  document.getElementById("ch_num_pedido").value = o.num_pedido || "";
+  document.getElementById("ch_nombre_cli").value = o.nombre_cli || "";
+  document.getElementById("ch_domicilio_cli").value = o.domicilio_cli || "";
+  document.getElementById("ch_localidad_cli").value = o.localidad_cli || "";
+  document.getElementById("ch_provincia_cli").value = o.provincia_cli ?? "";
+  document.getElementById("ch_telefono_cli").value = o.telefono_cli || "";
+  document.getElementById("ch_telefono2_cli").value = o.telefono2_cli || "";
+  document.getElementById("ch_dni_cli").value = o.dni_cli || "";
+  document.getElementById("ch_fecha_creacion").textContent = o.fecha_creacion ? new Date(o.fecha_creacion).toLocaleString("es-ES") : "-";
+  document.getElementById("ch_fecha_prev_recepcion").value = fechaInput(o.fecha_prev_recepcion);
+  document.getElementById("ch_fecha_recepcion").value = fechaInput(o.fecha_recepcion);
+  document.getElementById("ch_fecha_prev_montaje").value = fechaInput(o.fecha_prev_montaje);
+  document.getElementById("ch_fecha_montaje").value = fechaInput(o.fecha_montaje);
+  document.getElementById("ch_horamont").value = o.horamont || "";
+  document.getElementById("ch_estado").value = o.estado || "en_proceso";
+  document.getElementById("ch_importe_total").value = o.importe_total ?? "";
+  document.getElementById("ch_entrega_a_cuenta").value = o.entrega_a_cuenta ?? "";
+  document.getElementById("ch_importe_pendiente").value = o.importe_pendiente ?? "";
+  document.getElementById("ch_tipo_cobro").value = o.tipo_cobro || "";
+  document.getElementById("ch_facturada").textContent = o.facturada === "S" ? "Sí" : "No";
+  document.getElementById("ch_textofactura").value = o.textofactura || "";
+  document.getElementById("ch_obs_albaran").value = o.obs_albaran || "";
+  document.getElementById("ch_observaciones").value = o.observaciones || "";
 
   const montadores = await cargarMontadores();
-  const selMontador = document.getElementById("d_montador");
+  const selMontador = document.getElementById("ch_montador");
   selMontador.innerHTML = '<option value="">-- sin asignar --</option>' +
     montadores.map(m => `<option value="${m.user_id}">${m.nombre || m.user_id}</option>`).join("");
-  selMontador.value = orden.montador_id || "";
+  selMontador.value = o.montador_id || "";
 
   await cargarLineas();
   await cargarCitas();
   await cargarIncidencias();
+  await cargarHistorial(o);
+  await cargarLlamadas();
 
-  document.getElementById("panel_detalle").style.display = "block";
+  document.getElementById("panel_detalle").style.display = "flex";
   document.getElementById("overlay").style.display = "block";
 }
 
+const tiendaNombreCache = {};
+async function nombrePorTienda(id) {
+  if (tiendaNombreCache[id]) return tiendaNombreCache[id];
+  const { data } = await client.from("tiendas").select("nombre").eq("id", id).maybeSingle();
+  tiendaNombreCache[id] = data?.nombre || id;
+  return tiendaNombreCache[id];
+}
+async function nombrePorUserIdDependiente(dependienteId) {
+  const { data } = await client.from("dependientes").select("nombre").eq("id", dependienteId).maybeSingle();
+  return data?.nombre || dependienteId;
+}
+
+function cerrarPanel() {
+  document.getElementById("panel_detalle").style.display = "none";
+  document.getElementById("overlay").style.display = "none";
+  pedidoActivo = null;
+}
+
+async function guardarCabecera() {
+  if (!pedidoActivo) return;
+  const valores = {
+    tipo_orden: parseInt(document.getElementById("ch_tipo_orden").value, 10) || 1,
+    num_pedido: document.getElementById("ch_num_pedido").value.trim() || null,
+    nombre_cli: document.getElementById("ch_nombre_cli").value.trim() || null,
+    domicilio_cli: document.getElementById("ch_domicilio_cli").value.trim() || null,
+    localidad_cli: document.getElementById("ch_localidad_cli").value.trim() || null,
+    provincia_cli: document.getElementById("ch_provincia_cli").value ? parseInt(document.getElementById("ch_provincia_cli").value, 10) : null,
+    telefono_cli: document.getElementById("ch_telefono_cli").value.trim() || null,
+    telefono2_cli: document.getElementById("ch_telefono2_cli").value.trim() || null,
+    dni_cli: document.getElementById("ch_dni_cli").value.trim() || null,
+    fecha_prev_recepcion: document.getElementById("ch_fecha_prev_recepcion").value || null,
+    fecha_recepcion: document.getElementById("ch_fecha_recepcion").value || null,
+    fecha_prev_montaje: document.getElementById("ch_fecha_prev_montaje").value || null,
+    fecha_montaje: document.getElementById("ch_fecha_montaje").value || null,
+    horamont: document.getElementById("ch_horamont").value.trim() || null,
+    estado: document.getElementById("ch_estado").value,
+    montador_id: document.getElementById("ch_montador").value || null,
+    importe_total: document.getElementById("ch_importe_total").value ? parseFloat(document.getElementById("ch_importe_total").value) : null,
+    entrega_a_cuenta: document.getElementById("ch_entrega_a_cuenta").value ? parseFloat(document.getElementById("ch_entrega_a_cuenta").value) : null,
+    importe_pendiente: document.getElementById("ch_importe_pendiente").value ? parseFloat(document.getElementById("ch_importe_pendiente").value) : null,
+    tipo_cobro: document.getElementById("ch_tipo_cobro").value.trim() || null,
+    textofactura: document.getElementById("ch_textofactura").value.trim() || null,
+    obs_albaran: document.getElementById("ch_obs_albaran").value.trim() || null,
+  };
+  const { error } = await client.from("ordenes").update(valores)
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden);
+  if (error) { alert("No se pudo guardar: " + error.message); return; }
+  cargarPedidos();
+  alert("Cabecera guardada.");
+}
+
+async function guardarObservaciones() {
+  if (!pedidoActivo) return;
+  const observaciones = document.getElementById("ch_observaciones").value.trim() || null;
+  const { error } = await client.from("ordenes").update({ observaciones })
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden);
+  if (error) { alert("No se pudo guardar: " + error.message); return; }
+  alert("Observaciones guardadas.");
+}
+
+async function consultarFacturas() {
+  if (!pedidoActivo) return;
+  const { data, error } = await client.from("linfacturas")
+    .select("anyo, serie, factura")
+    .eq("anyoord", pedidoActivo.anyo).eq("numeroord", pedidoActivo.orden);
+  if (error) { alert("Error al consultar: " + error.message); return; }
+  if (!data || data.length === 0) { alert("Esta orden todavía no está facturada."); return; }
+  const facturas = [...new Set(data.map(f => `${f.anyo}-${f.serie}-${f.factura}`))];
+  alert("Facturada en: " + facturas.join(", "));
+}
+
+// --- lineas ---
+
 async function cargarLineas() {
   const { data: lineas } = await client.from("linorden")
-    .select("linea, articulo, descripcion, cantidad, importe, recibido_at")
+    .select("linea, articulo, descripcion, cantidad, importe, ubicacion, albaran, bultos, control_stock, recibido_at")
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).order("linea");
 
   const tbody = document.getElementById("tabla_lineas");
-  tbody.innerHTML = "<tr><th>Artículo</th><th>Cant.</th><th>Recibido</th><th></th></tr>" +
+  tbody.innerHTML = "<tr><th>Artículo</th><th>Cant.</th><th>Ubicación</th><th>Albarán prov.</th><th>Recibido</th><th></th></tr>" +
     (lineas || []).map(l => {
       const recibida = !!l.recibido_at;
       const boton = recibida
         ? `<span class="pill-recibida">${new Date(l.recibido_at).toLocaleDateString("es-ES")}</span> <button class="secondary btn-mini" onclick="marcarRecibida(${l.linea}, false)">Deshacer</button>`
         : `<button class="btn-mini" onclick="marcarRecibida(${l.linea}, true)">Marcar recibida</button>`;
-      return `<tr><td>${l.descripcion || l.articulo || ""}</td><td>${l.cantidad ?? ""}</td><td colspan="2">${boton}</td></tr>`;
+      return `<tr>
+        <td>${l.descripcion || l.articulo || ""}${l.control_stock === 'S' ? ' <span class="meta" style="color:var(--muted);font-size:11px;">(stock)</span>' : ''}</td>
+        <td>${l.cantidad ?? ""}</td>
+        <td>${l.ubicacion || ""} <button class="secondary btn-mini" onclick="editarUbicacion(${l.linea}, '${(l.ubicacion || '').replace(/'/g, "\\'")}')">✎</button></td>
+        <td>${l.albaran || ""}</td>
+        <td>${boton}</td>
+        <td></td>
+      </tr>`;
     }).join("");
+
+  const totalBultos = (lineas || []).reduce((acc, l) => acc + (l.bultos || 0), 0);
+  document.getElementById("ch_bultos").textContent = totalBultos;
+}
+
+async function editarUbicacion(linea, actual) {
+  const nueva = prompt("Nueva ubicación:", actual || "");
+  if (nueva === null) return;
+  const { error } = await client.from("linorden").update({ ubicacion: nueva || null })
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).eq("linea", linea);
+  if (error) { alert("No se pudo actualizar: " + error.message); return; }
+  await cargarLineas();
 }
 
 async function marcarRecibida(linea, recibida) {
@@ -276,11 +584,109 @@ async function marcarRecibida(linea, recibida) {
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).eq("linea", linea);
   if (error) { alert("No se pudo actualizar: " + error.message); return; }
   await cargarLineas();
-  // el estado del pedido puede haber cambiado solo (trigger de recepcion parcial/total)
   const { data: ord } = await client.from("ordenes").select("estado").eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).maybeSingle();
-  if (ord) document.getElementById("d_estado").value = ord.estado;
+  if (ord) document.getElementById("ch_estado").value = ord.estado;
   cargarPedidos();
 }
+
+let debounceArt = null;
+document.getElementById("ln_articulo_buscar").addEventListener("input", (e) => {
+  articuloSeleccionado = null;
+  clearTimeout(debounceArt);
+  const texto = e.target.value.trim();
+  const caja = document.getElementById("ln_articulo_sugerencias");
+  if (texto.length < 2) { caja.style.display = "none"; return; }
+  debounceArt = setTimeout(async () => {
+    const { data } = await client.from("articulos").select("articulo, descripcion")
+      .or(`articulo.ilike.%${texto}%,descripcion.ilike.%${texto}%`).limit(15);
+    caja.innerHTML = (data || []).map(a =>
+      `<div data-art="${a.articulo}" data-desc="${(a.descripcion || "").replace(/"/g, "&quot;")}">${a.articulo} — ${a.descripcion || ""}</div>`
+    ).join("");
+    caja.style.display = data && data.length ? "block" : "none";
+  }, 250);
+});
+document.getElementById("ln_articulo_sugerencias").addEventListener("click", (e) => {
+  const fila = e.target.closest("[data-art]");
+  if (!fila) return;
+  articuloSeleccionado = { articulo: fila.dataset.art, descripcion: fila.dataset.desc };
+  document.getElementById("ln_articulo_buscar").value = `${fila.dataset.art} — ${fila.dataset.desc}`;
+  document.getElementById("ln_articulo_sugerencias").style.display = "none";
+});
+
+let debounceFab = null;
+document.getElementById("ln_fabricante_buscar").addEventListener("input", (e) => {
+  fabricanteSeleccionado = null;
+  clearTimeout(debounceFab);
+  const texto = e.target.value.trim();
+  const caja = document.getElementById("ln_fabricante_sugerencias");
+  if (texto.length < 2) { caja.style.display = "none"; return; }
+  debounceFab = setTimeout(async () => {
+    const { data } = await client.from("proveedores_mat").select("codigo, nombre").ilike("nombre", `%${texto}%`).limit(15);
+    caja.innerHTML = (data || []).map(f =>
+      `<div data-cod="${f.codigo}" data-nom="${(f.nombre || "").replace(/"/g, "&quot;")}">${f.nombre}</div>`
+    ).join("");
+    caja.style.display = data && data.length ? "block" : "none";
+  }, 250);
+});
+document.getElementById("ln_fabricante_sugerencias").addEventListener("click", (e) => {
+  const fila = e.target.closest("[data-cod]");
+  if (!fila) return;
+  fabricanteSeleccionado = { codigo: fila.dataset.cod, nombre: fila.dataset.nom };
+  document.getElementById("ln_fabricante_buscar").value = fila.dataset.nom;
+  document.getElementById("ln_fabricante_sugerencias").style.display = "none";
+});
+
+async function anyadirLineaOrden() {
+  if (!pedidoActivo) return;
+  const tipolinea = parseInt(document.getElementById("ln_tipo").value, 10);
+  const cantidad = parseFloat(document.getElementById("ln_cantidad").value) || 1;
+  const importe = document.getElementById("ln_importe").value ? parseFloat(document.getElementById("ln_importe").value) : null;
+  const albaran = document.getElementById("ln_albaran").value.trim() || null;
+  const ubicacion = document.getElementById("ln_ubicacion").value.trim() || null;
+  const bultos = document.getElementById("ln_bultos").value ? parseInt(document.getElementById("ln_bultos").value, 10) : null;
+  const control_stock = document.getElementById("ln_control_stock").checked ? "S" : "N";
+  const descripcionManual = document.getElementById("ln_descripcion").value.trim();
+
+  if (tipolinea === 1 && !articuloSeleccionado) { alert("Busca y selecciona un artículo para una línea normal."); return; }
+
+  const { data: ultima } = await client.from("linorden").select("linea")
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).order("linea", { ascending: false }).limit(1).maybeSingle();
+  const linea = (ultima?.linea || 0) + 1;
+
+  const { error } = await client.from("linorden").insert({
+    anyo: pedidoActivo.anyo, orden: pedidoActivo.orden, linea, tipolinea,
+    proveedor: fabricanteSeleccionado ? parseInt(fabricanteSeleccionado.codigo, 10) : null,
+    articulo: articuloSeleccionado?.articulo || null,
+    descripcion: descripcionManual || articuloSeleccionado?.descripcion || null,
+    cantidad, importe, albaran, ubicacion, bultos, control_stock,
+  });
+  if (error) { alert("No se pudo añadir la línea: " + error.message); return; }
+
+  document.getElementById("ln_fabricante_buscar").value = "";
+  document.getElementById("ln_articulo_buscar").value = "";
+  document.getElementById("ln_descripcion").value = "";
+  document.getElementById("ln_importe").value = "";
+  document.getElementById("ln_albaran").value = "";
+  document.getElementById("ln_ubicacion").value = "";
+  document.getElementById("ln_bultos").value = "0";
+  document.getElementById("ln_control_stock").checked = false;
+  fabricanteSeleccionado = null;
+  articuloSeleccionado = null;
+  await cargarLineas();
+}
+
+async function traspasarAIncidencia() {
+  if (!pedidoActivo) return;
+  if (!confirm(`¿Crear una nueva orden vinculada a ${pedidoActivo.anyo}/${pedidoActivo.orden} (sin líneas, para gestionar aparte)?`)) return;
+  const { data, error } = await client.rpc("traspasar_a_incidencia", { p_anyo: pedidoActivo.anyo, p_orden: pedidoActivo.orden });
+  if (error) { alert("No se pudo traspasar: " + error.message); return; }
+  const nueva = data[0];
+  alert(`Creada la orden ${nueva.anyo}/${nueva.orden}, enlazada en el Historial.`);
+  cargarPedidos();
+  await cargarHistorial({ anyo: pedidoActivo.anyo, orden: pedidoActivo.orden });
+}
+
+// --- citas ---
 
 async function cargarCitas() {
   const { data } = await client.from("citas_montaje")
@@ -313,9 +719,11 @@ async function agendarCita() {
   document.getElementById("cita_notas").value = "";
   await cargarCitas();
   const { data: ord } = await client.from("ordenes").select("estado").eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).maybeSingle();
-  if (ord) document.getElementById("d_estado").value = ord.estado;
+  if (ord) document.getElementById("ch_estado").value = ord.estado;
   cargarPedidos();
 }
+
+// --- incidencias ---
 
 async function cargarIncidencias() {
   const { data } = await client.from("incidencias")
@@ -347,7 +755,7 @@ async function crearIncidencia() {
   document.getElementById("inc_tipo").value = "";
   document.getElementById("inc_descripcion").value = "";
   await cargarIncidencias();
-  document.getElementById("d_estado").value = "incidencia";
+  document.getElementById("ch_estado").value = "incidencia";
   cargarPedidos();
 }
 
@@ -359,22 +767,61 @@ async function resolverIncidencia(id) {
   await cargarIncidencias();
 }
 
-function cerrarPanel() {
-  document.getElementById("panel_detalle").style.display = "none";
-  document.getElementById("overlay").style.display = "none";
-  pedidoActivo = null;
+// --- historial ---
+
+async function cargarHistorial(o) {
+  const cont = document.getElementById("lista_historial");
+  const partes = [];
+
+  if (o.anyo_ant && o.orden_ant) {
+    const { data: previa } = await client.from("ordenes").select("anyo, orden, nombre_cli, estado").eq("anyo", o.anyo_ant).eq("orden", o.orden_ant).maybeSingle();
+    if (previa) partes.push(`<div class="item">⬅ Viene de <a href="#" onclick="irAOrden(${previa.anyo},${previa.orden});return false;"><strong>${previa.anyo}/${previa.orden}</strong></a> — ${previa.nombre_cli || ""} (${previa.estado})</div>`);
+  }
+
+  const { data: siguientes } = await client.from("ordenes").select("anyo, orden, nombre_cli, estado").eq("anyo_ant", o.anyo).eq("orden_ant", o.orden);
+  (siguientes || []).forEach(s => {
+    partes.push(`<div class="item">➡ Continúa en <a href="#" onclick="irAOrden(${s.anyo},${s.orden});return false;"><strong>${s.anyo}/${s.orden}</strong></a> — ${s.nombre_cli || ""} (${s.estado})</div>`);
+  });
+
+  cont.innerHTML = partes.join("") || '<div class="meta">Sin órdenes relacionadas.</div>';
 }
 
-async function guardarEstado() {
-  if (!pedidoActivo) return;
-  const estado = document.getElementById("d_estado").value;
-  const montador_id = document.getElementById("d_montador").value || null;
-  const { error } = await client.from("ordenes")
-    .update({ estado, montador_id })
-    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden);
-  if (error) { alert("No se pudo guardar: " + error.message); return; }
-  cerrarPanel();
-  cargarPedidos();
+async function irAOrden(anyo, orden) {
+  const { data } = await client.from("ordenes").select("*").eq("anyo", anyo).eq("orden", orden).maybeSingle();
+  if (data) abrirPanel(data);
+}
+
+// --- llamadas ---
+
+async function cargarLlamadas() {
+  const { data } = await client.from("llamadas_orden")
+    .select("id, fecha, canal, notas, creado_por")
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden)
+    .order("fecha", { ascending: false });
+
+  const cont = document.getElementById("lista_llamadas");
+  const filas = await Promise.all((data || []).map(async l => {
+    const autor = await nombrePorUserId(l.creado_por);
+    return `<div class="item">
+      <strong>${new Date(l.fecha).toLocaleString("es-ES")}</strong> — ${l.canal || ""} ${autor ? "· " + autor : ""}
+      <div class="meta">${l.notas || ""}</div>
+    </div>`;
+  }));
+  cont.innerHTML = filas.join("") || '<div class="meta">Sin contactos registrados.</div>';
+}
+
+async function registrarLlamada() {
+  const canal = document.getElementById("llamada_canal").value;
+  const notas = document.getElementById("llamada_notas").value.trim();
+  if (!notas) { alert("Describe brevemente el contacto."); return; }
+
+  const { error } = await client.from("llamadas_orden").insert({
+    anyo: pedidoActivo.anyo, orden: pedidoActivo.orden, canal, notas, creado_por: staffUserId,
+  });
+  if (error) { alert("No se pudo registrar: " + error.message); return; }
+
+  document.getElementById("llamada_notas").value = "";
+  await cargarLlamadas();
 }
 
 comprobarSesion();
