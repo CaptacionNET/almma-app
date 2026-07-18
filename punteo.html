@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - Punteo de Ordenes</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
+<style>
+:root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+button{background:var(--primary);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;}
+button:hover{opacity:.9;}
+button.secondary{background:#fff;color:var(--text);border:1px solid var(--border);}
+input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;}
+
+#menubar{background:#1f2430;color:#e5e7eb;display:flex;align-items:center;padding:0 12px;font-size:13px;position:relative;z-index:20;}
+#menubar .brand{font-weight:700;color:#fff;padding:10px 16px 10px 0;font-size:15px;}
+.menu-item{position:relative;}
+.menu-item > span{display:block;padding:10px 14px;cursor:pointer;}
+.menu-item:hover > span, .menu-item.abierto > span{background:#374151;}
+.menu-drop{display:none;position:absolute;top:100%;left:0;background:#fff;color:var(--text);min-width:220px;box-shadow:0 10px 30px -10px rgba(0,0,0,.4);border-radius:0 0 8px 8px;overflow:hidden;}
+.menu-item.abierto .menu-drop{display:block;}
+.menu-drop a{display:block;padding:10px 16px;color:var(--text);text-decoration:none;font-size:13px;border-bottom:1px solid var(--border);}
+.menu-drop a:hover{background:var(--bg);}
+#toolbar{display:flex;gap:8px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center;}
+#toolbar .spacer{flex:1;}
+
+.barra{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:16px 24px;}
+.campo-mini label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;}
+.campo-mini input, .campo-mini select{width:100%;}
+#buscador{flex:1;min-width:240px;}
+.tabla-scroll{margin:0 24px 24px;overflow-x:auto;}
+.aviso-carga{padding:0 24px;color:var(--muted);font-size:13px;}
+</style>
+</head>
+<body>
+
+<div id="menubar">
+  <div class="brand">ALMMA</div>
+  <div class="menu-item" data-menu="sistema">
+    <span>Sistema</span>
+    <div class="menu-drop">
+      <a href="#" onclick="proximamente('Tiendas');return false;">Tiendas</a>
+      <a href="#" onclick="proximamente('Fabricantes');return false;">Fabricantes</a>
+      <a href="#" onclick="proximamente('Dependientes');return false;">Dependientes</a>
+      <a href="#" onclick="proximamente('Montadores');return false;">Montadores</a>
+      <a href="#" onclick="proximamente('Artículos');return false;">Artículos</a>
+    </div>
+  </div>
+  <div class="menu-item" data-menu="ordenes">
+    <span>Ordenes de Trabajo</span>
+    <div class="menu-drop">
+      <a href="pedidos.html">Introducción/Consulta</a>
+      <a href="punteo.html">Punteo de Ordenes</a>
+      <a href="#" onclick="proximamente('Listado de Rutas');return false;">Listado de Rutas</a>
+      <a href="#" onclick="proximamente('Realizar Montajes');return false;">Realizar Montajes</a>
+      <a href="#" onclick="proximamente('Gestión de Incidencias');return false;">Gestión de Incidencias</a>
+      <a href="#" onclick="proximamente('Contacto Cliente');return false;">Contacto Cliente</a>
+    </div>
+  </div>
+</div>
+
+<div id="toolbar">
+  <button class="secondary" onclick="window.location.href='pedidos.html'">Ordenes</button>
+  <button class="secondary" onclick="window.location.href='recepcion.html'">Entradas Almacén</button>
+  <button id="btn_montajes" class="secondary" style="display:none;" onclick="window.location.href='montador.html'">Mis montajes</button>
+  <div class="spacer"></div>
+  <button class="secondary" onclick="logout()">Salir</button>
+</div>
+
+<div class="barra">
+  <div class="campo-mini" style="max-width:110px;">
+    <label>Año desde</label>
+    <input id="anyo_desde" type="number">
+  </div>
+  <div class="campo-mini" style="max-width:110px;">
+    <label>Año hasta</label>
+    <input id="anyo_hasta" type="number">
+  </div>
+  <div class="campo-mini" id="buscador">
+    <label>Buscar (mercancía, fabricante, tienda, dependiente, nº pedido)</label>
+    <input id="texto_busqueda" type="text" placeholder="Escribe para filtrar...">
+  </div>
+  <div class="campo-mini" style="max-width:140px;">
+    <label>Orden</label>
+    <select id="orden_sort">
+      <option value="desc">Descendente</option>
+      <option value="asc">Ascendente</option>
+    </select>
+  </div>
+  <button onclick="cargarPunteo()">Actualizar</button>
+</div>
+
+<div class="aviso-carga" id="aviso_carga"></div>
+<div class="tabla-scroll"><div id="tabla_punteo"></div></div>
+
+<script>
+const client = supabase.createClient(
+  "https://uamgbtbsxbrgymhqalak.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k"
+);
+
+let tabla = null;
+let datosCompletos = [];
+
+document.querySelectorAll(".menu-item").forEach(item => {
+  item.querySelector("span").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const yaAbierto = item.classList.contains("abierto");
+    document.querySelectorAll(".menu-item").forEach(i => i.classList.remove("abierto"));
+    if (!yaAbierto) item.classList.add("abierto");
+  });
+});
+document.addEventListener("click", () => document.querySelectorAll(".menu-item").forEach(i => i.classList.remove("abierto")));
+
+function proximamente(nombre) {
+  alert(`"${nombre}" todavía no está construido en la app nueva — próximamente.`);
+}
+
+async function comprobarSesion() {
+  const { data: { user } } = await client.auth.getUser();
+  if (!user) { window.location.href = "login.html"; return; }
+  const { data: staffRow } = await client.from("staff").select("user_id, es_montador").eq("user_id", user.id).maybeSingle();
+  if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
+  if (staffRow.es_montador) document.getElementById("btn_montajes").style.display = "inline-block";
+
+  const anyoActual = new Date().getFullYear();
+  document.getElementById("anyo_desde").value = anyoActual;
+  document.getElementById("anyo_hasta").value = anyoActual;
+  cargarPunteo();
+}
+
+async function logout() {
+  await client.auth.signOut();
+  window.location.href = "login.html";
+}
+
+async function cargarPunteo() {
+  const anyoDesde = parseInt(document.getElementById("anyo_desde").value, 10);
+  const anyoHasta = parseInt(document.getElementById("anyo_hasta").value, 10);
+  const avisoBox = document.getElementById("aviso_carga");
+  avisoBox.textContent = "Cargando...";
+
+  // dos consultas simples (1 nivel de embed cada una) en vez de un embed anidado de 2
+  // niveles: PostgREST genera un plan muy lento para embeds anidados profundos y
+  // llegaba al statement timeout. Se cruzan en JS por anyo+orden.
+  const [{ data: lineas, error: errLineas }, { data: ordenesData, error: errOrdenes }] = await Promise.all([
+    client.from("linorden")
+      .select("anyo, orden, linea, descripcion, frecepcion, observacion, proveedores_mat ( nombre )")
+      .gte("anyo", anyoDesde).lte("anyo", anyoHasta)
+      .order("orden", { ascending: document.getElementById("orden_sort").value === "asc" })
+      .limit(5000),
+    client.from("ordenes")
+      .select("anyo, orden, num_pedido, fecha_prev_montaje, fecha_montaje, tiendas ( nombre ), dependientes ( nombre )")
+      .gte("anyo", anyoDesde).lte("anyo", anyoHasta)
+      .order("orden", { ascending: document.getElementById("orden_sort").value === "asc" })
+      .limit(5000),
+  ]);
+
+  if (errLineas || errOrdenes) {
+    avisoBox.textContent = "Error al cargar: " + (errLineas || errOrdenes).message;
+    console.error(errLineas || errOrdenes);
+    return;
+  }
+
+  const ordenesPorClave = {};
+  (ordenesData || []).forEach(o => { ordenesPorClave[`${o.anyo}-${o.orden}`] = o; });
+
+  datosCompletos = (lineas || []).map(r => {
+    const o = ordenesPorClave[`${r.anyo}-${r.orden}`] || {};
+    return {
+      orden: r.orden,
+      anyo: r.anyo,
+      fecha: r.frecepcion,
+      fabricante: r.proveedores_mat?.nombre || "",
+      mercancia: r.descripcion || "",
+      tienda: o.tiendas?.nombre || "",
+      dependiente: o.dependientes?.nombre || "",
+      pedido: o.num_pedido || "",
+      f_prevista: o.fecha_prev_montaje || null,
+      f_montaje: o.fecha_montaje || null,
+      obs: r.observacion || "",
+    };
+  });
+
+  avisoBox.textContent = `${datosCompletos.length} líneas cargadas.` +
+    (datosCompletos.length >= 1000 ? " Puede haber más — acota el rango de años o usa la búsqueda para ver resultados concretos." : "");
+  aplicarFiltroTexto();
+}
+
+function aplicarFiltroTexto() {
+  const texto = document.getElementById("texto_busqueda").value.trim().toLowerCase();
+  const filtrados = texto
+    ? datosCompletos.filter(r =>
+        (r.mercancia || "").toLowerCase().includes(texto) ||
+        (r.fabricante || "").toLowerCase().includes(texto) ||
+        (r.tienda || "").toLowerCase().includes(texto) ||
+        (r.dependiente || "").toLowerCase().includes(texto) ||
+        (r.pedido || "").toLowerCase().includes(texto)
+      )
+    : datosCompletos;
+
+  const columnas = [
+    { title: "Orden", field: "orden", width: 90 },
+    { title: "Año", field: "anyo", width: 70 },
+    { title: "Fecha", field: "fecha", formatter: c => c.getValue() ? new Date(c.getValue()).toLocaleDateString("es-ES") : "" },
+    { title: "Fabricante", field: "fabricante" },
+    { title: "Mercancía", field: "mercancia" },
+    { title: "Tienda", field: "tienda" },
+    { title: "Dependiente", field: "dependiente" },
+    { title: "Pedido", field: "pedido" },
+    { title: "F.Prevista", field: "f_prevista", formatter: c => c.getValue() ? new Date(c.getValue()).toLocaleDateString("es-ES") : "" },
+    { title: "F.Montaje", field: "f_montaje", formatter: c => c.getValue() ? new Date(c.getValue()).toLocaleDateString("es-ES") : "" },
+    { title: "Obs", field: "obs" },
+  ];
+
+  if (!tabla) {
+    tabla = new Tabulator("#tabla_punteo", {
+      data: filtrados, columns: columnas, layout: "fitColumns", height: "calc(100vh - 190px)",
+      rowClick: (e, row) => { const d = row.getData(); window.location.href = `pedidos.html?anyo=${d.anyo}&orden=${d.orden}`; },
+    });
+  } else {
+    tabla.setData(filtrados);
+  }
+}
+
+document.getElementById("texto_busqueda").addEventListener("input", aplicarFiltroTexto);
+
+comprobarSesion();
+</script>
+</body>
+</html>

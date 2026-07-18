@@ -87,7 +87,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
     <span>Ordenes de Trabajo</span>
     <div class="menu-drop">
       <a href="pedidos.html">Introducción/Consulta</a>
-      <a href="#" onclick="proximamente('Punteo de Ordenes');return false;">Punteo de Ordenes</a>
+      <a href="punteo.html">Punteo de Ordenes</a>
       <a href="#" onclick="proximamente('Listado de Rutas');return false;">Listado de Rutas</a>
       <a href="#" onclick="proximamente('Realizar Montajes');return false;">Realizar Montajes</a>
       <a href="#" onclick="proximamente('Gestión de Incidencias');return false;">Gestión de Incidencias</a>
@@ -336,7 +336,15 @@ async function comprobarSesion() {
   if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
   staffUserId = staffRow.user_id;
   if (staffRow.es_montador) document.getElementById("btn_montajes").style.display = "inline-block";
-  cargarPedidos();
+  await cargarPedidos();
+
+  const params = new URLSearchParams(window.location.search);
+  const anyoParam = parseInt(params.get("anyo"), 10);
+  const ordenParam = parseInt(params.get("orden"), 10);
+  if (anyoParam && ordenParam) {
+    const { data } = await client.from("ordenes").select("*").eq("anyo", anyoParam).eq("orden", ordenParam).maybeSingle();
+    if (data) abrirPanel(data);
+  }
 }
 
 async function cargarMontadores() {
