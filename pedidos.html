@@ -30,7 +30,9 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 #toolbar{display:flex;gap:8px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center;}
 #toolbar .spacer{flex:1;}
 
-.barra{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:16px 24px;}
+.barra{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:16px 24px;}
+.campo-mini label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;}
+.campo-mini input,.campo-mini select{width:100%;}
 .barra input{flex:1;min-width:220px;max-width:420px;}
 .tabla-scroll{margin:0 24px 24px;overflow-x:auto;}
 .estado-pill{padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;display:inline-block;}
@@ -110,11 +112,11 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 
 <div class="barra">
   <div class="campo-mini" style="max-width:100px;">
-    <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;">Año desde</label>
+    <label>Año desde</label>
     <input id="anyo_desde" type="number" onchange="cargarPedidos()">
   </div>
   <div class="campo-mini" style="max-width:100px;">
-    <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;">Año hasta</label>
+    <label>Año hasta</label>
     <input id="anyo_hasta" type="number" onchange="cargarPedidos()">
   </div>
   <select id="filtro_estado" onchange="cargarPedidos()">
