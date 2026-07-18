@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - Sistema</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
+<style>
+:root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+button{background:var(--primary);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;}
+button:hover{opacity:.9;}
+button.secondary{background:#fff;color:var(--text);border:1px solid var(--border);}
+input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;}
+
+#menubar{background:#1f2430;color:#e5e7eb;display:flex;align-items:center;padding:0 12px;font-size:13px;position:relative;z-index:20;}
+#menubar .brand{font-weight:700;color:#fff;padding:10px 16px 10px 0;font-size:15px;}
+.menu-item{position:relative;}
+.menu-item > span{display:block;padding:10px 14px;cursor:pointer;}
+.menu-item:hover > span, .menu-item.abierto > span{background:#374151;}
+.menu-drop{display:none;position:absolute;top:100%;left:0;background:#fff;color:var(--text);min-width:220px;box-shadow:0 10px 30px -10px rgba(0,0,0,.4);border-radius:0 0 8px 8px;overflow:hidden;}
+.menu-item.abierto .menu-drop{display:block;}
+.menu-drop a{display:block;padding:10px 16px;color:var(--text);text-decoration:none;font-size:13px;border-bottom:1px solid var(--border);}
+.menu-drop a:hover{background:var(--bg);}
+#toolbar{display:flex;gap:8px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center;}
+#toolbar .spacer{flex:1;}
+
+.cat-tabs{display:flex;gap:2px;padding:12px 24px 0;border-bottom:1px solid var(--border);background:var(--card);}
+.cat-tab{background:none;border:none;color:var(--muted);padding:10px 16px;font-size:14px;font-weight:600;border-bottom:2px solid transparent;}
+.cat-tab.activa{color:var(--primary);border-bottom-color:var(--primary);}
+.cat-panel{display:none;}
+.cat-panel.activa{display:block;}
+
+.barra{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:16px 24px;}
+.barra input{flex:1;min-width:220px;max-width:420px;}
+.tabla-scroll{margin:0 24px 24px;overflow-x:auto;}
+
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.15);z-index:30;}
+#panel_editar{display:none;position:fixed;top:0;right:0;bottom:0;width:min(480px,100vw);background:var(--card);border-left:1px solid var(--border);box-shadow:-10px 0 30px -20px rgba(0,0,0,.3);z-index:31;padding:24px;overflow-y:auto;}
+.campo{margin-bottom:14px;}
+.campo label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;}
+.campo select,.campo input{width:100%;}
+.aviso-carga{color:var(--muted);font-size:13px;}
+</style>
+</head>
+<body>
+
+<div id="menubar">
+  <div class="brand">ALMMA</div>
+  <div class="menu-item" data-menu="sistema">
+    <span>Sistema</span>
+    <div class="menu-drop">
+      <a href="sistema.html?cat=tiendas">Tiendas</a>
+      <a href="sistema.html?cat=fabricantes">Fabricantes</a>
+      <a href="sistema.html?cat=dependientes">Dependientes</a>
+      <a href="sistema.html?cat=montadores">Montadores</a>
+      <a href="sistema.html?cat=articulos">Artículos</a>
+    </div>
+  </div>
+  <div class="menu-item" data-menu="ordenes">
+    <span>Ordenes de Trabajo</span>
+    <div class="menu-drop">
+      <a href="pedidos.html">Introducción/Consulta</a>
+      <a href="punteo.html">Punteo de Ordenes</a>
+      <a href="#" onclick="proximamente('Listado de Rutas');return false;">Listado de Rutas</a>
+      <a href="#" onclick="proximamente('Realizar Montajes');return false;">Realizar Montajes</a>
+      <a href="#" onclick="proximamente('Gestión de Incidencias');return false;">Gestión de Incidencias</a>
+      <a href="#" onclick="proximamente('Contacto Cliente');return false;">Contacto Cliente</a>
+    </div>
+  </div>
+</div>
+
+<div id="toolbar">
+  <button class="secondary" onclick="window.location.href='pedidos.html'">Ordenes</button>
+  <button class="secondary" onclick="window.location.href='recepcion.html'">Entradas Almacén</button>
+  <button id="btn_montajes" class="secondary" style="display:none;" onclick="window.location.href='montador.html'">Mis montajes</button>
+  <div class="spacer"></div>
+  <button class="secondary" onclick="logout()">Salir</button>
+</div>
+
+<div class="cat-tabs">
+  <button class="cat-tab" data-cat="tiendas" onclick="cambiarCatalogo('tiendas')">Tiendas</button>
+  <button class="cat-tab" data-cat="fabricantes" onclick="cambiarCatalogo('fabricantes')">Fabricantes</button>
+  <button class="cat-tab" data-cat="dependientes" onclick="cambiarCatalogo('dependientes')">Dependientes</button>
+  <button class="cat-tab" data-cat="montadores" onclick="cambiarCatalogo('montadores')">Montadores</button>
+  <button class="cat-tab" data-cat="articulos" onclick="cambiarCatalogo('articulos')">Artículos</button>
+</div>
+
+<div class="barra">
+  <input id="buscador" type="text" placeholder="Buscar..." oninput="buscarEnCatalogo()">
+  <div class="spacer" style="flex:1;"></div>
+  <button id="btn_nuevo" onclick="abrirNuevo()">+ Nuevo</button>
+</div>
+<div class="aviso-carga" id="aviso_carga" style="padding:0 24px;"></div>
+<div class="tabla-scroll"><div id="tabla_catalogo"></div></div>
+
+<div id="overlay" onclick="cerrarPanel()"></div>
+<div id="panel_editar">
+  <button class="secondary" onclick="cerrarPanel()" style="float:right;">✕</button>
+  <h3 id="p_titulo"></h3>
+  <div id="p_campos"></div>
+  <button onclick="guardarRegistro()" style="margin-top:10px;">Grabar</button>
+</div>
+
+<script>
+const client = supabase.createClient(
+  "https://uamgbtbsxbrgymhqalak.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k"
+);
+
+let tabla = null;
+let catalogoActivo = null;
+let registroActivo = null;
+let tiendasCache = null;
+
+document.querySelectorAll(".menu-item").forEach(item => {
+  item.querySelector("span").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const yaAbierto = item.classList.contains("abierto");
+    document.querySelectorAll(".menu-item").forEach(i => i.classList.remove("abierto"));
+    if (!yaAbierto) item.classList.add("abierto");
+  });
+});
+document.addEventListener("click", () => document.querySelectorAll(".menu-item").forEach(i => i.classList.remove("abierto")));
+
+function proximamente(nombre) {
+  alert(`"${nombre}" todavía no está construido en la app nueva — próximamente.`);
+}
+
+async function logout() {
+  await client.auth.signOut();
+  window.location.href = "login.html";
+}
+
+async function comprobarSesion() {
+  const { data: { user } } = await client.auth.getUser();
+  if (!user) { window.location.href = "login.html"; return; }
+  const { data: staffRow } = await client.from("staff").select("user_id, es_montador").eq("user_id", user.id).maybeSingle();
+  if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
+  if (staffRow.es_montador) document.getElementById("btn_montajes").style.display = "inline-block";
+
+  const params = new URLSearchParams(window.location.search);
+  cambiarCatalogo(params.get("cat") || "tiendas");
+}
+
+async function cargarTiendas() {
+  if (tiendasCache) return tiendasCache;
+  const { data } = await client.from("tiendas").select("id, nombre").order("nombre");
+  tiendasCache = data || [];
+  return tiendasCache;
+}
+
+// --- definicion de catalogos ---
+
+const CATALOGOS = {
+  tiendas: {
+    tabla: "tiendas", pk: "id", pkGenerado: true, titulo: "Tienda",
+    columnasLista: ["codigo_legado", "nombre", "localidad", "telefono", "listado_albaranes"],
+    cabeceras: { codigo_legado: "Cód.", nombre: "Nombre", localidad: "Localidad", telefono: "Teléfono", listado_albaranes: "Albarán c/ tienda" },
+    campos: [
+      { id: "codigo_legado", label: "Código legado", soloLectura: true },
+      { id: "nombre", label: "Nombre", requerido: true },
+      { id: "cif", label: "CIF" },
+      { id: "direccion", label: "Dirección" },
+      { id: "localidad", label: "Localidad" },
+      { id: "provincia", label: "Provincia" },
+      { id: "cp", label: "Código Postal" },
+      { id: "telefono", label: "Teléfono" },
+      { id: "email", label: "Email" },
+      { id: "listado_albaranes", label: "Listado Albaranes (mostrar datos de la tienda en el albarán)", tipo: "checkbox" },
+    ],
+    buscarCampos: ["nombre", "localidad", "telefono"],
+    orden: "nombre",
+  },
+  fabricantes: {
+    tabla: "proveedores_mat", pk: "codigo", pkGenerado: false, titulo: "Fabricante",
+    columnasLista: ["codigo", "nombre", "localidad", "telefono1", "email"],
+    cabeceras: { codigo: "Cód.", nombre: "Nombre", localidad: "Localidad", telefono1: "Teléfono", email: "Email" },
+    campos: [
+      { id: "codigo", label: "Código", requerido: true, tipo: "number" },
+      { id: "nombre", label: "Nombre", requerido: true },
+      { id: "nombre_comercial", label: "Nombre comercial" },
+      { id: "direccion", label: "Dirección" },
+      { id: "localidad", label: "Localidad" },
+      { id: "telefono1", label: "Teléfono 1" },
+      { id: "telefono2", label: "Teléfono 2" },
+      { id: "email", label: "Email" },
+      { id: "persona", label: "Persona de contacto" },
+      { id: "cif", label: "CIF" },
+    ],
+    buscarCampos: ["nombre", "localidad"],
+    orden: "nombre",
+  },
+  dependientes: {
+    tabla: "dependientes", pk: "id", pkGenerado: true, titulo: "Dependiente",
+    columnasLista: ["codigo_legado", "nombre", "telefono1", "email", "_tienda", "_acceso"],
+    cabeceras: { codigo_legado: "Cód.", nombre: "Nombre", telefono1: "Teléfono", email: "Email", _tienda: "Tienda", _acceso: "Acceso" },
+    campos: [
+      { id: "codigo_legado", label: "Código legado", soloLectura: true },
+      { id: "nombre", label: "Nombre", requerido: true },
+      { id: "telefono1", label: "Teléfono" },
+      { id: "email", label: "Email" },
+      { id: "tienda_id", label: "Tienda", tipo: "select-tienda" },
+    ],
+    buscarCampos: ["nombre", "telefono1", "email"],
+    orden: "nombre",
+  },
+  articulos: {
+    tabla: "articulos", pk: "articulo", pkGenerado: false, titulo: "Artículo",
+    columnasLista: ["articulo", "descripcion", "proveedor", "importe", "serie"],
+    cabeceras: { articulo: "Código", descripcion: "Descripción", proveedor: "Fabricante (cód.)", importe: "Importe", serie: "Serie" },
+    campos: [
+      { id: "articulo", label: "Código de artículo", requerido: true },
+      { id: "descripcion", label: "Descripción", requerido: true },
+      { id: "proveedor", label: "Código de fabricante", tipo: "number" },
+      { id: "porcentaje", label: "Porcentaje", tipo: "number" },
+      { id: "importe", label: "Importe", tipo: "number" },
+      { id: "serie", label: "Serie", tipo: "number" },
+      { id: "esmercancia", label: "Es mercancía (S/N)" },
+      { id: "esincidencia", label: "Es incidencia (S/N)" },
+    ],
+    buscarCampos: ["articulo", "descripcion"],
+    orden: "articulo",
+    requiereBusqueda: true,
+  },
+};
+
+function cambiarCatalogo(cat) {
+  if (cat === "montadores") { cargarMontadoresCatalogo(); return; }
+  catalogoActivo = cat;
+  document.querySelectorAll(".cat-tab").forEach(b => b.classList.toggle("activa", b.dataset.cat === cat));
+  document.getElementById("buscador").value = "";
+  document.getElementById("btn_nuevo").style.display = "inline-block";
+  cargarCatalogo();
+}
+
+async function cargarCatalogo() {
+  const cfg = CATALOGOS[catalogoActivo];
+  const avisoBox = document.getElementById("aviso_carga");
+  if (cfg.requiereBusqueda) {
+    avisoBox.textContent = "Escribe algo en el buscador para ver artículos (hay demasiados para listarlos todos).";
+    renderTabla(cfg, []);
+    return;
+  }
+  avisoBox.textContent = "Cargando...";
+  const { data, error } = await client.from(cfg.tabla).select("*").order(cfg.orden).limit(1000);
+  if (error) { avisoBox.textContent = "Error: " + error.message; return; }
+
+  if (catalogoActivo === "dependientes") {
+    const tiendas = await cargarTiendas();
+    const porId = Object.fromEntries(tiendas.map(t => [t.id, t.nombre]));
+    data.forEach(d => { d._tienda = porId[d.tienda_id] || ""; d._acceso = d.user_id ? "Sí" : "No"; });
+  }
+
+  avisoBox.textContent = `${data.length} registros.`;
+  renderTabla(cfg, data);
+}
+
+function renderTabla(cfg, data) {
+  const columnas = cfg.columnasLista.map(campo => ({
+    title: cfg.cabeceras[campo] || campo, field: campo,
+    formatter: campo === "listado_albaranes" ? (c => c.getValue() ? "Sí" : "No") : undefined,
+  }));
+  if (!tabla) {
+    tabla = new Tabulator("#tabla_catalogo", {
+      data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 260px)",
+      rowClick: (e, row) => abrirEditar(row.getData()),
+    });
+  } else {
+    tabla.setColumns(columnas);
+    tabla.setData(data);
+  }
+}
+
+async function buscarEnCatalogo() {
+  const cfg = CATALOGOS[catalogoActivo];
+  const texto = document.getElementById("buscador").value.trim();
+  const avisoBox = document.getElementById("aviso_carga");
+
+  if (cfg.requiereBusqueda) {
+    if (texto.length < 2) { avisoBox.textContent = "Escribe al menos 2 caracteres."; renderTabla(cfg, []); return; }
+    avisoBox.textContent = "Buscando...";
+    const or = cfg.buscarCampos.map(c => `${c}.ilike.%${texto}%`).join(",");
+    const { data, error } = await client.from(cfg.tabla).select("*").or(or).order(cfg.orden).limit(200);
+    if (error) { avisoBox.textContent = "Error: " + error.message; return; }
+    avisoBox.textContent = `${data.length} resultados.`;
+    renderTabla(cfg, data);
+    return;
+  }
+  // catalogos pequeños: filtro en cliente sobre lo ya cargado
+  if (!tabla) return;
+  if (!texto) { cargarCatalogo(); return; }
+  const filas = tabla.getData();
+  const filtradas = filas.filter(f => cfg.buscarCampos.some(c => (f[c] || "").toString().toLowerCase().includes(texto.toLowerCase())));
+  tabla.setData(filtradas);
+}
+
+async function abrirEditar(registro) {
+  registroActivo = registro;
+  const cfg = CATALOGOS[catalogoActivo];
+  document.getElementById("p_titulo").textContent = `Editar ${cfg.titulo}`;
+  await renderFormulario(cfg, registro);
+  document.getElementById("panel_editar").style.display = "block";
+  document.getElementById("overlay").style.display = "block";
+}
+
+async function abrirNuevo() {
+  registroActivo = null;
+  const cfg = CATALOGOS[catalogoActivo];
+  document.getElementById("p_titulo").textContent = `Nuevo ${cfg.titulo}`;
+  await renderFormulario(cfg, {});
+  document.getElementById("panel_editar").style.display = "block";
+  document.getElementById("overlay").style.display = "block";
+}
+
+async function renderFormulario(cfg, registro) {
+  const cont = document.getElementById("p_campos");
+  let html = "";
+  for (const campo of cfg.campos) {
+    const valor = registro[campo.id] ?? "";
+    if (campo.tipo === "checkbox") {
+      html += `<div class="campo"><label><input type="checkbox" id="f_${campo.id}" ${valor ? "checked" : ""} style="width:auto;"> ${campo.label}</label></div>`;
+    } else if (campo.tipo === "select-tienda") {
+      const tiendas = await cargarTiendas();
+      html += `<div class="campo"><label>${campo.label}</label><select id="f_${campo.id}">
+        <option value="">-- sin asignar --</option>
+        ${tiendas.map(t => `<option value="${t.id}" ${t.id === valor ? "selected" : ""}>${t.nombre}</option>`).join("")}
+      </select></div>`;
+    } else {
+      const soloLectura = campo.soloLectura ? "readonly" : "";
+      const tipo = campo.tipo === "number" ? "number" : "text";
+      const deshabilitadoEdicion = (campo.id === cfg.pk && registroActivo) ? "readonly" : "";
+      html += `<div class="campo"><label>${campo.label}</label><input id="f_${campo.id}" type="${tipo}" value="${valor ?? ""}" ${soloLectura} ${deshabilitadoEdicion}></div>`;
+    }
+  }
+  if (catalogoActivo === "dependientes") {
+    html += `<div class="campo"><label>Último acceso</label><div>${registro.user_id ? "Cuenta creada (ver Supabase)" : "Sin cuenta de acceso todavía"}</div></div>
+      <button type="button" class="secondary" onclick="proximamente('Crear acceso de dependiente')">Crear acceso</button>`;
+  }
+  cont.innerHTML = html;
+}
+
+function cerrarPanel() {
+  document.getElementById("panel_editar").style.display = "none";
+  document.getElementById("overlay").style.display = "none";
+  registroActivo = null;
+}
+
+async function guardarRegistro() {
+  const cfg = CATALOGOS[catalogoActivo];
+  const valores = {};
+  for (const campo of cfg.campos) {
+    if (campo.tipo === "checkbox") {
+      valores[campo.id] = document.getElementById(`f_${campo.id}`).checked;
+    } else if (campo.tipo === "select-tienda") {
+      valores[campo.id] = document.getElementById(`f_${campo.id}`).value || null;
+    } else if (campo.tipo === "number") {
+      const v = document.getElementById(`f_${campo.id}`).value;
+      valores[campo.id] = v === "" ? null : parseFloat(v);
+    } else {
+      const v = document.getElementById(`f_${campo.id}`).value.trim();
+      valores[campo.id] = v || null;
+    }
+  }
+
+  let error;
+  if (registroActivo) {
+    ({ error } = await client.from(cfg.tabla).update(valores).eq(cfg.pk, registroActivo[cfg.pk]));
+  } else {
+    ({ error } = await client.from(cfg.tabla).insert(valores));
+  }
+  if (error) { alert("No se pudo guardar: " + error.message); return; }
+  cerrarPanel();
+  cargarCatalogo();
+}
+
+// --- montadores: caso especial, es un subconjunto de staff ---
+
+async function cargarMontadoresCatalogo() {
+  catalogoActivo = "montadores";
+  document.querySelectorAll(".cat-tab").forEach(b => b.classList.toggle("activa", b.dataset.cat === "montadores"));
+  document.getElementById("buscador").value = "";
+  document.getElementById("btn_nuevo").style.display = "none"; // no se puede crear un montador sin una cuenta de staff existente
+  const avisoBox = document.getElementById("aviso_carga");
+  avisoBox.textContent = "Los montadores son personal de staff marcado como montador. Para dar de alta uno nuevo, primero necesita una cuenta de staff.";
+
+  const { data, error } = await client.from("staff").select("user_id, nombre, es_montador").order("nombre");
+  if (error) { avisoBox.textContent = "Error: " + error.message; return; }
+
+  const columnas = [
+    { title: "Nombre", field: "nombre" },
+    { title: "Es montador", field: "es_montador", formatter: c => c.getValue() ? "Sí" : "No" },
+  ];
+  if (!tabla) {
+    tabla = new Tabulator("#tabla_catalogo", {
+      data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 260px)",
+      rowClick: async (e, row) => {
+        const d = row.getData();
+        if (!confirm(`¿Cambiar "${d.nombre}" a es_montador = ${!d.es_montador}?`)) return;
+        const { error } = await client.from("staff").update({ es_montador: !d.es_montador }).eq("user_id", d.user_id);
+        if (error) { alert("No se pudo actualizar: " + error.message); return; }
+        cargarMontadoresCatalogo();
+      },
+    });
+  } else {
+    tabla.setColumns(columnas);
+    tabla.setData(data);
+  }
+}
+
+comprobarSesion();
+</script>
+</body>
+</html>
