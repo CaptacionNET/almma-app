@@ -76,6 +76,7 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
 <div id="panel_detalle">
   <button class="secondary" onclick="cerrarPanel()" style="float:right;">✕</button>
   <h3 id="d_titulo"></h3>
+  <div id="d_auditoria" class="meta" style="color:var(--muted);font-size:11px;margin-bottom:14px;"></div>
   <div class="campo">
     <label>Estado</label>
     <select id="d_estado">
@@ -157,6 +158,18 @@ async function cargarMontadores() {
   return montadoresCache;
 }
 
+const nombresCache = {};
+async function nombrePorUserId(id) {
+  if (!id) return null;
+  if (nombresCache[id]) return nombresCache[id];
+  const { data: staffRow } = await client.from("staff").select("nombre").eq("user_id", id).maybeSingle();
+  if (staffRow) { nombresCache[id] = staffRow.nombre || "Staff"; return nombresCache[id]; }
+  const { data: depRow } = await client.from("dependientes").select("nombre").eq("user_id", id).maybeSingle();
+  if (depRow) { nombresCache[id] = depRow.nombre || "Dependiente"; return nombresCache[id]; }
+  nombresCache[id] = "Usuario";
+  return nombresCache[id];
+}
+
 async function logout() {
   await client.auth.signOut();
   window.location.href = "login.html";
@@ -167,7 +180,7 @@ async function cargarPedidos() {
   const busqueda = document.getElementById("buscador").value.trim();
 
   let query = client.from("ordenes")
-    .select("anyo, orden, centro, nombre_cli, num_pedido, estado, fecha_creacion, importe_total, montador_id")
+    .select("anyo, orden, centro, nombre_cli, num_pedido, estado, fecha_creacion, importe_total, montador_id, creado_por, modificado_por, modificado_at")
     .order("anyo", { ascending: false })
     .order("orden", { ascending: false })
     .limit(200);
@@ -208,6 +221,22 @@ async function abrirPanel(orden) {
   document.getElementById("d_estado").value = orden.estado || "en_proceso";
   document.getElementById("d_cliente").textContent = orden.nombre_cli || "-";
   document.getElementById("d_pedido").textContent = orden.num_pedido || "-";
+
+  const auditoriaBox = document.getElementById("d_auditoria");
+  if (orden.creado_por || orden.modificado_por) {
+    const [creadorNombre, modificadorNombre] = await Promise.all([
+      nombrePorUserId(orden.creado_por),
+      nombrePorUserId(orden.modificado_por),
+    ]);
+    const partes = [];
+    if (creadorNombre) partes.push(`Creado por ${creadorNombre}`);
+    if (modificadorNombre && orden.modificado_at) {
+      partes.push(`última modificación por ${modificadorNombre} el ${new Date(orden.modificado_at).toLocaleString("es-ES")}`);
+    }
+    auditoriaBox.textContent = partes.join(" · ");
+  } else {
+    auditoriaBox.textContent = "";
+  }
 
   const montadores = await cargarMontadores();
   const selMontador = document.getElementById("d_montador");
