@@ -42,7 +42,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .estado-incidencia{background:#fef2f2;color:#dc2626;}
 
 #overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.15);z-index:30;}
-#panel_detalle{display:none;position:fixed;top:0;right:0;bottom:0;width:min(820px,100vw);background:var(--card);border-left:1px solid var(--border);box-shadow:-10px 0 30px -20px rgba(0,0,0,.3);z-index:31;display:flex;flex-direction:column;}
+#panel_detalle{display:none;position:fixed;top:0;right:0;bottom:0;width:min(820px,100vw);background:var(--card);border-left:1px solid var(--border);box-shadow:-10px 0 30px -20px rgba(0,0,0,.3);z-index:31;flex-direction:column;}
 #panel_detalle .panel-head{padding:18px 24px 0;}
 #panel_detalle .panel-head h3{margin:0 0 4px;}
 #panel_detalle .tabs{display:flex;gap:2px;padding:0 24px;border-bottom:1px solid var(--border);flex-wrap:wrap;}
@@ -477,10 +477,7 @@ async function cargarPedidos() {
   if (!tabla) {
     tabla = new Tabulator("#tabla_pedidos", {
       data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 210px)",
-      rowClick: (e, row) => {
-        console.log("rowClick disparado", row.getData());
-        abrirPanel(row.getData()).catch(err => console.error("abrirPanel error:", err));
-      },
+      rowClick: (e, row) => abrirPanel(row.getData()),
     });
   } else {
     tabla.setColumns(columnas);
@@ -491,12 +488,10 @@ async function cargarPedidos() {
 function fechaInput(v) { return v ? v.slice(0, 10) : ""; }
 
 async function abrirPanel(orden) {
-  console.log("abrirPanel llamado con", orden);
   // recargamos la fila completa por si el listado no trae todos los campos
   const { data: full, error: errFull } = await client.from("ordenes").select("*").eq("anyo", orden.anyo).eq("orden", orden.orden).maybeSingle();
   if (errFull) console.error("error recargando orden completa:", errFull);
   const o = full || orden;
-  console.log("abrirPanel: o.tienda_id =", o.tienda_id, "o.dependiente_id =", o.dependiente_id);
   pedidoActivo = { anyo: o.anyo, orden: o.orden };
 
   document.getElementById("d_titulo").textContent = `Orden ${o.anyo}/${o.orden}`;
