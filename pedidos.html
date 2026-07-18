@@ -53,6 +53,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .campo{margin-bottom:14px;}
 .campo label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;}
 .campo select,.campo textarea,.campo input{width:100%;}
+.aviso-carga{padding:0 24px 8px;color:var(--muted);font-size:13px;}
 #modal_nueva_orden{display:none;position:fixed;inset:0;background:rgba(0,0,0,.25);align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto;z-index:40;}
 #modal_nueva_orden .card{background:var(--card);border:1px solid var(--border);border-radius:10px;width:100%;max-width:640px;padding:20px;}
 .error{display:none;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:16px;}
@@ -108,12 +109,21 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 </div>
 
 <div class="barra">
+  <div class="campo-mini" style="max-width:100px;">
+    <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;">Año desde</label>
+    <input id="anyo_desde" type="number" onchange="cargarPedidos()">
+  </div>
+  <div class="campo-mini" style="max-width:100px;">
+    <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;">Año hasta</label>
+    <input id="anyo_hasta" type="number" onchange="cargarPedidos()">
+  </div>
   <select id="filtro_estado" onchange="cargarPedidos()">
     <option value="">Todos los estados</option>
   </select>
   <input id="buscador" type="text" placeholder="Buscar por nº pedido, cliente o centro..." oninput="cargarPedidos()">
   <button onclick="abrirModalNuevaOrden()">+ Nueva Orden</button>
 </div>
+<div class="aviso-carga" id="aviso_carga"></div>
 
 <div class="tabla-scroll"><div id="tabla_pedidos"></div></div>
 
@@ -180,6 +190,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 <div id="panel_detalle">
   <div class="panel-head">
     <button class="secondary" onclick="cerrarPanel()" style="float:right;">✕</button>
+    <button class="secondary" onclick="eliminarOrdenActiva()" style="float:right;margin-right:8px;color:#dc2626;">Eliminar orden</button>
     <h3 id="d_titulo"></h3>
     <div id="d_auditoria" style="color:var(--muted);font-size:11px;margin-bottom:10px;"></div>
   </div>
@@ -382,7 +393,7 @@ async function comprobarSesion() {
   if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
   staffUserId = staffRow.user_id;
   await llenarSelectEstado("filtro_estado", "");
-  await cargarPedidos();
+  await cargarPedidos(); // sin año desde/hasta: trae las más recientes de cualquier año (hasta el límite)
 
   const params = new URLSearchParams(window.location.search);
   const anyoParam = parseInt(params.get("anyo"), 10);
@@ -561,18 +572,26 @@ async function logout() {
 async function cargarPedidos() {
   const estado = document.getElementById("filtro_estado").value;
   const busqueda = document.getElementById("buscador").value.trim();
+  const anyoDesde = parseInt(document.getElementById("anyo_desde").value, 10);
+  const anyoHasta = parseInt(document.getElementById("anyo_hasta").value, 10);
 
   let query = client.from("ordenes")
     .select("anyo, orden, centro, nombre_cli, num_pedido, estado, fecha_creacion, importe_total, montador_id, creado_por, modificado_por, modificado_at")
     .order("anyo", { ascending: false })
     .order("orden", { ascending: false })
-    .limit(200);
+    .limit(500);
 
+  if (!isNaN(anyoDesde)) query = query.gte("anyo", anyoDesde);
+  if (!isNaN(anyoHasta)) query = query.lte("anyo", anyoHasta);
   if (estado) query = query.eq("estado", estado);
   if (busqueda) query = query.or(`num_pedido.ilike.%${busqueda}%,nombre_cli.ilike.%${busqueda}%,centro.ilike.%${busqueda}%`);
 
   const { data, error } = await query;
   if (error) { console.error(error); return; }
+
+  document.getElementById("aviso_carga").textContent = data.length >= 500
+    ? `${data.length} órdenes cargadas. Puede haber más — acota el rango de años o usa la búsqueda.`
+    : `${data.length} órdenes.`;
 
   const columnas = [
     { title: "Año", field: "anyo", width: 70 },
@@ -678,6 +697,20 @@ function cerrarPanel() {
   document.getElementById("panel_detalle").style.display = "none";
   document.getElementById("overlay").style.display = "none";
   pedidoActivo = null;
+}
+
+async function eliminarOrdenActiva() {
+  if (!pedidoActivo) return;
+  const { anyo, orden } = pedidoActivo;
+  const confirmacion = prompt(`Esto borrará permanentemente la orden ${anyo}/${orden} y todas sus líneas, citas, incidencias, fotos y llamadas.\n\nEscribe el número de orden (${orden}) para confirmar:`);
+  if (confirmacion === null) return;
+  if (confirmacion.trim() !== String(orden)) { alert("No coincide, no se ha borrado nada."); return; }
+
+  const { error } = await client.rpc("eliminar_orden", { p_anyo: anyo, p_orden: orden });
+  if (error) { alert("No se pudo eliminar: " + error.message); return; }
+
+  cerrarPanel();
+  await cargarPedidos();
 }
 
 async function guardarCabecera() {
