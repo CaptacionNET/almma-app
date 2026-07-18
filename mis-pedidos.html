@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - Mis pedidos</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
+<style>
+:root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+#topbar{display:flex;justify-content:space-between;align-items:center;padding:14px 24px;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap;gap:10px;}
+#topbar .brand{font-weight:700;font-size:18px;color:var(--primary);}
+#topbar .brand small{display:block;font-size:12px;font-weight:400;color:var(--muted);}
+button{background:var(--primary);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;}
+button:hover{opacity:.9;}
+button.secondary{background:#fff;color:var(--text);border:1px solid var(--border);}
+button:disabled{opacity:.6;cursor:default;}
+input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;margin:24px;padding:20px;}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;}
+.campo label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;}
+.campo input,.campo select,.campo textarea{width:100%;}
+.estado-pill{padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;display:inline-block;}
+.estado-en_proceso{background:#eef2ff;color:#4338ca;}
+.estado-recepcionado_parcial{background:#fef9c3;color:#a16207;}
+.estado-recepcionado_total{background:#ecfeff;color:#0e7490;}
+.estado-agendado{background:#f5f3ff;color:#6d28d9;}
+.estado-completado{background:#f0fdf4;color:#15803d;}
+.estado-incidencia{background:#fef2f2;color:#dc2626;}
+.aviso-ok{display:none;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:16px;}
+.error{display:none;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:16px;}
+.tabla-scroll{margin:0 24px 24px;overflow-x:auto;}
+.lineas-table{width:100%;font-size:13px;border-collapse:collapse;margin-top:8px;}
+.lineas-table th,.lineas-table td{border-bottom:1px solid var(--border);padding:6px 4px;text-align:left;}
+.buscador-articulo{position:relative;}
+.sugerencias{display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 10px 20px -10px rgba(0,0,0,.2);max-height:220px;overflow-y:auto;z-index:5;}
+.sugerencias div{padding:8px 10px;cursor:pointer;font-size:13px;}
+.sugerencias div:hover{background:#f5f6fa;}
+#modal_nuevo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.25);align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto;z-index:10;}
+#modal_nuevo .card{width:100%;max-width:640px;margin:0;}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div class="brand">ALMMA · Mis pedidos<small id="tienda_nombre"></small></div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;">
+    <button onclick="abrirModalNuevo()">+ Nuevo pedido</button>
+    <button class="secondary" onclick="logout()">Cerrar sesión</button>
+  </div>
+</div>
+
+<div class="tabla-scroll"><div id="tabla_pedidos"></div></div>
+
+<!-- modal nuevo pedido -->
+<div id="modal_nuevo">
+  <div class="card">
+    <button class="secondary" onclick="cerrarModalNuevo()" style="float:right;">✕</button>
+    <h3 style="margin-top:0;">Nuevo pedido</h3>
+    <p id="aviso" class="aviso-ok"></p>
+    <p id="error" class="error"></p>
+
+    <div class="form-grid">
+      <div class="campo">
+        <label for="nombre_cli">Cliente</label>
+        <input id="nombre_cli" required>
+      </div>
+      <div class="campo">
+        <label for="telefono_cli">Teléfono</label>
+        <input id="telefono_cli">
+      </div>
+      <div class="campo" style="grid-column:1/-1;">
+        <label for="domicilio_cli">Dirección</label>
+        <input id="domicilio_cli">
+      </div>
+      <div class="campo">
+        <label for="localidad_cli">Localidad</label>
+        <input id="localidad_cli">
+      </div>
+      <div class="campo">
+        <label for="num_pedido">Nº pedido / albarán</label>
+        <input id="num_pedido">
+      </div>
+    </div>
+
+    <h4>Líneas del pedido</h4>
+    <div class="form-grid">
+      <div class="campo buscador-articulo" style="grid-column:1/3;">
+        <label for="buscar_articulo">Artículo</label>
+        <input id="buscar_articulo" placeholder="Buscar por código o descripción...">
+        <div id="sugerencias" class="sugerencias"></div>
+      </div>
+      <div class="campo">
+        <label for="cantidad_linea">Cantidad</label>
+        <input id="cantidad_linea" type="number" step="1" value="1" min="1">
+      </div>
+    </div>
+    <button type="button" class="secondary" onclick="anyadirLinea()">+ Añadir línea</button>
+
+    <table class="lineas-table" id="tabla_lineas_nuevo">
+      <tr><th>Artículo</th><th>Descripción</th><th>Cant.</th><th></th></tr>
+    </table>
+
+    <button style="margin-top:18px;" onclick="crearPedido()">Crear pedido</button>
+  </div>
+</div>
+
+<script>
+const client = supabase.createClient(
+  "https://uamgbtbsxbrgymhqalak.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k"
+);
+
+let tabla = null;
+let dependiente = null;
+let lineasNuevoPedido = [];
+let articuloSeleccionado = null;
+
+async function comprobarSesion() {
+  const { data: { user } } = await client.auth.getUser();
+  if (!user) { window.location.href = "login.html"; return; }
+
+  const { data: depRow } = await client.from("dependientes")
+    .select("id, nombre, tienda_id, tiendas(nombre)").eq("user_id", user.id).maybeSingle();
+
+  if (!depRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
+
+  dependiente = depRow;
+  document.getElementById("tienda_nombre").textContent = depRow.tiendas?.nombre || "";
+  cargarPedidos();
+}
+
+async function logout() {
+  await client.auth.signOut();
+  window.location.href = "login.html";
+}
+
+async function cargarPedidos() {
+  const { data, error } = await client.from("ordenes")
+    .select("anyo, orden, nombre_cli, num_pedido, estado, fecha_creacion, importe_total")
+    .eq("tienda_id", dependiente.tienda_id)
+    .order("anyo", { ascending: false })
+    .order("orden", { ascending: false })
+    .limit(200);
+  if (error) { console.error(error); return; }
+
+  const columnas = [
+    { title: "Año", field: "anyo", width: 70 },
+    { title: "Pedido", field: "orden", width: 90 },
+    { title: "Cliente", field: "nombre_cli" },
+    { title: "Nº pedido", field: "num_pedido" },
+    { title: "Estado", field: "estado", formatter: (cell) => {
+        const v = cell.getValue() || "en_proceso";
+        return `<span class="estado-pill estado-${v}">${v.replace(/_/g, " ")}</span>`;
+      } },
+    { title: "Importe", field: "importe_total", formatter: "money", formatterParams: { symbol: "€", precision: 2 } },
+  ];
+
+  if (!tabla) {
+    tabla = new Tabulator("#tabla_pedidos", { data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 80px)" });
+  } else {
+    tabla.setData(data);
+  }
+}
+
+function abrirModalNuevo() {
+  lineasNuevoPedido = [];
+  renderLineas();
+  document.getElementById("aviso").style.display = "none";
+  document.getElementById("error").style.display = "none";
+  document.getElementById("modal_nuevo").style.display = "flex";
+}
+
+function cerrarModalNuevo() {
+  document.getElementById("modal_nuevo").style.display = "none";
+}
+
+let debounceTimer = null;
+document.getElementById("buscar_articulo").addEventListener("input", (e) => {
+  articuloSeleccionado = null;
+  clearTimeout(debounceTimer);
+  const texto = e.target.value.trim();
+  const caja = document.getElementById("sugerencias");
+  if (texto.length < 2) { caja.style.display = "none"; return; }
+  debounceTimer = setTimeout(async () => {
+    const { data } = await client.from("articulos")
+      .select("articulo, descripcion")
+      .or(`articulo.ilike.%${texto}%,descripcion.ilike.%${texto}%`)
+      .limit(15);
+    caja.innerHTML = (data || []).map(a =>
+      `<div data-art="${a.articulo}" data-desc="${(a.descripcion || "").replace(/"/g, "&quot;")}">${a.articulo} — ${a.descripcion || ""}</div>`
+    ).join("");
+    caja.style.display = data && data.length ? "block" : "none";
+  }, 250);
+});
+
+document.getElementById("sugerencias").addEventListener("click", (e) => {
+  const fila = e.target.closest("[data-art]");
+  if (!fila) return;
+  articuloSeleccionado = { articulo: fila.dataset.art, descripcion: fila.dataset.desc };
+  document.getElementById("buscar_articulo").value = `${fila.dataset.art} — ${fila.dataset.desc}`;
+  document.getElementById("sugerencias").style.display = "none";
+});
+
+function anyadirLinea() {
+  const cantidad = parseInt(document.getElementById("cantidad_linea").value, 10) || 1;
+  if (!articuloSeleccionado) { alert("Busca y selecciona un artículo de la lista antes de añadirlo."); return; }
+  lineasNuevoPedido.push({ ...articuloSeleccionado, cantidad });
+  articuloSeleccionado = null;
+  document.getElementById("buscar_articulo").value = "";
+  document.getElementById("cantidad_linea").value = 1;
+  renderLineas();
+}
+
+function quitarLinea(i) {
+  lineasNuevoPedido.splice(i, 1);
+  renderLineas();
+}
+
+function renderLineas() {
+  const tabla = document.getElementById("tabla_lineas_nuevo");
+  tabla.innerHTML = "<tr><th>Artículo</th><th>Descripción</th><th>Cant.</th><th></th></tr>" +
+    lineasNuevoPedido.map((l, i) =>
+      `<tr><td>${l.articulo}</td><td>${l.descripcion || ""}</td><td>${l.cantidad}</td>
+       <td><button type="button" class="secondary" onclick="quitarLinea(${i})">Quitar</button></td></tr>`
+    ).join("");
+}
+
+async function crearPedido() {
+  const errorBox = document.getElementById("error");
+  const avisoBox = document.getElementById("aviso");
+  errorBox.style.display = "none";
+  avisoBox.style.display = "none";
+
+  const nombre_cli = document.getElementById("nombre_cli").value.trim();
+  if (!nombre_cli) { errorBox.textContent = "Falta el nombre del cliente."; errorBox.style.display = "block"; return; }
+  if (lineasNuevoPedido.length === 0) { errorBox.textContent = "Añade al menos una línea de artículo."; errorBox.style.display = "block"; return; }
+
+  const domicilio_cli = document.getElementById("domicilio_cli").value.trim();
+  const localidad_cli = document.getElementById("localidad_cli").value.trim();
+  const telefono_cli = document.getElementById("telefono_cli").value.trim();
+  const num_pedido = document.getElementById("num_pedido").value.trim();
+
+  const { data, error } = await client.rpc("crear_pedido", {
+    p_nombre_cli: nombre_cli,
+    p_domicilio_cli: domicilio_cli,
+    p_localidad_cli: localidad_cli,
+    p_telefono_cli: telefono_cli,
+    p_num_pedido: num_pedido,
+    p_lineas: lineasNuevoPedido.map(l => ({ articulo: l.articulo, descripcion: l.descripcion, cantidad: l.cantidad })),
+  });
+
+  if (error) { errorBox.textContent = "No se pudo crear el pedido: " + error.message; errorBox.style.display = "block"; return; }
+
+  const { anyo, orden } = data[0];
+  avisoBox.textContent = `Pedido ${anyo}/${orden} creado correctamente.`;
+  avisoBox.style.display = "block";
+  cargarPedidos();
+  setTimeout(cerrarModalNuevo, 1200);
+}
+
+comprobarSesion();
+</script>
+</body>
+</html>

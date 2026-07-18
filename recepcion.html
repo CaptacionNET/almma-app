@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - Recepción de mercancía</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
+<style>
+:root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+#topbar{display:flex;justify-content:space-between;align-items:center;padding:14px 24px;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap;gap:10px;}
+#topbar .brand{font-weight:700;font-size:18px;color:var(--primary);}
+button{background:var(--primary);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;}
+button:hover{opacity:.9;}
+button.secondary{background:#fff;color:var(--text);border:1px solid var(--border);}
+input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;margin:24px;padding:20px;}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;}
+.campo label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;}
+.campo input,.campo select,.campo textarea{width:100%;}
+.aviso-ok{display:none;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:16px;}
+.error{display:none;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:16px;}
+.tabla-scroll{margin:0 24px 24px;overflow-x:auto;}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div class="brand">ALMMA · Recepción</div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;">
+    <button class="secondary" onclick="window.location.href='pedidos.html'">Pedidos</button>
+    <button class="secondary" onclick="window.location.href='recepcion.html'">Recepción</button>
+    <button class="secondary" onclick="logout()">Cerrar sesión</button>
+  </div>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0;">Registrar entrada de mercancía</h3>
+  <p id="aviso" class="aviso-ok"></p>
+  <p id="error" class="error"></p>
+
+  <form id="form_recepcion">
+    <div class="form-grid">
+      <div class="campo">
+        <label for="almacen">Almacén</label>
+        <select id="almacen" required></select>
+      </div>
+      <div class="campo">
+        <label for="articulo">Artículo</label>
+        <input id="articulo" list="lista_articulos" placeholder="Código de artículo" required>
+        <datalist id="lista_articulos"></datalist>
+      </div>
+      <div class="campo">
+        <label for="descripcion">Descripción</label>
+        <input id="descripcion" placeholder="(se rellena sola si el artículo existe)">
+      </div>
+      <div class="campo">
+        <label for="cantidad">Cantidad</label>
+        <input id="cantidad" type="number" step="any" required>
+      </div>
+      <div class="campo">
+        <label for="ubicacion">Ubicación en almacén</label>
+        <input id="ubicacion" placeholder="ej. A-12">
+      </div>
+      <div class="campo">
+        <label for="num_pedido">Nº pedido / albarán</label>
+        <input id="num_pedido">
+      </div>
+      <div class="campo">
+        <label for="tienda">Tienda (opcional)</label>
+        <select id="tienda"><option value="">-- sin asignar --</option></select>
+      </div>
+    </div>
+    <div class="campo" style="margin-top:14px;">
+      <label for="observacion">Observaciones</label>
+      <textarea id="observacion" rows="2"></textarea>
+    </div>
+    <button type="submit" style="margin-top:16px;">Registrar recepción</button>
+  </form>
+</div>
+
+<div class="tabla-scroll"><div id="tabla_movimientos"></div></div>
+
+<script>
+const client = supabase.createClient(
+  "https://uamgbtbsxbrgymhqalak.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k"
+);
+
+let tabla = null;
+
+async function comprobarSesion() {
+  const { data: { user } } = await client.auth.getUser();
+  if (!user) { window.location.href = "login.html"; return; }
+  const { data: staffRow } = await client.from("staff").select("user_id").eq("user_id", user.id).maybeSingle();
+  if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
+  cargarSelectores();
+  cargarMovimientos();
+}
+
+async function logout() {
+  await client.auth.signOut();
+  window.location.href = "login.html";
+}
+
+async function cargarSelectores() {
+  const { data: almacenes } = await client.from("almacenes").select("codigo, texto").order("texto");
+  const selAlmacen = document.getElementById("almacen");
+  selAlmacen.innerHTML = (almacenes || []).map(a => `<option value="${a.codigo}">${a.texto || a.codigo}</option>`).join("");
+
+  const { data: tiendas } = await client.from("tiendas").select("id, nombre").order("nombre");
+  const selTienda = document.getElementById("tienda");
+  selTienda.innerHTML = '<option value="">-- sin asignar --</option>' +
+    (tiendas || []).map(t => `<option value="${t.id}">${t.nombre}</option>`).join("");
+
+  const { data: articulos } = await client.from("articulos").select("articulo, descripcion").limit(500);
+  const lista = document.getElementById("lista_articulos");
+  lista.innerHTML = (articulos || []).map(a => `<option value="${a.articulo}">${a.descripcion || ""}</option>`).join("");
+}
+
+document.getElementById("articulo").addEventListener("change", async (e) => {
+  const codigo = e.target.value.trim();
+  if (!codigo) return;
+  const { data } = await client.from("articulos").select("descripcion").eq("articulo", codigo).maybeSingle();
+  if (data) document.getElementById("descripcion").value = data.descripcion || "";
+});
+
+async function cargarMovimientos() {
+  const { data, error } = await client.from("alm_movimientos")
+    .select("almacen, anyo, nummov, articulo, descripcion, fechmov, cantidade, ubicacion, num_pedido, observacion")
+    .order("fechmov", { ascending: false })
+    .limit(100);
+  if (error) { console.error(error); return; }
+
+  const columnas = [
+    { title: "Fecha", field: "fechmov", formatter: (c) => c.getValue() ? new Date(c.getValue()).toLocaleString("es-ES") : "" },
+    { title: "Almacén", field: "almacen", width: 90 },
+    { title: "Artículo", field: "articulo" },
+    { title: "Descripción", field: "descripcion" },
+    { title: "Cantidad", field: "cantidade", width: 100 },
+    { title: "Ubicación", field: "ubicacion", width: 110 },
+    { title: "Nº pedido", field: "num_pedido" },
+  ];
+
+  if (!tabla) {
+    tabla = new Tabulator("#tabla_movimientos", { data, columns: columnas, layout: "fitColumns", height: "400px" });
+  } else {
+    tabla.setData(data);
+  }
+}
+
+document.getElementById("form_recepcion").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errorBox = document.getElementById("error");
+  const avisoBox = document.getElementById("aviso");
+  errorBox.style.display = "none";
+  avisoBox.style.display = "none";
+
+  const almacen = parseInt(document.getElementById("almacen").value, 10);
+  const articulo = document.getElementById("articulo").value.trim();
+  const descripcion = document.getElementById("descripcion").value.trim();
+  const cantidad = parseFloat(document.getElementById("cantidad").value);
+  const ubicacion = document.getElementById("ubicacion").value.trim();
+  const num_pedido = document.getElementById("num_pedido").value.trim();
+  const tienda_id = document.getElementById("tienda").value || null;
+  const observacion = document.getElementById("observacion").value.trim();
+
+  // nummov correlativo simple por almacén+año (máximo actual + 1)
+  const anyo = new Date().getFullYear();
+  const { data: ultimo } = await client.from("alm_movimientos")
+    .select("nummov").eq("almacen", almacen).eq("anyo", anyo)
+    .order("nummov", { ascending: false }).limit(1).maybeSingle();
+  const nummov = (ultimo?.nummov || 0) + 1;
+
+  const { error } = await client.from("alm_movimientos").insert({
+    almacen, anyo, nummov, articulo, descripcion,
+    fechmov: new Date().toISOString(),
+    cantidade: cantidad, ubicacion, num_pedido, tienda_id, observacion,
+  });
+
+  if (error) {
+    errorBox.textContent = "Error al registrar: " + error.message;
+    errorBox.style.display = "block";
+    return;
+  }
+
+  avisoBox.textContent = "Recepción registrada correctamente.";
+  avisoBox.style.display = "block";
+  e.target.reset();
+  cargarMovimientos();
+});
+
+comprobarSesion();
+</script>
+</body>
+</html>

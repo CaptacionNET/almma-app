@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - Pedidos</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
+<style>
+:root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+#topbar{display:flex;justify-content:space-between;align-items:center;padding:14px 24px;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap;gap:10px;}
+#topbar .brand{font-weight:700;font-size:18px;color:var(--primary);}
+button{background:var(--primary);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;}
+button:hover{opacity:.9;}
+button.secondary{background:#fff;color:var(--text);border:1px solid var(--border);}
+input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;}
+.barra{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:16px 24px;}
+.barra input{flex:1;min-width:220px;max-width:420px;}
+.tabla-scroll{margin:0 24px 24px;overflow-x:auto;}
+.estado-pill{padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;display:inline-block;}
+.estado-en_proceso{background:#eef2ff;color:#4338ca;}
+.estado-recepcionado_parcial{background:#fef9c3;color:#a16207;}
+.estado-recepcionado_total{background:#ecfeff;color:#0e7490;}
+.estado-agendado{background:#f5f3ff;color:#6d28d9;}
+.estado-completado{background:#f0fdf4;color:#15803d;}
+.estado-incidencia{background:#fef2f2;color:#dc2626;}
+#panel_detalle{display:none;position:fixed;top:0;right:0;bottom:0;width:480px;background:var(--card);border-left:1px solid var(--border);box-shadow:-10px 0 30px -20px rgba(0,0,0,.3);padding:24px;overflow-y:auto;}
+#panel_detalle h3{margin-top:0;}
+#panel_detalle h4{margin:22px 0 8px;font-size:14px;border-top:1px solid var(--border);padding-top:16px;}
+#panel_detalle .campo{margin-bottom:14px;}
+#panel_detalle label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;}
+#panel_detalle select,#panel_detalle textarea,#panel_detalle input{width:100%;}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.15);}
+.lineas-table{width:100%;font-size:13px;border-collapse:collapse;margin-top:8px;}
+.lineas-table th,.lineas-table td{border-bottom:1px solid var(--border);padding:6px 4px;text-align:left;}
+.btn-mini{padding:4px 8px;font-size:12px;border-radius:5px;}
+.mini-list{font-size:13px;}
+.mini-list .item{border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px;}
+.mini-list .item .meta{color:var(--muted);font-size:11px;margin-top:2px;}
+.pill-recibida{background:#f0fdf4;color:#15803d;padding:2px 8px;border-radius:999px;font-size:11px;}
+.form-inline{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+.form-inline > *{flex:1;min-width:100px;}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div class="brand">ALMMA · Pedidos</div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;">
+    <button class="secondary" onclick="window.location.href='pedidos.html'">Pedidos</button>
+    <button class="secondary" onclick="window.location.href='recepcion.html'">Recepción</button>
+    <button id="btn_montajes" class="secondary" style="display:none;" onclick="window.location.href='montador.html'">Mis montajes</button>
+    <button class="secondary" onclick="logout()">Cerrar sesión</button>
+  </div>
+</div>
+
+<div class="barra">
+  <select id="filtro_estado" onchange="cargarPedidos()">
+    <option value="">Todos los estados</option>
+    <option value="en_proceso">En proceso</option>
+    <option value="recepcionado_parcial">Recepcionado parcial</option>
+    <option value="recepcionado_total">Recepcionado total</option>
+    <option value="agendado">Agendado</option>
+    <option value="completado">Completado</option>
+    <option value="incidencia">Incidencia</option>
+  </select>
+  <input id="buscador" type="text" placeholder="Buscar por nº pedido, cliente o centro..." oninput="cargarPedidos()">
+</div>
+
+<div class="tabla-scroll"><div id="tabla_pedidos"></div></div>
+
+<div id="overlay" onclick="cerrarPanel()"></div>
+<div id="panel_detalle">
+  <button class="secondary" onclick="cerrarPanel()" style="float:right;">✕</button>
+  <h3 id="d_titulo"></h3>
+  <div class="campo">
+    <label>Estado</label>
+    <select id="d_estado">
+      <option value="en_proceso">En proceso</option>
+      <option value="recepcionado_parcial">Recepcionado parcial</option>
+      <option value="recepcionado_total">Recepcionado total</option>
+      <option value="agendado">Agendado</option>
+      <option value="completado">Completado</option>
+      <option value="incidencia">Incidencia</option>
+    </select>
+  </div>
+  <div class="campo">
+    <label>Cliente</label>
+    <div id="d_cliente"></div>
+  </div>
+  <div class="campo">
+    <label>Nº pedido / Albarán</label>
+    <div id="d_pedido"></div>
+  </div>
+  <div class="campo">
+    <label>Montador asignado</label>
+    <select id="d_montador"><option value="">-- sin asignar --</option></select>
+  </div>
+  <button onclick="guardarEstado()">Guardar cambios</button>
+
+  <div class="campo" style="margin-top:20px;">
+    <label>Líneas del pedido</label>
+    <table class="lineas-table" id="tabla_lineas"></table>
+  </div>
+
+  <h4>Citas de montaje</h4>
+  <div id="lista_citas" class="mini-list"></div>
+  <div class="form-inline">
+    <input id="cita_fecha" type="datetime-local">
+    <select id="cita_canal">
+      <option value="telefono">Teléfono</option>
+      <option value="whatsapp">WhatsApp</option>
+      <option value="email">Email</option>
+      <option value="presencial">Presencial</option>
+    </select>
+  </div>
+  <textarea id="cita_notas" rows="2" placeholder="Notas (opcional)" style="margin-top:8px;"></textarea>
+  <button class="secondary btn-mini" style="margin-top:8px;" onclick="agendarCita()">+ Agendar cita</button>
+
+  <h4>Incidencias</h4>
+  <div id="lista_incidencias" class="mini-list"></div>
+  <div class="form-inline">
+    <input id="inc_tipo" placeholder="Tipo (rotura, defecto...)">
+  </div>
+  <textarea id="inc_descripcion" rows="2" placeholder="Descripción de la incidencia" style="margin-top:8px;"></textarea>
+  <button class="secondary btn-mini" style="margin-top:8px;" onclick="crearIncidencia()">+ Registrar incidencia</button>
+</div>
+
+<script>
+const client = supabase.createClient(
+  "https://uamgbtbsxbrgymhqalak.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k"
+);
+
+let pedidoActivo = null;
+let tabla = null;
+let staffUserId = null;
+let montadoresCache = null;
+
+async function comprobarSesion() {
+  const { data: { user } } = await client.auth.getUser();
+  if (!user) { window.location.href = "login.html"; return; }
+  const { data: staffRow } = await client.from("staff").select("user_id, es_montador").eq("user_id", user.id).maybeSingle();
+  if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
+  staffUserId = staffRow.user_id;
+  if (staffRow.es_montador) document.getElementById("btn_montajes").style.display = "inline-block";
+  cargarPedidos();
+}
+
+async function cargarMontadores() {
+  if (montadoresCache) return montadoresCache;
+  const { data } = await client.from("staff").select("user_id, nombre").eq("es_montador", true).order("nombre");
+  montadoresCache = data || [];
+  return montadoresCache;
+}
+
+async function logout() {
+  await client.auth.signOut();
+  window.location.href = "login.html";
+}
+
+async function cargarPedidos() {
+  const estado = document.getElementById("filtro_estado").value;
+  const busqueda = document.getElementById("buscador").value.trim();
+
+  let query = client.from("ordenes")
+    .select("anyo, orden, centro, nombre_cli, num_pedido, estado, fecha_creacion, importe_total, montador_id")
+    .order("anyo", { ascending: false })
+    .order("orden", { ascending: false })
+    .limit(200);
+
+  if (estado) query = query.eq("estado", estado);
+  if (busqueda) query = query.or(`num_pedido.ilike.%${busqueda}%,nombre_cli.ilike.%${busqueda}%,centro.ilike.%${busqueda}%`);
+
+  const { data, error } = await query;
+  if (error) { console.error(error); return; }
+
+  const columnas = [
+    { title: "Año", field: "anyo", width: 70 },
+    { title: "Pedido", field: "orden", width: 90 },
+    { title: "Centro", field: "centro" },
+    { title: "Cliente", field: "nombre_cli" },
+    { title: "Nº pedido", field: "num_pedido" },
+    { title: "Estado", field: "estado", formatter: (cell) => {
+        const v = cell.getValue() || "en_proceso";
+        return `<span class="estado-pill estado-${v}">${v}</span>`;
+      } },
+    { title: "Importe", field: "importe_total", formatter: "money", formatterParams: { symbol: "€", precision: 2 } },
+  ];
+
+  if (!tabla) {
+    tabla = new Tabulator("#tabla_pedidos", {
+      data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 160px)",
+      rowClick: (e, row) => abrirPanel(row.getData()),
+    });
+  } else {
+    tabla.setColumns(columnas);
+    tabla.setData(data);
+  }
+}
+
+async function abrirPanel(orden) {
+  pedidoActivo = { anyo: orden.anyo, orden: orden.orden };
+  document.getElementById("d_titulo").textContent = `Pedido ${orden.anyo}/${orden.orden}`;
+  document.getElementById("d_estado").value = orden.estado || "en_proceso";
+  document.getElementById("d_cliente").textContent = orden.nombre_cli || "-";
+  document.getElementById("d_pedido").textContent = orden.num_pedido || "-";
+
+  const montadores = await cargarMontadores();
+  const selMontador = document.getElementById("d_montador");
+  selMontador.innerHTML = '<option value="">-- sin asignar --</option>' +
+    montadores.map(m => `<option value="${m.user_id}">${m.nombre || m.user_id}</option>`).join("");
+  selMontador.value = orden.montador_id || "";
+
+  await cargarLineas();
+  await cargarCitas();
+  await cargarIncidencias();
+
+  document.getElementById("panel_detalle").style.display = "block";
+  document.getElementById("overlay").style.display = "block";
+}
+
+async function cargarLineas() {
+  const { data: lineas } = await client.from("linorden")
+    .select("linea, articulo, descripcion, cantidad, importe, recibido_at")
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).order("linea");
+
+  const tbody = document.getElementById("tabla_lineas");
+  tbody.innerHTML = "<tr><th>Artículo</th><th>Cant.</th><th>Recibido</th><th></th></tr>" +
+    (lineas || []).map(l => {
+      const recibida = !!l.recibido_at;
+      const boton = recibida
+        ? `<span class="pill-recibida">${new Date(l.recibido_at).toLocaleDateString("es-ES")}</span> <button class="secondary btn-mini" onclick="marcarRecibida(${l.linea}, false)">Deshacer</button>`
+        : `<button class="btn-mini" onclick="marcarRecibida(${l.linea}, true)">Marcar recibida</button>`;
+      return `<tr><td>${l.descripcion || l.articulo || ""}</td><td>${l.cantidad ?? ""}</td><td colspan="2">${boton}</td></tr>`;
+    }).join("");
+}
+
+async function marcarRecibida(linea, recibida) {
+  const valores = recibida
+    ? { recibido_at: new Date().toISOString(), recibido_por: staffUserId }
+    : { recibido_at: null, recibido_por: null };
+  const { error } = await client.from("linorden").update(valores)
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).eq("linea", linea);
+  if (error) { alert("No se pudo actualizar: " + error.message); return; }
+  await cargarLineas();
+  // el estado del pedido puede haber cambiado solo (trigger de recepcion parcial/total)
+  const { data: ord } = await client.from("ordenes").select("estado").eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).maybeSingle();
+  if (ord) document.getElementById("d_estado").value = ord.estado;
+  cargarPedidos();
+}
+
+async function cargarCitas() {
+  const { data } = await client.from("citas_montaje")
+    .select("id, fecha_hora, canal, estado, notas")
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden)
+    .order("fecha_hora", { ascending: false });
+
+  const cont = document.getElementById("lista_citas");
+  cont.innerHTML = (data || []).map(c => `
+    <div class="item">
+      <strong>${new Date(c.fecha_hora).toLocaleString("es-ES")}</strong> — ${c.canal || ""} (${c.estado})
+      ${c.notas ? `<div class="meta">${c.notas}</div>` : ""}
+    </div>`).join("") || '<div class="meta">Sin citas todavía.</div>';
+}
+
+async function agendarCita() {
+  const fecha = document.getElementById("cita_fecha").value;
+  if (!fecha) { alert("Elige fecha y hora."); return; }
+  const canal = document.getElementById("cita_canal").value;
+  const notas = document.getElementById("cita_notas").value.trim();
+
+  const { error } = await client.from("citas_montaje").insert({
+    anyo: pedidoActivo.anyo, orden: pedidoActivo.orden,
+    fecha_hora: new Date(fecha).toISOString(), canal, notas: notas || null,
+    creado_por: staffUserId,
+  });
+  if (error) { alert("No se pudo agendar: " + error.message); return; }
+
+  document.getElementById("cita_fecha").value = "";
+  document.getElementById("cita_notas").value = "";
+  await cargarCitas();
+  const { data: ord } = await client.from("ordenes").select("estado").eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).maybeSingle();
+  if (ord) document.getElementById("d_estado").value = ord.estado;
+  cargarPedidos();
+}
+
+async function cargarIncidencias() {
+  const { data } = await client.from("incidencias")
+    .select("id, tipo, descripcion, estado, created_at")
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden)
+    .order("created_at", { ascending: false });
+
+  const cont = document.getElementById("lista_incidencias");
+  cont.innerHTML = (data || []).map(i => `
+    <div class="item">
+      <strong>${i.tipo || "Incidencia"}</strong> — ${i.estado}
+      <div class="meta">${i.descripcion || ""}</div>
+      <div class="meta">${new Date(i.created_at).toLocaleString("es-ES")}</div>
+      ${i.estado !== "resuelta" ? `<button class="secondary btn-mini" style="margin-top:6px;" onclick="resolverIncidencia('${i.id}')">Marcar resuelta</button>` : ""}
+    </div>`).join("") || '<div class="meta">Sin incidencias.</div>';
+}
+
+async function crearIncidencia() {
+  const tipo = document.getElementById("inc_tipo").value.trim();
+  const descripcion = document.getElementById("inc_descripcion").value.trim();
+  if (!descripcion) { alert("Describe la incidencia."); return; }
+
+  const { error } = await client.from("incidencias").insert({
+    anyo: pedidoActivo.anyo, orden: pedidoActivo.orden,
+    tipo: tipo || null, descripcion, creado_por: staffUserId,
+  });
+  if (error) { alert("No se pudo registrar: " + error.message); return; }
+
+  document.getElementById("inc_tipo").value = "";
+  document.getElementById("inc_descripcion").value = "";
+  await cargarIncidencias();
+  document.getElementById("d_estado").value = "incidencia";
+  cargarPedidos();
+}
+
+async function resolverIncidencia(id) {
+  const { error } = await client.from("incidencias")
+    .update({ estado: "resuelta", resuelto_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) { alert("No se pudo resolver: " + error.message); return; }
+  await cargarIncidencias();
+}
+
+function cerrarPanel() {
+  document.getElementById("panel_detalle").style.display = "none";
+  document.getElementById("overlay").style.display = "none";
+  pedidoActivo = null;
+}
+
+async function guardarEstado() {
+  if (!pedidoActivo) return;
+  const estado = document.getElementById("d_estado").value;
+  const montador_id = document.getElementById("d_montador").value || null;
+  const { error } = await client.from("ordenes")
+    .update({ estado, montador_id })
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden);
+  if (error) { alert("No se pudo guardar: " + error.message); return; }
+  cerrarPanel();
+  cargarPedidos();
+}
+
+comprobarSesion();
+</script>
+</body>
+</html>

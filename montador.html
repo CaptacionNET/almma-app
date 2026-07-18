@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - Mis montajes</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
+<style>
+:root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+#topbar{display:flex;justify-content:space-between;align-items:center;padding:14px 24px;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap;gap:10px;}
+#topbar .brand{font-weight:700;font-size:18px;color:var(--primary);}
+button{background:var(--primary);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;}
+button:hover{opacity:.9;}
+button.secondary{background:#fff;color:var(--text);border:1px solid var(--border);}
+button:disabled{opacity:.6;cursor:default;}
+input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;}
+.tabla-scroll{margin:0 24px 24px;overflow-x:auto;}
+.estado-pill{padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;display:inline-block;}
+.estado-en_proceso{background:#eef2ff;color:#4338ca;}
+.estado-recepcionado_parcial{background:#fef9c3;color:#a16207;}
+.estado-recepcionado_total{background:#ecfeff;color:#0e7490;}
+.estado-agendado{background:#f5f3ff;color:#6d28d9;}
+.estado-completado{background:#f0fdf4;color:#15803d;}
+.estado-incidencia{background:#fef2f2;color:#dc2626;}
+#panel_detalle{display:none;position:fixed;top:0;right:0;bottom:0;width:480px;background:var(--card);border-left:1px solid var(--border);box-shadow:-10px 0 30px -20px rgba(0,0,0,.3);padding:24px;overflow-y:auto;}
+#panel_detalle h3{margin-top:0;}
+#panel_detalle h4{margin:22px 0 8px;font-size:14px;border-top:1px solid var(--border);padding-top:16px;}
+#panel_detalle .campo{margin-bottom:14px;}
+#panel_detalle label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;}
+#panel_detalle select,#panel_detalle textarea,#panel_detalle input{width:100%;}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.15);}
+.lineas-table{width:100%;font-size:13px;border-collapse:collapse;margin-top:8px;}
+.lineas-table th,.lineas-table td{border-bottom:1px solid var(--border);padding:6px 4px;text-align:left;}
+.pill-recibida{background:#f0fdf4;color:#15803d;padding:2px 8px;border-radius:999px;font-size:11px;}
+.pill-pendiente{background:#fef9c3;color:#a16207;padding:2px 8px;border-radius:999px;font-size:11px;}
+.mini-list{font-size:13px;}
+.mini-list .item{border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px;}
+.mini-list .item .meta{color:var(--muted);font-size:11px;margin-top:2px;}
+.mini-list .item a{color:var(--primary);}
+.btn-mini{padding:4px 8px;font-size:12px;border-radius:5px;}
+canvas#firma_canvas{border:1px solid var(--border);border-radius:8px;width:100%;height:160px;touch-action:none;background:#fafbfe;}
+.aviso-ok{display:none;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:16px;}
+.error{display:none;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:16px;}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div class="brand">ALMMA · Mis montajes</div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;">
+    <button class="secondary" onclick="window.location.href='pedidos.html'">Pedidos</button>
+    <button class="secondary" onclick="logout()">Cerrar sesión</button>
+  </div>
+</div>
+
+<div class="tabla-scroll"><div id="tabla_montajes"></div></div>
+
+<div id="overlay" onclick="cerrarPanel()"></div>
+<div id="panel_detalle">
+  <button class="secondary" onclick="cerrarPanel()" style="float:right;">✕</button>
+  <h3 id="d_titulo"></h3>
+  <p id="aviso" class="aviso-ok"></p>
+  <p id="error" class="error"></p>
+
+  <div class="campo"><label>Estado</label><div id="d_estado_txt"></div></div>
+  <div class="campo"><label>Cliente</label><div id="d_cliente"></div></div>
+  <div class="campo"><label>Dirección</label><div id="d_direccion"></div></div>
+  <div class="campo"><label>Teléfono</label><div id="d_telefono"></div></div>
+
+  <div class="campo" style="margin-top:20px;">
+    <label>Mercancía del pedido</label>
+    <table class="lineas-table" id="tabla_lineas"></table>
+  </div>
+
+  <h4>Fotos</h4>
+  <div id="lista_fotos" class="mini-list"></div>
+  <select id="foto_categoria">
+    <option value="entrega_ok">Entrega OK</option>
+    <option value="incidencia">Incidencia</option>
+    <option value="otro">Otro</option>
+  </select>
+  <input id="foto_comentario" placeholder="Comentario (opcional)" style="margin-top:8px;">
+  <input id="foto_archivo" type="file" accept="image/*" capture="environment" style="margin-top:8px;">
+  <button class="secondary btn-mini" style="margin-top:8px;" onclick="subirFoto()">+ Subir foto</button>
+
+  <h4>Firma de entrega</h4>
+  <div id="entrega_previa" class="mini-list"></div>
+  <div class="campo">
+    <label>Nombre de quien firma</label>
+    <input id="firma_nombre">
+  </div>
+  <label>Firma</label>
+  <canvas id="firma_canvas" width="400" height="160"></canvas>
+  <button type="button" class="secondary btn-mini" style="margin-top:6px;" onclick="limpiarFirma()">Borrar firma</button>
+  <textarea id="entrega_observaciones" rows="2" placeholder="Observaciones (opcional)" style="margin-top:8px;"></textarea>
+  <button style="margin-top:10px;" onclick="confirmarEntrega()">Confirmar entrega</button>
+</div>
+
+<script>
+const client = supabase.createClient(
+  "https://uamgbtbsxbrgymhqalak.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k"
+);
+
+let tabla = null;
+let pedidoActivo = null;
+let montadorUserId = null;
+
+async function comprobarSesion() {
+  const { data: { user } } = await client.auth.getUser();
+  if (!user) { window.location.href = "login.html"; return; }
+  const { data: staffRow } = await client.from("staff").select("user_id, es_montador").eq("user_id", user.id).maybeSingle();
+  if (!staffRow || !staffRow.es_montador) { window.location.href = "pedidos.html"; return; }
+  montadorUserId = staffRow.user_id;
+  cargarMontajes();
+}
+
+async function logout() {
+  await client.auth.signOut();
+  window.location.href = "login.html";
+}
+
+async function cargarMontajes() {
+  const { data, error } = await client.from("ordenes")
+    .select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, estado")
+    .eq("montador_id", montadorUserId)
+    .order("anyo", { ascending: false })
+    .order("orden", { ascending: false })
+    .limit(200);
+  if (error) { console.error(error); return; }
+
+  const columnas = [
+    { title: "Año", field: "anyo", width: 70 },
+    { title: "Pedido", field: "orden", width: 90 },
+    { title: "Cliente", field: "nombre_cli" },
+    { title: "Dirección", field: "domicilio_cli" },
+    { title: "Localidad", field: "localidad_cli" },
+    { title: "Estado", field: "estado", formatter: (cell) => {
+        const v = cell.getValue() || "en_proceso";
+        return `<span class="estado-pill estado-${v}">${v.replace(/_/g, " ")}</span>`;
+      } },
+  ];
+
+  if (!tabla) {
+    tabla = new Tabulator("#tabla_montajes", {
+      data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 80px)",
+      rowClick: (e, row) => abrirPanel(row.getData()),
+    });
+  } else {
+    tabla.setData(data);
+  }
+}
+
+async function abrirPanel(orden) {
+  pedidoActivo = { anyo: orden.anyo, orden: orden.orden };
+  document.getElementById("aviso").style.display = "none";
+  document.getElementById("error").style.display = "none";
+  document.getElementById("d_titulo").textContent = `Pedido ${orden.anyo}/${orden.orden}`;
+  document.getElementById("d_estado_txt").innerHTML = `<span class="estado-pill estado-${orden.estado || "en_proceso"}">${(orden.estado || "en_proceso").replace(/_/g, " ")}</span>`;
+  document.getElementById("d_cliente").textContent = orden.nombre_cli || "-";
+  document.getElementById("d_direccion").textContent = [orden.domicilio_cli, orden.localidad_cli].filter(Boolean).join(", ") || "-";
+  document.getElementById("d_telefono").textContent = orden.telefono_cli || "-";
+  document.getElementById("firma_nombre").value = orden.nombre_cli || "";
+
+  await cargarLineas();
+  await cargarFotos();
+  await cargarEntregaPrevia();
+  limpiarFirma();
+
+  document.getElementById("panel_detalle").style.display = "block";
+  document.getElementById("overlay").style.display = "block";
+}
+
+function cerrarPanel() {
+  document.getElementById("panel_detalle").style.display = "none";
+  document.getElementById("overlay").style.display = "none";
+  pedidoActivo = null;
+}
+
+async function cargarLineas() {
+  const { data: lineas } = await client.from("linorden")
+    .select("linea, articulo, descripcion, cantidad, recibido_at")
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).order("linea");
+
+  const tbody = document.getElementById("tabla_lineas");
+  tbody.innerHTML = "<tr><th>Artículo</th><th>Cant.</th><th></th></tr>" +
+    (lineas || []).map(l => {
+      const pill = l.recibido_at
+        ? '<span class="pill-recibida">recibido</span>'
+        : '<span class="pill-pendiente">pendiente</span>';
+      return `<tr><td>${l.descripcion || l.articulo || ""}</td><td>${l.cantidad ?? ""}</td><td>${pill}</td></tr>`;
+    }).join("");
+}
+
+async function cargarFotos() {
+  const { data } = await client.from("fotos_orden")
+    .select("id, storage_path, categoria, comentario, created_at")
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden)
+    .order("created_at", { ascending: false });
+
+  const cont = document.getElementById("lista_fotos");
+  cont.innerHTML = (data || []).map(f => `
+    <div class="item">
+      <strong>${f.categoria || "foto"}</strong> ${f.comentario ? "— " + f.comentario : ""}
+      <div class="meta">${new Date(f.created_at).toLocaleString("es-ES")} — <a href="#" onclick="verFoto('${f.storage_path}');return false;">ver</a></div>
+    </div>`).join("") || '<div class="meta">Sin fotos todavía.</div>';
+}
+
+async function verFoto(path) {
+  const { data, error } = await client.storage.from("ordenes-adjuntos").createSignedUrl(path, 300);
+  if (error) { alert("No se pudo abrir la foto: " + error.message); return; }
+  window.open(data.signedUrl, "_blank");
+}
+
+async function subirFoto() {
+  const errorBox = document.getElementById("error");
+  errorBox.style.display = "none";
+  const input = document.getElementById("foto_archivo");
+  const archivo = input.files[0];
+  if (!archivo) { errorBox.textContent = "Elige una foto primero."; errorBox.style.display = "block"; return; }
+
+  const categoria = document.getElementById("foto_categoria").value;
+  const comentario = document.getElementById("foto_comentario").value.trim();
+  const ext = (archivo.name.split(".").pop() || "jpg").toLowerCase();
+  const path = `${pedidoActivo.anyo}/${pedidoActivo.orden}/fotos/${Date.now()}.${ext}`;
+
+  const { error: errSubida } = await client.storage.from("ordenes-adjuntos").upload(path, archivo);
+  if (errSubida) { errorBox.textContent = "No se pudo subir la foto: " + errSubida.message; errorBox.style.display = "block"; return; }
+
+  const { error: errFila } = await client.from("fotos_orden").insert({
+    anyo: pedidoActivo.anyo, orden: pedidoActivo.orden,
+    storage_path: path, categoria, comentario: comentario || null,
+    subida_por: montadorUserId,
+  });
+  if (errFila) { errorBox.textContent = "Foto subida, pero no se pudo guardar el registro: " + errFila.message; errorBox.style.display = "block"; return; }
+
+  input.value = "";
+  document.getElementById("foto_comentario").value = "";
+  await cargarFotos();
+}
+
+// --- firma ---
+let dibujando = false;
+let ultimoPunto = null;
+
+function coordsCanvas(e) {
+  const canvas = document.getElementById("firma_canvas");
+  const rect = canvas.getBoundingClientRect();
+  const escalaX = canvas.width / rect.width;
+  const escalaY = canvas.height / rect.height;
+  const punto = e.touches ? e.touches[0] : e;
+  return { x: (punto.clientX - rect.left) * escalaX, y: (punto.clientY - rect.top) * escalaY };
+}
+
+function iniciarTrazo(e) {
+  e.preventDefault();
+  dibujando = true;
+  ultimoPunto = coordsCanvas(e);
+}
+
+function trazar(e) {
+  if (!dibujando) return;
+  e.preventDefault();
+  const canvas = document.getElementById("firma_canvas");
+  const ctx = canvas.getContext("2d");
+  const punto = coordsCanvas(e);
+  ctx.strokeStyle = "#1f2430";
+  ctx.lineWidth = 2;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(ultimoPunto.x, ultimoPunto.y);
+  ctx.lineTo(punto.x, punto.y);
+  ctx.stroke();
+  ultimoPunto = punto;
+}
+
+function terminarTrazo() { dibujando = false; }
+
+function limpiarFirma() {
+  const canvas = document.getElementById("firma_canvas");
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+function firmaVacia() {
+  const canvas = document.getElementById("firma_canvas");
+  const ctx = canvas.getContext("2d");
+  const datos = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  for (let i = 3; i < datos.length; i += 4) if (datos[i] !== 0) return false;
+  return true;
+}
+
+async function cargarEntregaPrevia() {
+  const { data } = await client.from("entregas")
+    .select("firmante_nombre, firmado_at")
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden)
+    .order("firmado_at", { ascending: false }).limit(1).maybeSingle();
+
+  const cont = document.getElementById("entrega_previa");
+  cont.innerHTML = data
+    ? `<div class="item">Ya firmado por <strong>${data.firmante_nombre || "-"}</strong> el ${new Date(data.firmado_at).toLocaleString("es-ES")}</div>`
+    : "";
+}
+
+async function confirmarEntrega() {
+  const errorBox = document.getElementById("error");
+  const avisoBox = document.getElementById("aviso");
+  errorBox.style.display = "none";
+  avisoBox.style.display = "none";
+
+  const firmante_nombre = document.getElementById("firma_nombre").value.trim();
+  if (!firmante_nombre) { errorBox.textContent = "Falta el nombre de quien firma."; errorBox.style.display = "block"; return; }
+  if (firmaVacia()) { errorBox.textContent = "Falta capturar la firma."; errorBox.style.display = "block"; return; }
+
+  const canvas = document.getElementById("firma_canvas");
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+  const path = `${pedidoActivo.anyo}/${pedidoActivo.orden}/firma/${Date.now()}.png`;
+
+  const { error: errSubida } = await client.storage.from("ordenes-adjuntos").upload(path, blob, { contentType: "image/png" });
+  if (errSubida) { errorBox.textContent = "No se pudo guardar la firma: " + errSubida.message; errorBox.style.display = "block"; return; }
+
+  const observaciones = document.getElementById("entrega_observaciones").value.trim();
+  const { error: errEntrega } = await client.from("entregas").insert({
+    anyo: pedidoActivo.anyo, orden: pedidoActivo.orden,
+    firmante_nombre, firma_storage_path: path,
+    observaciones: observaciones || null, montador_id: montadorUserId,
+  });
+  if (errEntrega) { errorBox.textContent = "No se pudo registrar la entrega: " + errEntrega.message; errorBox.style.display = "block"; return; }
+
+  avisoBox.textContent = "Entrega confirmada. Pedido marcado como completado.";
+  avisoBox.style.display = "block";
+  cargarMontajes();
+  setTimeout(cerrarPanel, 1500);
+}
+
+const canvasFirma = document.getElementById("firma_canvas");
+canvasFirma.addEventListener("mousedown", iniciarTrazo);
+canvasFirma.addEventListener("mousemove", trazar);
+window.addEventListener("mouseup", terminarTrazo);
+canvasFirma.addEventListener("touchstart", iniciarTrazo);
+canvasFirma.addEventListener("touchmove", trazar);
+canvasFirma.addEventListener("touchend", terminarTrazo);
+
+comprobarSesion();
+</script>
+</body>
+</html>
