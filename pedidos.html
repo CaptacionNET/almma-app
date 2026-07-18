@@ -53,6 +53,9 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .campo{margin-bottom:14px;}
 .campo label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;}
 .campo select,.campo textarea,.campo input{width:100%;}
+#modal_nueva_orden{display:none;position:fixed;inset:0;background:rgba(0,0,0,.25);align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto;z-index:40;}
+#modal_nueva_orden .card{background:var(--card);border:1px solid var(--border);border-radius:10px;width:100%;max-width:640px;padding:20px;}
+.error{display:none;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:16px;}
 .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px 16px;}
 .lineas-table{width:100%;font-size:13px;border-collapse:collapse;margin-top:8px;}
 .lineas-table th,.lineas-table td{border-bottom:1px solid var(--border);padding:6px 4px;text-align:left;}
@@ -109,9 +112,69 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
     <option value="">Todos los estados</option>
   </select>
   <input id="buscador" type="text" placeholder="Buscar por nº pedido, cliente o centro..." oninput="cargarPedidos()">
+  <button onclick="abrirModalNuevaOrden()">+ Nueva Orden</button>
 </div>
 
 <div class="tabla-scroll"><div id="tabla_pedidos"></div></div>
+
+<div id="modal_nueva_orden">
+  <div class="card">
+    <button class="secondary" onclick="cerrarModalNuevaOrden()" style="float:right;">✕</button>
+    <h3 style="margin-top:0;">Nueva Orden</h3>
+    <p id="no_error" class="error"></p>
+    <div class="form-grid">
+      <div class="campo">
+        <label for="no_tienda">Tienda</label>
+        <select id="no_tienda" onchange="cambioTiendaNuevaOrden()"></select>
+      </div>
+      <div class="campo">
+        <label for="no_dependiente">Dependiente</label>
+        <select id="no_dependiente"><option value="">-- sin asignar --</option></select>
+      </div>
+      <div class="campo">
+        <label for="no_tipo_orden">Tipo de Orden</label>
+        <input id="no_tipo_orden" type="number" value="1">
+      </div>
+      <div class="campo">
+        <label for="no_num_pedido">Nº Pedido</label>
+        <input id="no_num_pedido">
+      </div>
+    </div>
+    <h4>Datos Cliente</h4>
+    <div class="form-grid">
+      <div class="campo">
+        <label for="no_nombre_cli">Nombre</label>
+        <input id="no_nombre_cli">
+      </div>
+      <div class="campo">
+        <label for="no_domicilio_cli">Dirección</label>
+        <input id="no_domicilio_cli">
+      </div>
+      <div class="campo">
+        <label for="no_localidad_cli">Localidad</label>
+        <input id="no_localidad_cli">
+      </div>
+      <div class="campo">
+        <label for="no_provincia_cli">Provincia (cód.)</label>
+        <input id="no_provincia_cli">
+      </div>
+      <div class="campo">
+        <label for="no_telefono_cli">Teléfono</label>
+        <input id="no_telefono_cli">
+      </div>
+      <div class="campo">
+        <label for="no_telefono2_cli">Teléfono 2</label>
+        <input id="no_telefono2_cli">
+      </div>
+      <div class="campo">
+        <label for="no_dni_cli">DNI</label>
+        <input id="no_dni_cli">
+      </div>
+    </div>
+    <button onclick="crearNuevaOrden()">Crear</button>
+    <button class="secondary" onclick="cerrarModalNuevaOrden()">Cancelar</button>
+  </div>
+</div>
 
 <div id="overlay" onclick="cerrarPanel()"></div>
 <div id="panel_detalle">
@@ -382,14 +445,64 @@ async function llenarSelectTiendaCabecera(tiendaIdActual) {
   sel.value = tiendaIdActual || "";
 }
 
-async function llenarSelectDependiente(tiendaId, dependienteIdActual) {
-  const sel = document.getElementById("ch_dependiente");
+async function llenarSelectDependiente(tiendaId, dependienteIdActual, selectId = "ch_dependiente") {
+  const sel = document.getElementById(selectId);
   let query = client.from("dependientes").select("id, nombre").order("nombre");
   if (tiendaId) query = query.eq("tienda_id", tiendaId);
   const { data } = await query;
   sel.innerHTML = '<option value="">-- sin asignar --</option>' +
     (data || []).map(d => `<option value="${d.id}">${d.nombre || d.id}</option>`).join("");
   sel.value = dependienteIdActual || "";
+}
+
+async function abrirModalNuevaOrden() {
+  document.getElementById("no_error").style.display = "none";
+  const tiendas = await cargarTodasTiendas();
+  const selTienda = document.getElementById("no_tienda");
+  selTienda.innerHTML = '<option value="">-- selecciona --</option>' +
+    tiendas.map(t => `<option value="${t.id}">${t.nombre}</option>`).join("");
+  document.getElementById("no_dependiente").innerHTML = '<option value="">-- sin asignar --</option>';
+  document.getElementById("no_tipo_orden").value = 1;
+  ["no_num_pedido", "no_nombre_cli", "no_domicilio_cli", "no_localidad_cli", "no_provincia_cli", "no_telefono_cli", "no_telefono2_cli", "no_dni_cli"]
+    .forEach(id => document.getElementById(id).value = "");
+  document.getElementById("modal_nueva_orden").style.display = "flex";
+}
+
+function cerrarModalNuevaOrden() {
+  document.getElementById("modal_nueva_orden").style.display = "none";
+}
+
+function cambioTiendaNuevaOrden() {
+  const tiendaId = document.getElementById("no_tienda").value;
+  llenarSelectDependiente(tiendaId, null, "no_dependiente");
+}
+
+async function crearNuevaOrden() {
+  const errorBox = document.getElementById("no_error");
+  errorBox.style.display = "none";
+  const tiendaId = document.getElementById("no_tienda").value;
+  if (!tiendaId) { errorBox.textContent = "Selecciona una tienda."; errorBox.style.display = "block"; return; }
+
+  const { data, error } = await client.rpc("crear_orden_staff", {
+    p_tienda_id: tiendaId,
+    p_dependiente_id: document.getElementById("no_dependiente").value || null,
+    p_tipo_orden: parseInt(document.getElementById("no_tipo_orden").value, 10) || 1,
+    p_num_pedido: document.getElementById("no_num_pedido").value || null,
+    p_nombre_cli: document.getElementById("no_nombre_cli").value || null,
+    p_domicilio_cli: document.getElementById("no_domicilio_cli").value || null,
+    p_localidad_cli: document.getElementById("no_localidad_cli").value || null,
+    p_provincia_cli: document.getElementById("no_provincia_cli").value || null,
+    p_telefono_cli: document.getElementById("no_telefono_cli").value || null,
+    p_telefono2_cli: document.getElementById("no_telefono2_cli").value || null,
+    p_dni_cli: document.getElementById("no_dni_cli").value || null,
+  });
+
+  if (error) { errorBox.textContent = "No se pudo crear: " + error.message; errorBox.style.display = "block"; return; }
+
+  const nueva = data[0];
+  cerrarModalNuevaOrden();
+  await cargarPedidos();
+  await abrirPanel({ anyo: nueva.anyo, orden: nueva.orden });
 }
 
 async function llenarSelectTipoLinea() {
