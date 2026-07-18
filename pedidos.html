@@ -331,32 +331,36 @@ async function comprobarSesion() {
 }
 
 async function cargarMontadores() {
-  if (montadoresCache) return montadoresCache;
-  const { data } = await client.from("staff").select("user_id, nombre").eq("es_montador", true).order("nombre");
+  if (montadoresCache && montadoresCache.length) return montadoresCache;
+  const { data, error } = await client.from("staff").select("user_id, nombre").eq("es_montador", true).order("nombre");
+  if (error) console.error("cargarMontadores:", error);
   montadoresCache = data || [];
   return montadoresCache;
 }
 
 let situacionesCache = null;
 async function cargarSituaciones() {
-  if (situacionesCache) return situacionesCache;
-  const { data } = await client.from("situaciones_orden").select("codigo, descripcion").order("orden_visual");
+  if (situacionesCache && situacionesCache.length) return situacionesCache;
+  const { data, error } = await client.from("situaciones_orden").select("codigo, descripcion").order("orden_visual");
+  if (error) console.error("cargarSituaciones:", error);
   situacionesCache = data || [];
   return situacionesCache;
 }
 
 let tiposLineaCache = null;
 async function cargarTiposLinea() {
-  if (tiposLineaCache) return tiposLineaCache;
-  const { data } = await client.from("tipos_linea").select("codigo, descripcion").order("codigo");
+  if (tiposLineaCache && tiposLineaCache.length) return tiposLineaCache;
+  const { data, error } = await client.from("tipos_linea").select("codigo, descripcion").order("codigo");
+  if (error) console.error("cargarTiposLinea:", error);
   tiposLineaCache = data || [];
   return tiposLineaCache;
 }
 
 let todasTiendasCache = null;
 async function cargarTodasTiendas() {
-  if (todasTiendasCache) return todasTiendasCache;
-  const { data } = await client.from("tiendas").select("id, nombre, codigo_legado").order("nombre");
+  if (todasTiendasCache && todasTiendasCache.length) return todasTiendasCache;
+  const { data, error } = await client.from("tiendas").select("id, nombre, codigo_legado").order("nombre");
+  if (error) console.error("cargarTodasTiendas:", error);
   todasTiendasCache = data || [];
   return todasTiendasCache;
 }
