@@ -107,12 +107,6 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 <div class="barra">
   <select id="filtro_estado" onchange="cargarPedidos()">
     <option value="">Todos los estados</option>
-    <option value="en_proceso">En proceso</option>
-    <option value="recepcionado_parcial">Recepcionado parcial</option>
-    <option value="recepcionado_total">Recepcionado total</option>
-    <option value="agendado">Agendado</option>
-    <option value="completado">Completado</option>
-    <option value="incidencia">Incidencia</option>
   </select>
   <input id="buscador" type="text" placeholder="Buscar por nº pedido, cliente o centro..." oninput="cargarPedidos()">
 </div>
@@ -140,8 +134,8 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
   <!-- CABECERA -->
   <div class="tab-panel activa" id="tab_cabecera">
     <div class="form-grid">
-      <div class="campo"><label>Tienda</label><div id="ch_tienda">-</div></div>
-      <div class="campo"><label>Dependiente</label><div id="ch_dependiente">-</div></div>
+      <div class="campo"><label>Tienda</label><select id="ch_tienda" onchange="cambioTiendaCabecera()"><option value="">-- sin asignar --</option></select></div>
+      <div class="campo"><label>Dependiente</label><select id="ch_dependiente"><option value="">-- sin asignar --</option></select></div>
       <div class="campo"><label>Tipo de Orden</label><input id="ch_tipo_orden" type="number" value="1"></div>
       <div class="campo"><label>Nº Pedido</label><input id="ch_num_pedido"></div>
     </div>
@@ -167,14 +161,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
       <div class="campo"><label>Hora Montaje</label><input id="ch_horamont" placeholder="ej. 10.30"></div>
       <div class="campo">
         <label>Situación</label>
-        <select id="ch_estado">
-          <option value="en_proceso">En proceso</option>
-          <option value="recepcionado_parcial">Recepcionado parcial</option>
-          <option value="recepcionado_total">Recepcionado total</option>
-          <option value="agendado">Agendado</option>
-          <option value="completado">Completado</option>
-          <option value="incidencia">Incidencia</option>
-        </select>
+        <select id="ch_estado"></select>
       </div>
       <div class="campo"><label>Montador asignado</label><select id="ch_montador"><option value="">-- sin asignar --</option></select></div>
       <div class="campo"><label>Bultos (total líneas)</label><div id="ch_bultos">0</div></div>
@@ -207,19 +194,15 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
     <div class="form-grid">
       <div class="campo">
         <label>Tipo de línea</label>
-        <select id="ln_tipo">
-          <option value="1">1 - Normal</option>
-          <option value="3">3 - Texto</option>
-          <option value="4">4 - Servicio/Ajuste</option>
-        </select>
+        <select id="ln_tipo" onchange="cambioTipoLinea()"></select>
       </div>
-      <div class="campo buscador-articulo">
-        <label>Fabricante</label>
+      <div class="campo buscador-articulo" id="campo_fabricante">
+        <label>Fabricante (líneas de mercancía)</label>
         <input id="ln_fabricante_buscar" placeholder="Buscar fabricante...">
         <div id="ln_fabricante_sugerencias" class="sugerencias"></div>
       </div>
       <div class="campo buscador-articulo">
-        <label>Artículo</label>
+        <label id="label_articulo">Artículo</label>
         <input id="ln_articulo_buscar" placeholder="Buscar código o descripción...">
         <div id="ln_articulo_sugerencias" class="sugerencias"></div>
       </div>
@@ -336,6 +319,7 @@ async function comprobarSesion() {
   if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
   staffUserId = staffRow.user_id;
   if (staffRow.es_montador) document.getElementById("btn_montajes").style.display = "inline-block";
+  await llenarSelectEstado("filtro_estado", "");
   await cargarPedidos();
 
   const params = new URLSearchParams(window.location.search);
@@ -352,6 +336,93 @@ async function cargarMontadores() {
   const { data } = await client.from("staff").select("user_id, nombre").eq("es_montador", true).order("nombre");
   montadoresCache = data || [];
   return montadoresCache;
+}
+
+let situacionesCache = null;
+async function cargarSituaciones() {
+  if (situacionesCache) return situacionesCache;
+  const { data } = await client.from("situaciones_orden").select("codigo, descripcion").order("orden_visual");
+  situacionesCache = data || [];
+  return situacionesCache;
+}
+
+let tiposLineaCache = null;
+async function cargarTiposLinea() {
+  if (tiposLineaCache) return tiposLineaCache;
+  const { data } = await client.from("tipos_linea").select("codigo, descripcion").order("codigo");
+  tiposLineaCache = data || [];
+  return tiposLineaCache;
+}
+
+let todasTiendasCache = null;
+async function cargarTodasTiendas() {
+  if (todasTiendasCache) return todasTiendasCache;
+  const { data } = await client.from("tiendas").select("id, nombre, codigo_legado").order("nombre");
+  todasTiendasCache = data || [];
+  return todasTiendasCache;
+}
+
+async function llenarSelectEstado(selectId, valorActual) {
+  const situaciones = await cargarSituaciones();
+  const sel = document.getElementById(selectId);
+  const conTodas = selectId === "filtro_estado";
+  sel.innerHTML = (conTodas ? '<option value="">Todos los estados</option>' : "") +
+    situaciones.map(s => `<option value="${s.codigo}">${s.descripcion}</option>`).join("");
+  if (valorActual !== undefined) sel.value = valorActual;
+}
+
+async function llenarSelectTiendaCabecera(tiendaIdActual) {
+  const tiendas = await cargarTodasTiendas();
+  const sel = document.getElementById("ch_tienda");
+  sel.innerHTML = '<option value="">-- sin asignar --</option>' +
+    tiendas.map(t => `<option value="${t.id}">${t.nombre}</option>`).join("");
+  sel.value = tiendaIdActual || "";
+}
+
+async function llenarSelectDependiente(tiendaId, dependienteIdActual) {
+  const sel = document.getElementById("ch_dependiente");
+  let query = client.from("dependientes").select("id, nombre").order("nombre");
+  if (tiendaId) query = query.eq("tienda_id", tiendaId);
+  const { data } = await query;
+  sel.innerHTML = '<option value="">-- sin asignar --</option>' +
+    (data || []).map(d => `<option value="${d.id}">${d.nombre || d.id}</option>`).join("");
+  sel.value = dependienteIdActual || "";
+}
+
+async function llenarSelectTipoLinea() {
+  const tipos = await cargarTiposLinea();
+  const sel = document.getElementById("ln_tipo");
+  sel.innerHTML = tipos.map(t => `<option value="${t.codigo}">${t.codigo} - ${t.descripcion}</option>`).join("");
+  document.getElementById("campo_fabricante").style.display = "";
+  document.getElementById("label_articulo").textContent = "Artículo";
+}
+
+function cambioTiendaCabecera() {
+  const tiendaId = document.getElementById("ch_tienda").value;
+  llenarSelectDependiente(tiendaId, null);
+}
+
+function codigoLegadoTienda(tiendaId) {
+  const t = (todasTiendasCache || []).find(x => x.id === tiendaId);
+  return t?.codigo_legado || null;
+}
+
+async function cambioTipoLinea() {
+  const tipo = document.getElementById("ln_tipo").value;
+  const esServicio = tipo === "4";
+  document.getElementById("campo_fabricante").style.display = esServicio ? "none" : "";
+  document.getElementById("label_articulo").textContent = esServicio ? "Código de servicio de esta tienda" : "Artículo";
+  if (esServicio) {
+    const tiendaId = document.getElementById("ch_tienda").value;
+    const codigo = codigoLegadoTienda(tiendaId);
+    if (codigo) {
+      document.getElementById("ln_articulo_buscar").value = codigo;
+      document.getElementById("ln_articulo_buscar").dispatchEvent(new Event("input"));
+    }
+  } else {
+    document.getElementById("ln_articulo_buscar").value = "";
+    document.getElementById("ln_articulo_sugerencias").style.display = "none";
+  }
 }
 
 const nombresCache = {};
@@ -433,8 +504,8 @@ async function abrirPanel(orden) {
     auditoriaBox.textContent = partes.join(" · ");
   } else auditoriaBox.textContent = "";
 
-  document.getElementById("ch_tienda").textContent = o.tienda_id ? await nombrePorTienda(o.tienda_id) : "-";
-  document.getElementById("ch_dependiente").textContent = o.dependiente_id ? await nombrePorUserIdDependiente(o.dependiente_id) : "-";
+  await llenarSelectTiendaCabecera(o.tienda_id);
+  await llenarSelectDependiente(o.tienda_id, o.dependiente_id);
   document.getElementById("ch_tipo_orden").value = o.tipo_orden ?? 1;
   document.getElementById("ch_num_pedido").value = o.num_pedido || "";
   document.getElementById("ch_nombre_cli").value = o.nombre_cli || "";
@@ -450,7 +521,8 @@ async function abrirPanel(orden) {
   document.getElementById("ch_fecha_prev_montaje").value = fechaInput(o.fecha_prev_montaje);
   document.getElementById("ch_fecha_montaje").value = fechaInput(o.fecha_montaje);
   document.getElementById("ch_horamont").value = o.horamont || "";
-  document.getElementById("ch_estado").value = o.estado || "en_proceso";
+  await llenarSelectEstado("ch_estado", o.estado || "en_proceso");
+  await llenarSelectTipoLinea();
   document.getElementById("ch_importe_total").value = o.importe_total ?? "";
   document.getElementById("ch_entrega_a_cuenta").value = o.entrega_a_cuenta ?? "";
   document.getElementById("ch_importe_pendiente").value = o.importe_pendiente ?? "";
@@ -476,18 +548,6 @@ async function abrirPanel(orden) {
   document.getElementById("overlay").style.display = "block";
 }
 
-const tiendaNombreCache = {};
-async function nombrePorTienda(id) {
-  if (tiendaNombreCache[id]) return tiendaNombreCache[id];
-  const { data } = await client.from("tiendas").select("nombre").eq("id", id).maybeSingle();
-  tiendaNombreCache[id] = data?.nombre || id;
-  return tiendaNombreCache[id];
-}
-async function nombrePorUserIdDependiente(dependienteId) {
-  const { data } = await client.from("dependientes").select("nombre").eq("id", dependienteId).maybeSingle();
-  return data?.nombre || dependienteId;
-}
-
 function cerrarPanel() {
   document.getElementById("panel_detalle").style.display = "none";
   document.getElementById("overlay").style.display = "none";
@@ -497,6 +557,8 @@ function cerrarPanel() {
 async function guardarCabecera() {
   if (!pedidoActivo) return;
   const valores = {
+    tienda_id: document.getElementById("ch_tienda").value || null,
+    dependiente_id: document.getElementById("ch_dependiente").value || null,
     tipo_orden: parseInt(document.getElementById("ch_tipo_orden").value, 10) || 1,
     num_pedido: document.getElementById("ch_num_pedido").value.trim() || null,
     nombre_cli: document.getElementById("ch_nombre_cli").value.trim() || null,
