@@ -196,7 +196,16 @@ async function cargarMontajes() {
   if (!tabla) {
     tabla = new Tabulator("#tabla_montajes", {
       data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 80px)",
-      rowClick: (e, row) => abrirPanel(row.getData()),
+    });
+    // no usamos la opcion rowClick de Tabulator: bloquea el callback si detecta
+    // cualquier seleccion de texto activa en la pagina (falso positivo frecuente
+    // en Safari/trackpad de Mac), dejando el click sin efecto. Escuchamos el click
+    // directamente sobre el contenedor para evitar ese bloqueo.
+    document.getElementById("tabla_montajes").addEventListener("click", (e) => {
+      const rowEl = e.target.closest(".tabulator-row");
+      if (!rowEl) return;
+      const row = tabla.getRows().find(r => r.getElement() === rowEl);
+      if (row) abrirPanel(row.getData());
     });
   } else {
     tabla.setData(data);

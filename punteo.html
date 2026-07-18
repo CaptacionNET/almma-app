@@ -219,7 +219,16 @@ function aplicarFiltroTexto() {
   if (!tabla) {
     tabla = new Tabulator("#tabla_punteo", {
       data: filtrados, columns: columnas, layout: "fitColumns", height: "calc(100vh - 190px)",
-      rowClick: (e, row) => { const d = row.getData(); window.location.href = `pedidos.html?anyo=${d.anyo}&orden=${d.orden}`; },
+    });
+    // no usamos la opcion rowClick de Tabulator: bloquea el callback si detecta
+    // cualquier seleccion de texto activa en la pagina (falso positivo frecuente
+    // en Safari/trackpad de Mac), dejando el click sin efecto. Escuchamos el click
+    // directamente sobre el contenedor para evitar ese bloqueo.
+    document.getElementById("tabla_punteo").addEventListener("click", (e) => {
+      const rowEl = e.target.closest(".tabulator-row");
+      if (!rowEl) return;
+      const row = tabla.getRows().find(r => r.getElement() === rowEl);
+      if (row) { const d = row.getData(); window.location.href = `pedidos.html?anyo=${d.anyo}&orden=${d.orden}`; }
     });
   } else {
     tabla.setData(filtrados);

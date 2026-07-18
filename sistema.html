@@ -258,6 +258,22 @@ async function cargarCatalogo() {
   renderTabla(cfg, data);
 }
 
+// no usamos la opcion rowClick de Tabulator: bloquea el callback si detecta
+// cualquier seleccion de texto activa en la pagina (falso positivo frecuente
+// en Safari/trackpad de Mac), dejando el click sin efecto. Escuchamos el click
+// directamente sobre el contenedor para evitar ese bloqueo. #tabla_catalogo se
+// reutiliza tanto para los catalogos normales como para montadores (caso
+// especial), asi que el listener despacha segun catalogoActivo.
+document.getElementById("tabla_catalogo").addEventListener("click", (e) => {
+  if (!tabla) return;
+  const rowEl = e.target.closest(".tabulator-row");
+  if (!rowEl) return;
+  const row = tabla.getRows().find(r => r.getElement() === rowEl);
+  if (!row) return;
+  if (catalogoActivo === "montadores") toggleMontador(row.getData());
+  else abrirEditar(row.getData());
+});
+
 function renderTabla(cfg, data) {
   const columnas = cfg.columnasLista.map(campo => ({
     title: cfg.cabeceras[campo] || campo, field: campo,
@@ -266,7 +282,6 @@ function renderTabla(cfg, data) {
   if (!tabla) {
     tabla = new Tabulator("#tabla_catalogo", {
       data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 260px)",
-      rowClick: (e, row) => abrirEditar(row.getData()),
     });
   } else {
     tabla.setColumns(columnas);
@@ -396,18 +411,18 @@ async function cargarMontadoresCatalogo() {
   if (!tabla) {
     tabla = new Tabulator("#tabla_catalogo", {
       data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 260px)",
-      rowClick: async (e, row) => {
-        const d = row.getData();
-        if (!confirm(`¿Cambiar "${d.nombre}" a es_montador = ${!d.es_montador}?`)) return;
-        const { error } = await client.from("staff").update({ es_montador: !d.es_montador }).eq("user_id", d.user_id);
-        if (error) { alert("No se pudo actualizar: " + error.message); return; }
-        cargarMontadoresCatalogo();
-      },
     });
   } else {
     tabla.setColumns(columnas);
     tabla.setData(data);
   }
+}
+
+async function toggleMontador(d) {
+  if (!confirm(`¿Cambiar "${d.nombre}" a es_montador = ${!d.es_montador}?`)) return;
+  const { error } = await client.from("staff").update({ es_montador: !d.es_montador }).eq("user_id", d.user_id);
+  if (error) { alert("No se pudo actualizar: " + error.message); return; }
+  cargarMontadoresCatalogo();
 }
 
 comprobarSesion();
