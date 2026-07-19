@@ -33,6 +33,14 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .aviso-ok{display:none;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:16px;}
 .error{display:none;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:16px;}
 .tabla-scroll{margin:0 24px 24px;overflow-x:auto;}
+.meta{color:var(--muted);font-size:13px;}
+.mini-list{font-size:13px;}
+.mini-list .item{border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px;}
+.mini-list .item .meta{color:var(--muted);font-size:11px;margin-top:2px;}
+.buscador-articulo{position:relative;}
+.sugerencias{display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 10px 20px -10px rgba(0,0,0,.2);max-height:220px;overflow-y:auto;z-index:5;}
+.sugerencias div{padding:8px 10px;cursor:pointer;font-size:13px;}
+.sugerencias div:hover{background:#f5f6fa;}
 </style>
 </head>
 <body>
@@ -71,51 +79,71 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 </div>
 
 <div class="card">
-  <h3 style="margin-top:0;">Registrar entrada de mercancía</h3>
-  <p id="aviso" class="aviso-ok"></p>
-  <p id="error" class="error"></p>
-
-  <form id="form_recepcion">
-    <div class="form-grid">
-      <div class="campo">
-        <label for="almacen">Almacén</label>
-        <select id="almacen" required></select>
-      </div>
-      <div class="campo">
-        <label for="articulo">Artículo</label>
-        <input id="articulo" list="lista_articulos" placeholder="Código de artículo" required>
-        <datalist id="lista_articulos"></datalist>
-      </div>
-      <div class="campo">
-        <label for="descripcion">Descripción</label>
-        <input id="descripcion" placeholder="(se rellena sola si el artículo existe)">
-      </div>
-      <div class="campo">
-        <label for="cantidad">Cantidad</label>
-        <input id="cantidad" type="number" step="any" required>
-      </div>
-      <div class="campo">
-        <label for="ubicacion">Ubicación en almacén</label>
-        <input id="ubicacion" placeholder="ej. A-12">
-      </div>
-      <div class="campo">
-        <label for="num_pedido">Nº pedido / albarán</label>
-        <input id="num_pedido">
-      </div>
-      <div class="campo">
-        <label for="tienda">Tienda (opcional)</label>
-        <select id="tienda"><option value="">-- sin asignar --</option></select>
-      </div>
+  <h3 style="margin-top:0;">Buscar pedido</h3>
+  <p id="error_busqueda" class="error"></p>
+  <div class="form-grid">
+    <div class="campo">
+      <label for="buscar_num_pedido">Número de Pedido</label>
+      <input id="buscar_num_pedido" placeholder="Nº pedido de la tienda" onkeydown="if(event.key==='Enter')buscarPedido()">
     </div>
-    <div class="campo" style="margin-top:14px;">
-      <label for="observacion">Observaciones</label>
-      <textarea id="observacion" rows="2"></textarea>
-    </div>
-    <button type="submit" style="margin-top:16px;">Registrar recepción</button>
-  </form>
+  </div>
+  <div style="display:flex;gap:10px;margin-top:14px;align-items:center;">
+    <button onclick="buscarPedido()">Buscar</button>
+    <button id="btn_crear_orden" class="secondary" style="display:none;" onclick="crearOrdenDesdeRecepcion()">Crear como orden nueva</button>
+  </div>
+  <p id="resultado_busqueda" class="meta" style="margin-top:10px;"></p>
 </div>
 
-<div class="tabla-scroll"><div id="tabla_movimientos"></div></div>
+<div class="card" id="card_entrada" style="display:none;">
+  <button class="secondary" onclick="reiniciarBusqueda()" style="float:right;">Buscar otro pedido</button>
+  <h3 style="margin-top:0;">Entrada para el pedido <span id="entrada_titulo"></span></h3>
+
+  <div class="form-grid">
+    <div class="campo">
+      <label for="ent_almacen">Almacén</label>
+      <select id="ent_almacen" required></select>
+    </div>
+    <div class="campo">
+      <label for="ent_fecha">F. Entrada</label>
+      <input id="ent_fecha" type="date">
+    </div>
+    <div class="campo buscador-articulo">
+      <label for="ent_fabricante_buscar">Fabricante</label>
+      <input id="ent_fabricante_buscar" placeholder="Buscar fabricante...">
+      <div id="ent_fabricante_sugerencias" class="sugerencias"></div>
+    </div>
+    <div class="campo">
+      <label for="ent_descripcion">Descripción</label>
+      <input id="ent_descripcion">
+    </div>
+    <div class="campo">
+      <label for="ent_cantidad">Cantidad</label>
+      <input id="ent_cantidad" type="number" step="any">
+    </div>
+    <div class="campo">
+      <label for="ent_ubicacion">Ubicación</label>
+      <input id="ent_ubicacion">
+    </div>
+    <div class="campo">
+      <label for="ent_bultos">Bultos</label>
+      <input id="ent_bultos" type="number">
+    </div>
+    <div class="campo">
+      <label for="ent_albaran">Albarán</label>
+      <input id="ent_albaran">
+    </div>
+  </div>
+  <p id="error_entrada" class="error"></p>
+  <button style="margin-top:14px;" onclick="anyadirLineaEntrada()">+ Añadir línea</button>
+
+  <h4>Líneas añadidas en esta entrada</h4>
+  <div id="lista_lineas_entrada" class="mini-list"><div class="meta">Todavía no has añadido ninguna línea.</div></div>
+</div>
+
+<div class="tabla-scroll">
+  <h4 style="margin:0 24px 8px;">Últimas entradas registradas</h4>
+  <div id="tabla_movimientos"></div>
+</div>
 
 <script>
 const client = supabase.createClient(
@@ -124,6 +152,8 @@ const client = supabase.createClient(
 );
 
 let tabla = null;
+let pedidoActivo = null;
+let fabricanteSeleccionado = null;
 
 document.querySelectorAll(".menu-item").forEach(item => {
   item.querySelector("span").addEventListener("click", (e) => {
@@ -144,7 +174,11 @@ async function comprobarSesion() {
   if (!user) { window.location.href = "login.html"; return; }
   const { data: staffRow } = await client.from("staff").select("user_id").eq("user_id", user.id).maybeSingle();
   if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
-  cargarSelectores();
+
+  const { data: almacenes } = await client.from("almacenes").select("codigo, texto").order("texto");
+  document.getElementById("ent_almacen").innerHTML = (almacenes || []).map(a => `<option value="${a.codigo}">${a.texto || a.codigo}</option>`).join("");
+  document.getElementById("ent_fecha").value = new Date().toISOString().slice(0, 10);
+
   cargarMovimientos();
 }
 
@@ -153,31 +187,148 @@ async function logout() {
   window.location.href = "login.html";
 }
 
-async function cargarSelectores() {
-  const { data: almacenes } = await client.from("almacenes").select("codigo, texto").order("texto");
-  const selAlmacen = document.getElementById("almacen");
-  selAlmacen.innerHTML = (almacenes || []).map(a => `<option value="${a.codigo}">${a.texto || a.codigo}</option>`).join("");
+async function buscarPedido() {
+  const errorBox = document.getElementById("error_busqueda");
+  const resultadoBox = document.getElementById("resultado_busqueda");
+  const btnCrear = document.getElementById("btn_crear_orden");
+  errorBox.style.display = "none";
+  btnCrear.style.display = "none";
+  document.getElementById("card_entrada").style.display = "none";
 
-  const { data: tiendas } = await client.from("tiendas").select("id, nombre").order("nombre");
-  const selTienda = document.getElementById("tienda");
-  selTienda.innerHTML = '<option value="">-- sin asignar --</option>' +
-    (tiendas || []).map(t => `<option value="${t.id}">${t.nombre}</option>`).join("");
+  const numPedido = document.getElementById("buscar_num_pedido").value.trim();
+  if (!numPedido) { errorBox.textContent = "Escribe un número de pedido."; errorBox.style.display = "block"; return; }
 
-  const { data: articulos } = await client.from("articulos").select("articulo, descripcion").limit(500);
-  const lista = document.getElementById("lista_articulos");
-  lista.innerHTML = (articulos || []).map(a => `<option value="${a.articulo}">${a.descripcion || ""}</option>`).join("");
+  const { data, error } = await client.from("ordenes")
+    .select("anyo, orden, num_pedido, nombre_cli, tienda_id, tiendas ( nombre )")
+    .ilike("num_pedido", numPedido)
+    .order("anyo", { ascending: false }).order("orden", { ascending: false })
+    .limit(1).maybeSingle();
+
+  if (error) { errorBox.textContent = "Error al buscar: " + error.message; errorBox.style.display = "block"; return; }
+
+  if (!data) {
+    resultadoBox.textContent = `No se encontró ningún pedido con número "${numPedido}".`;
+    btnCrear.style.display = "inline-block";
+    return;
+  }
+
+  activarPedido(data, numPedido);
 }
 
-document.getElementById("articulo").addEventListener("change", async (e) => {
-  const codigo = e.target.value.trim();
-  if (!codigo) return;
-  const { data } = await client.from("articulos").select("descripcion").eq("articulo", codigo).maybeSingle();
-  if (data) document.getElementById("descripcion").value = data.descripcion || "";
+async function crearOrdenDesdeRecepcion() {
+  const numPedido = document.getElementById("buscar_num_pedido").value.trim();
+  if (!numPedido) return;
+  if (!confirm(`No existe ningún pedido "${numPedido}". ¿Crear una orden nueva para poder recibir esta mercancía? La tienda se podrá asignar después desde Ordenes.`)) return;
+
+  const { data, error } = await client.rpc("crear_orden_staff", {
+    p_tienda_id: null, p_dependiente_id: null, p_tipo_orden: 1, p_num_pedido: numPedido,
+    p_nombre_cli: null, p_domicilio_cli: null, p_localidad_cli: null, p_provincia_cli: null,
+    p_telefono_cli: null, p_telefono2_cli: null, p_dni_cli: null,
+  });
+  if (error) { alert("No se pudo crear la orden: " + error.message); return; }
+
+  const nueva = data[0];
+  activarPedido({ anyo: nueva.anyo, orden: nueva.orden, num_pedido: numPedido, tienda_id: null, tiendas: null }, numPedido);
+}
+
+function activarPedido(orden, numPedido) {
+  pedidoActivo = { anyo: orden.anyo, orden: orden.orden, num_pedido: orden.num_pedido || numPedido, tienda_id: orden.tienda_id || null };
+  document.getElementById("resultado_busqueda").textContent = "";
+  document.getElementById("btn_crear_orden").style.display = "none";
+  document.getElementById("entrada_titulo").textContent =
+    `${orden.anyo}/${orden.orden}${orden.nombre_cli ? " — " + orden.nombre_cli : ""}${orden.tiendas?.nombre ? " (" + orden.tiendas.nombre + ")" : ""}`;
+  document.getElementById("card_entrada").style.display = "block";
+  document.getElementById("lista_lineas_entrada").innerHTML = '<div class="meta">Todavía no has añadido ninguna línea.</div>';
+}
+
+function reiniciarBusqueda() {
+  pedidoActivo = null;
+  document.getElementById("buscar_num_pedido").value = "";
+  document.getElementById("resultado_busqueda").textContent = "";
+  document.getElementById("btn_crear_orden").style.display = "none";
+  document.getElementById("card_entrada").style.display = "none";
+  document.getElementById("buscar_num_pedido").focus();
+}
+
+let debounceFab = null;
+document.getElementById("ent_fabricante_buscar").addEventListener("input", (e) => {
+  fabricanteSeleccionado = null;
+  clearTimeout(debounceFab);
+  const texto = e.target.value.trim();
+  const caja = document.getElementById("ent_fabricante_sugerencias");
+  if (texto.length < 2) { caja.style.display = "none"; return; }
+  debounceFab = setTimeout(async () => {
+    const { data } = await client.from("proveedores_mat").select("codigo, nombre").ilike("nombre", `%${texto}%`).limit(15);
+    caja.innerHTML = (data || []).map(f =>
+      `<div data-cod="${f.codigo}" data-nom="${(f.nombre || "").replace(/"/g, "&quot;")}">${f.nombre}</div>`
+    ).join("");
+    caja.style.display = data && data.length ? "block" : "none";
+  }, 250);
 });
+document.getElementById("ent_fabricante_sugerencias").addEventListener("click", (e) => {
+  const fila = e.target.closest("[data-cod]");
+  if (!fila) return;
+  fabricanteSeleccionado = { codigo: fila.dataset.cod, nombre: fila.dataset.nom };
+  document.getElementById("ent_fabricante_buscar").value = fila.dataset.nom;
+  document.getElementById("ent_fabricante_sugerencias").style.display = "none";
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".buscador-articulo")) document.getElementById("ent_fabricante_sugerencias").style.display = "none";
+});
+
+async function anyadirLineaEntrada() {
+  if (!pedidoActivo) return;
+  const errorBox = document.getElementById("error_entrada");
+  errorBox.style.display = "none";
+
+  const almacen = parseInt(document.getElementById("ent_almacen").value, 10);
+  const descripcion = document.getElementById("ent_descripcion").value.trim();
+  const cantidad = parseFloat(document.getElementById("ent_cantidad").value);
+  const ubicacion = document.getElementById("ent_ubicacion").value.trim() || null;
+  const bultos = document.getElementById("ent_bultos").value ? parseInt(document.getElementById("ent_bultos").value, 10) : null;
+  const albaran = document.getElementById("ent_albaran").value.trim() || null;
+  const fecha = document.getElementById("ent_fecha").value;
+
+  if (!descripcion) { errorBox.textContent = "Falta la descripción."; errorBox.style.display = "block"; return; }
+  if (isNaN(cantidad)) { errorBox.textContent = "Falta la cantidad."; errorBox.style.display = "block"; return; }
+
+  const anyo = new Date().getFullYear();
+  const { data: ultimo } = await client.from("alm_movimientos")
+    .select("nummov").eq("almacen", almacen).eq("anyo", anyo)
+    .order("nummov", { ascending: false }).limit(1).maybeSingle();
+  const nummov = (ultimo?.nummov || 0) + 1;
+
+  const { error } = await client.from("alm_movimientos").insert({
+    almacen, anyo, nummov, descripcion,
+    fechmov: fecha ? new Date(fecha).toISOString() : new Date().toISOString(),
+    cantidade: cantidad, ubicacion, bultos, albaran,
+    num_pedido: pedidoActivo.num_pedido, tienda_id: pedidoActivo.tienda_id,
+    fabricante: fabricanteSeleccionado ? parseInt(fabricanteSeleccionado.codigo, 10) : null,
+  });
+
+  if (error) { errorBox.textContent = "No se pudo registrar: " + error.message; errorBox.style.display = "block"; return; }
+
+  const cont = document.getElementById("lista_lineas_entrada");
+  if (cont.querySelector(".meta")) cont.innerHTML = "";
+  cont.innerHTML += `<div class="item"><strong>${descripcion}</strong> — ${cantidad} ud.
+    <div class="meta">${fabricanteSeleccionado ? fabricanteSeleccionado.nombre + " · " : ""}${ubicacion || "sin ubicación"}${bultos ? " · " + bultos + " bultos" : ""}${albaran ? " · albarán " + albaran : ""}</div>
+  </div>` + cont.innerHTML;
+
+  document.getElementById("ent_fabricante_buscar").value = "";
+  document.getElementById("ent_descripcion").value = "";
+  document.getElementById("ent_cantidad").value = "";
+  document.getElementById("ent_ubicacion").value = "";
+  document.getElementById("ent_bultos").value = "";
+  document.getElementById("ent_albaran").value = "";
+  fabricanteSeleccionado = null;
+  document.getElementById("ent_fabricante_buscar").focus();
+
+  cargarMovimientos();
+}
 
 async function cargarMovimientos() {
   const { data, error } = await client.from("alm_movimientos")
-    .select("almacen, anyo, nummov, articulo, descripcion, fechmov, cantidade, ubicacion, num_pedido, observacion")
+    .select("almacen, anyo, nummov, articulo, descripcion, fechmov, cantidade, ubicacion, num_pedido, bultos, albaran")
     .order("fechmov", { ascending: false })
     .limit(100);
   if (error) { console.error(error); return; }
@@ -185,10 +336,11 @@ async function cargarMovimientos() {
   const columnas = [
     { title: "Fecha", field: "fechmov", formatter: (c) => c.getValue() ? new Date(c.getValue()).toLocaleString("es-ES") : "" },
     { title: "Almacén", field: "almacen", width: 90 },
-    { title: "Artículo", field: "articulo" },
     { title: "Descripción", field: "descripcion" },
     { title: "Cantidad", field: "cantidade", width: 100 },
     { title: "Ubicación", field: "ubicacion", width: 110 },
+    { title: "Bultos", field: "bultos", width: 90 },
+    { title: "Albarán", field: "albaran" },
     { title: "Nº pedido", field: "num_pedido" },
   ];
 
@@ -198,47 +350,6 @@ async function cargarMovimientos() {
     tabla.setData(data);
   }
 }
-
-document.getElementById("form_recepcion").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const errorBox = document.getElementById("error");
-  const avisoBox = document.getElementById("aviso");
-  errorBox.style.display = "none";
-  avisoBox.style.display = "none";
-
-  const almacen = parseInt(document.getElementById("almacen").value, 10);
-  const articulo = document.getElementById("articulo").value.trim();
-  const descripcion = document.getElementById("descripcion").value.trim();
-  const cantidad = parseFloat(document.getElementById("cantidad").value);
-  const ubicacion = document.getElementById("ubicacion").value.trim();
-  const num_pedido = document.getElementById("num_pedido").value.trim();
-  const tienda_id = document.getElementById("tienda").value || null;
-  const observacion = document.getElementById("observacion").value.trim();
-
-  // nummov correlativo simple por almacén+año (máximo actual + 1)
-  const anyo = new Date().getFullYear();
-  const { data: ultimo } = await client.from("alm_movimientos")
-    .select("nummov").eq("almacen", almacen).eq("anyo", anyo)
-    .order("nummov", { ascending: false }).limit(1).maybeSingle();
-  const nummov = (ultimo?.nummov || 0) + 1;
-
-  const { error } = await client.from("alm_movimientos").insert({
-    almacen, anyo, nummov, articulo, descripcion,
-    fechmov: new Date().toISOString(),
-    cantidade: cantidad, ubicacion, num_pedido, tienda_id, observacion,
-  });
-
-  if (error) {
-    errorBox.textContent = "Error al registrar: " + error.message;
-    errorBox.style.display = "block";
-    return;
-  }
-
-  avisoBox.textContent = "Recepción registrada correctamente.";
-  avisoBox.style.display = "block";
-  e.target.reset();
-  cargarMovimientos();
-});
 
 comprobarSesion();
 </script>
