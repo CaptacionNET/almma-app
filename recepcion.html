@@ -92,6 +92,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
     <button id="btn_crear_orden" class="secondary" style="display:none;" onclick="crearOrdenDesdeRecepcion()">Crear como orden nueva</button>
   </div>
   <p id="resultado_busqueda" class="meta" style="margin-top:10px;"></p>
+  <div id="lista_resultados_pedido" class="mini-list" style="margin-top:10px;"></div>
 </div>
 
 <div class="card" id="card_entrada" style="display:none;">
@@ -187,12 +188,17 @@ async function logout() {
   window.location.href = "login.html";
 }
 
+let resultadosPedidoActuales = [];
+
 async function buscarPedido() {
   const errorBox = document.getElementById("error_busqueda");
   const resultadoBox = document.getElementById("resultado_busqueda");
   const btnCrear = document.getElementById("btn_crear_orden");
+  const listaBox = document.getElementById("lista_resultados_pedido");
   errorBox.style.display = "none";
   btnCrear.style.display = "none";
+  listaBox.innerHTML = "";
+  resultadoBox.textContent = "";
   document.getElementById("card_entrada").style.display = "none";
 
   const numPedido = document.getElementById("buscar_num_pedido").value.trim();
@@ -200,19 +206,26 @@ async function buscarPedido() {
 
   const { data, error } = await client.from("ordenes")
     .select("anyo, orden, num_pedido, nombre_cli, tienda_id, tiendas ( nombre )")
-    .ilike("num_pedido", numPedido)
+    .ilike("num_pedido", `%${numPedido}%`)
     .order("anyo", { ascending: false }).order("orden", { ascending: false })
-    .limit(1).maybeSingle();
+    .limit(20);
 
   if (error) { errorBox.textContent = "Error al buscar: " + error.message; errorBox.style.display = "block"; return; }
 
-  if (!data) {
+  if (!data || !data.length) {
     resultadoBox.textContent = `No se encontró ningún pedido con número "${numPedido}".`;
     btnCrear.style.display = "inline-block";
     return;
   }
 
-  activarPedido(data, numPedido);
+  if (data.length === 1) { activarPedido(data[0], numPedido); return; }
+
+  resultadosPedidoActuales = data;
+  resultadoBox.textContent = `${data.length} pedidos coinciden — elige el correcto:`;
+  listaBox.innerHTML = data.map((o, i) => `
+    <div class="item" style="cursor:pointer;" onclick="activarPedido(resultadosPedidoActuales[${i}], '${numPedido.replace(/'/g, "\\'")}')">
+      <strong>${o.anyo}/${o.orden}</strong> — Nº pedido "${o.num_pedido || ""}"${o.nombre_cli ? " — " + o.nombre_cli : ""}${o.tiendas?.nombre ? " (" + o.tiendas.nombre + ")" : ""}
+    </div>`).join("");
 }
 
 async function crearOrdenDesdeRecepcion() {
@@ -234,9 +247,10 @@ async function crearOrdenDesdeRecepcion() {
 function activarPedido(orden, numPedido) {
   pedidoActivo = { anyo: orden.anyo, orden: orden.orden, num_pedido: orden.num_pedido || numPedido, tienda_id: orden.tienda_id || null };
   document.getElementById("resultado_busqueda").textContent = "";
+  document.getElementById("lista_resultados_pedido").innerHTML = "";
   document.getElementById("btn_crear_orden").style.display = "none";
   document.getElementById("entrada_titulo").textContent =
-    `${orden.anyo}/${orden.orden}${orden.nombre_cli ? " — " + orden.nombre_cli : ""}${orden.tiendas?.nombre ? " (" + orden.tiendas.nombre + ")" : ""}`;
+    `${orden.anyo}/${orden.orden} — Nº pedido "${orden.num_pedido || numPedido}"${orden.nombre_cli ? " — " + orden.nombre_cli : ""}${orden.tiendas?.nombre ? " (" + orden.tiendas.nombre + ")" : ""}`;
   document.getElementById("card_entrada").style.display = "block";
   document.getElementById("lista_lineas_entrada").innerHTML = '<div class="meta">Todavía no has añadido ninguna línea.</div>';
 }
@@ -245,6 +259,7 @@ function reiniciarBusqueda() {
   pedidoActivo = null;
   document.getElementById("buscar_num_pedido").value = "";
   document.getElementById("resultado_busqueda").textContent = "";
+  document.getElementById("lista_resultados_pedido").innerHTML = "";
   document.getElementById("btn_crear_orden").style.display = "none";
   document.getElementById("card_entrada").style.display = "none";
   document.getElementById("buscar_num_pedido").focus();
