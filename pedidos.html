@@ -112,18 +112,36 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 </div>
 
 <div class="barra">
-  <div class="campo-mini" style="max-width:100px;">
+  <div class="campo-mini" style="max-width:90px;">
     <label>Año desde</label>
     <input id="anyo_desde" type="number" onkeydown="if(event.key==='Enter')cargarPedidos()">
   </div>
-  <div class="campo-mini" style="max-width:100px;">
+  <div class="campo-mini" style="max-width:90px;">
     <label>Año hasta</label>
     <input id="anyo_hasta" type="number" onkeydown="if(event.key==='Enter')cargarPedidos()">
   </div>
-  <select id="filtro_estado">
-    <option value="">Todos los estados</option>
-  </select>
-  <input id="buscador" type="text" placeholder="Buscar por nº pedido o cliente..." onkeydown="if(event.key==='Enter')cargarPedidos()">
+  <div class="campo-mini" style="max-width:90px;">
+    <label>Pedido</label>
+    <input id="filtro_pedido" type="number" onkeydown="if(event.key==='Enter')cargarPedidos()">
+  </div>
+  <div class="campo-mini" style="max-width:160px;">
+    <label>Cliente</label>
+    <input id="filtro_cliente" type="text" onkeydown="if(event.key==='Enter')cargarPedidos()">
+  </div>
+  <div class="campo-mini" style="max-width:140px;">
+    <label>Nº pedido</label>
+    <input id="filtro_num_pedido" type="text" onkeydown="if(event.key==='Enter')cargarPedidos()">
+  </div>
+  <div class="campo-mini" style="max-width:170px;">
+    <label>Estado</label>
+    <select id="filtro_estado">
+      <option value="">Todos los estados</option>
+    </select>
+  </div>
+  <div class="campo-mini" style="max-width:110px;">
+    <label>Importe</label>
+    <input id="filtro_importe" type="number" step="0.01" onkeydown="if(event.key==='Enter')cargarPedidos()">
+  </div>
   <button onclick="cargarPedidos()">Buscar</button>
   <button onclick="abrirModalNuevaOrden()">+ Nueva Orden</button>
 </div>
@@ -580,12 +598,15 @@ async function logout() {
 
 async function cargarPedidos() {
   const estado = document.getElementById("filtro_estado").value;
-  const busqueda = document.getElementById("buscador").value.trim();
   const anyoDesde = parseInt(document.getElementById("anyo_desde").value, 10);
   const anyoHasta = parseInt(document.getElementById("anyo_hasta").value, 10);
+  const pedido = parseInt(document.getElementById("filtro_pedido").value, 10);
+  const cliente = document.getElementById("filtro_cliente").value.trim();
+  const numPedido = document.getElementById("filtro_num_pedido").value.trim();
+  const importe = parseFloat(document.getElementById("filtro_importe").value);
 
-  if (!estado && !busqueda && isNaN(anyoDesde) && isNaN(anyoHasta)) {
-    document.getElementById("aviso_carga").textContent = "Elige año, estado o escribe una búsqueda y pulsa \"Buscar\" para ver órdenes.";
+  if (!estado && isNaN(anyoDesde) && isNaN(anyoHasta) && isNaN(pedido) && !cliente && !numPedido && isNaN(importe)) {
+    document.getElementById("aviso_carga").textContent = "Rellena algún filtro y pulsa \"Buscar\" para ver órdenes.";
     if (tabla) tabla.setData([]);
     return;
   }
@@ -598,26 +619,29 @@ async function cargarPedidos() {
 
   if (!isNaN(anyoDesde)) query = query.gte("anyo", anyoDesde);
   if (!isNaN(anyoHasta)) query = query.lte("anyo", anyoHasta);
+  if (!isNaN(pedido)) query = query.eq("orden", pedido);
+  if (cliente) query = query.ilike("nombre_cli", `%${cliente}%`);
+  if (numPedido) query = query.ilike("num_pedido", `%${numPedido}%`);
   if (estado) query = query.eq("estado", estado);
-  if (busqueda) query = query.or(`num_pedido.ilike.%${busqueda}%,nombre_cli.ilike.%${busqueda}%`);
+  if (!isNaN(importe)) query = query.eq("importe_total", importe);
 
   const { data, error } = await query;
   if (error) { console.error(error); return; }
 
   document.getElementById("aviso_carga").textContent = data.length >= 500
-    ? `${data.length} órdenes cargadas. Puede haber más — acota el rango de años o usa la búsqueda.`
+    ? `${data.length} órdenes cargadas. Puede haber más — acota los filtros.`
     : `${data.length} órdenes.`;
 
   const columnas = [
-    { title: "Año", field: "anyo", width: 70, headerFilter: "input" },
-    { title: "Pedido", field: "orden", width: 90, headerFilter: "input" },
-    { title: "Cliente", field: "nombre_cli", headerFilter: "input" },
-    { title: "Nº pedido", field: "num_pedido", headerFilter: "input" },
-    { title: "Estado", field: "estado", headerFilter: "input", formatter: (cell) => {
+    { title: "Año", field: "anyo", width: 70 },
+    { title: "Pedido", field: "orden", width: 90 },
+    { title: "Cliente", field: "nombre_cli" },
+    { title: "Nº pedido", field: "num_pedido" },
+    { title: "Estado", field: "estado", formatter: (cell) => {
         const v = cell.getValue() || "en_proceso";
         return `<span class="estado-pill estado-${v}">${v}</span>`;
       } },
-    { title: "Importe", field: "importe_total", headerFilter: "input", formatter: "money", formatterParams: { symbol: "€", precision: 2 } },
+    { title: "Importe", field: "importe_total", formatter: "money", formatterParams: { symbol: "€", precision: 2 } },
   ];
 
   if (!tabla) {
