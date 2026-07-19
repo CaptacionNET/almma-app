@@ -33,7 +33,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .barra{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:16px 24px;}
 .campo-mini label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;}
 .campo-mini input,.campo-mini select{width:100%;}
-.barra input{flex:1;min-width:220px;max-width:420px;}
+.barra > input{flex:1;min-width:220px;max-width:420px;}
 .tabla-scroll{margin:0 24px 24px;overflow-x:auto;}
 .estado-pill{padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;display:inline-block;}
 .estado-en_proceso{background:#eef2ff;color:#4338ca;}
@@ -114,16 +114,17 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 <div class="barra">
   <div class="campo-mini" style="max-width:100px;">
     <label>Año desde</label>
-    <input id="anyo_desde" type="number" onchange="cargarPedidos()">
+    <input id="anyo_desde" type="number" onkeydown="if(event.key==='Enter')cargarPedidos()">
   </div>
   <div class="campo-mini" style="max-width:100px;">
     <label>Año hasta</label>
-    <input id="anyo_hasta" type="number" onchange="cargarPedidos()">
+    <input id="anyo_hasta" type="number" onkeydown="if(event.key==='Enter')cargarPedidos()">
   </div>
-  <select id="filtro_estado" onchange="cargarPedidos()">
+  <select id="filtro_estado">
     <option value="">Todos los estados</option>
   </select>
-  <input id="buscador" type="text" placeholder="Buscar por nº pedido o cliente..." oninput="cargarPedidos()">
+  <input id="buscador" type="text" placeholder="Buscar por nº pedido o cliente..." onkeydown="if(event.key==='Enter')cargarPedidos()">
+  <button onclick="cargarPedidos()">Buscar</button>
   <button onclick="abrirModalNuevaOrden()">+ Nueva Orden</button>
 </div>
 <div class="aviso-carga" id="aviso_carga"></div>
@@ -584,7 +585,7 @@ async function cargarPedidos() {
   const anyoHasta = parseInt(document.getElementById("anyo_hasta").value, 10);
 
   if (!estado && !busqueda && isNaN(anyoDesde) && isNaN(anyoHasta)) {
-    document.getElementById("aviso_carga").textContent = "Usa los filtros o el buscador para ver órdenes.";
+    document.getElementById("aviso_carga").textContent = "Elige año, estado o escribe una búsqueda y pulsa \"Buscar\" para ver órdenes.";
     if (tabla) tabla.setData([]);
     return;
   }
