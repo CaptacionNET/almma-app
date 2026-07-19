@@ -148,7 +148,7 @@ async function cargarPunteo() {
   // llegaba al statement timeout. Se cruzan en JS por anyo+orden.
   const [{ data: lineas, error: errLineas }, { data: ordenesData, error: errOrdenes }] = await Promise.all([
     client.from("linorden")
-      .select("anyo, orden, linea, descripcion, frecepcion, observacion, proveedores_mat ( nombre )")
+      .select("anyo, orden, linea, descripcion, frecepcion, observacion, recibido_at, proveedores_mat ( nombre )")
       .gte("anyo", anyoDesde).lte("anyo", anyoHasta)
       .order("orden", { ascending: document.getElementById("orden_sort").value === "asc" })
       .limit(5000),
@@ -182,6 +182,7 @@ async function cargarPunteo() {
       f_prevista: o.fecha_prev_montaje || null,
       f_montaje: o.fecha_montaje || null,
       obs: r.observacion || "",
+      recibido: !!r.recibido_at,
     };
   });
 
@@ -203,17 +204,18 @@ function aplicarFiltroTexto() {
     : datosCompletos;
 
   const columnas = [
-    { title: "Orden", field: "orden", width: 90 },
-    { title: "Año", field: "anyo", width: 70 },
-    { title: "Fecha", field: "fecha", formatter: c => c.getValue() ? new Date(c.getValue()).toLocaleDateString("es-ES") : "" },
-    { title: "Fabricante", field: "fabricante" },
-    { title: "Mercancía", field: "mercancia" },
-    { title: "Tienda", field: "tienda" },
-    { title: "Dependiente", field: "dependiente" },
-    { title: "Pedido", field: "pedido" },
-    { title: "F.Prevista", field: "f_prevista", formatter: c => c.getValue() ? new Date(c.getValue()).toLocaleDateString("es-ES") : "" },
-    { title: "F.Montaje", field: "f_montaje", formatter: c => c.getValue() ? new Date(c.getValue()).toLocaleDateString("es-ES") : "" },
-    { title: "Obs", field: "obs" },
+    { title: "Orden", field: "orden", width: 90, headerFilter: "input" },
+    { title: "Año", field: "anyo", width: 70, headerFilter: "input" },
+    { title: "Fecha", field: "fecha", headerFilter: "input", formatter: c => c.getValue() ? new Date(c.getValue()).toLocaleDateString("es-ES") : "" },
+    { title: "Fabricante", field: "fabricante", headerFilter: "input" },
+    { title: "Mercancía", field: "mercancia", headerFilter: "input" },
+    { title: "Tienda", field: "tienda", headerFilter: "input" },
+    { title: "Dependiente", field: "dependiente", headerFilter: "input" },
+    { title: "Pedido", field: "pedido", headerFilter: "input" },
+    { title: "F.Prevista", field: "f_prevista", headerFilter: "input", formatter: c => c.getValue() ? new Date(c.getValue()).toLocaleDateString("es-ES") : "" },
+    { title: "F.Montaje", field: "f_montaje", headerFilter: "input", formatter: c => c.getValue() ? new Date(c.getValue()).toLocaleDateString("es-ES") : "" },
+    { title: "Recibido", field: "recibido", width: 100, headerFilter: "tickCross", headerFilterParams: { tristate: true }, formatter: "tickCross" },
+    { title: "Obs", field: "obs", headerFilter: "input" },
   ];
 
   if (!tabla) {

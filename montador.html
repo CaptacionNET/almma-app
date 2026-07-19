@@ -35,7 +35,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .estado-agendado{background:#f5f3ff;color:#6d28d9;}
 .estado-completado{background:#f0fdf4;color:#15803d;}
 .estado-incidencia{background:#fef2f2;color:#dc2626;}
-#panel_detalle{display:none;position:fixed;top:0;right:0;bottom:0;width:480px;background:var(--card);border-left:1px solid var(--border);box-shadow:-10px 0 30px -20px rgba(0,0,0,.3);padding:24px;overflow-y:auto;}
+#panel_detalle{display:none;position:fixed;top:0;right:0;bottom:0;width:min(480px,100vw);background:var(--card);border-left:1px solid var(--border);box-shadow:-10px 0 30px -20px rgba(0,0,0,.3);padding:24px;overflow-y:auto;}
 #panel_detalle h3{margin-top:0;}
 #panel_detalle h4{margin:22px 0 8px;font-size:14px;border-top:1px solid var(--border);padding-top:16px;}
 #panel_detalle .campo{margin-bottom:14px;}
@@ -102,7 +102,7 @@ canvas#firma_canvas{border:1px solid var(--border);border-radius:8px;width:100%;
 
   <div class="campo"><label>Estado</label><div id="d_estado_txt"></div></div>
   <div class="campo"><label>Cliente</label><div id="d_cliente"></div></div>
-  <div class="campo"><label>Dirección</label><div id="d_direccion"></div></div>
+  <div class="campo"><label>Dirección</label><div id="d_direccion"></div><a id="d_direccion_maps" href="#" target="_blank" style="display:none;font-size:12px;">Ver en Google Maps</a></div>
   <div class="campo"><label>Teléfono</label><div id="d_telefono"></div></div>
 
   <div class="campo" style="margin-top:20px;">
@@ -219,7 +219,15 @@ async function abrirPanel(orden) {
   document.getElementById("d_titulo").textContent = `Pedido ${orden.anyo}/${orden.orden}`;
   document.getElementById("d_estado_txt").innerHTML = `<span class="estado-pill estado-${orden.estado || "en_proceso"}">${(orden.estado || "en_proceso").replace(/_/g, " ")}</span>`;
   document.getElementById("d_cliente").textContent = orden.nombre_cli || "-";
-  document.getElementById("d_direccion").textContent = [orden.domicilio_cli, orden.localidad_cli].filter(Boolean).join(", ") || "-";
+  const direccionTexto = [orden.domicilio_cli, orden.localidad_cli].filter(Boolean).join(", ");
+  document.getElementById("d_direccion").textContent = direccionTexto || "-";
+  const enlaceMaps = document.getElementById("d_direccion_maps");
+  if (direccionTexto) {
+    enlaceMaps.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(direccionTexto)}`;
+    enlaceMaps.style.display = "inline-block";
+  } else {
+    enlaceMaps.style.display = "none";
+  }
   document.getElementById("d_telefono").textContent = orden.telefono_cli || "-";
   document.getElementById("firma_nombre").value = orden.nombre_cli || "";
 
@@ -229,6 +237,7 @@ async function abrirPanel(orden) {
   limpiarFirma();
 
   document.getElementById("panel_detalle").style.display = "block";
+  document.getElementById("panel_detalle").scrollTop = 0;
   document.getElementById("overlay").style.display = "block";
 }
 
@@ -353,14 +362,19 @@ function firmaVacia() {
 
 async function cargarEntregaPrevia() {
   const { data } = await client.from("entregas")
-    .select("firmante_nombre, firmado_at")
+    .select("firmante_nombre, firmado_at, firma_storage_path")
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden)
     .order("firmado_at", { ascending: false }).limit(1).maybeSingle();
 
   const cont = document.getElementById("entrega_previa");
-  cont.innerHTML = data
-    ? `<div class="item">Ya firmado por <strong>${data.firmante_nombre || "-"}</strong> el ${new Date(data.firmado_at).toLocaleString("es-ES")}</div>`
-    : "";
+  if (!data) { cont.innerHTML = ""; return; }
+
+  cont.innerHTML = `<div class="item">Ya firmado por <strong>${data.firmante_nombre || "-"}</strong> el ${new Date(data.firmado_at).toLocaleString("es-ES")}</div>`;
+
+  if (data.firma_storage_path) {
+    const { data: signed } = await client.storage.from("ordenes-adjuntos").createSignedUrl(data.firma_storage_path, 300);
+    if (signed) cont.innerHTML += `<img src="${signed.signedUrl}" alt="Firma" style="max-width:100%;border:1px solid var(--border);border-radius:8px;margin-top:6px;">`;
+  }
 }
 
 async function confirmarEntrega() {
