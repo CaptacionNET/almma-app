@@ -420,7 +420,10 @@ async function comprobarSesion() {
   if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
   staffUserId = staffRow.user_id;
   await llenarSelectEstado("filtro_estado", "");
-  await cargarPedidos(); // sin año desde/hasta: trae las más recientes de cualquier año (hasta el límite)
+  const anyoActual = new Date().getFullYear();
+  document.getElementById("anyo_desde").value = anyoActual;
+  document.getElementById("anyo_hasta").value = anyoActual;
+  await cargarPedidos();
 
   const params = new URLSearchParams(window.location.search);
   const anyoParam = parseInt(params.get("anyo"), 10);

@@ -123,15 +123,21 @@ canvas#firma_canvas{border:1px solid var(--border);border-radius:8px;width:100%;
 
   <h4>Firma de entrega</h4>
   <div id="entrega_previa" class="mini-list"></div>
-  <div class="campo">
-    <label>Nombre de quien firma</label>
-    <input id="firma_nombre">
+  <div id="entrega_previa_botones" style="display:none;margin-bottom:10px;">
+    <button type="button" class="secondary btn-mini" onclick="rehacerFirma()">Volver a firmar</button>
+    <button type="button" class="secondary btn-mini" onclick="borrarFirma()">Eliminar firma</button>
   </div>
-  <label>Firma</label>
-  <canvas id="firma_canvas" width="400" height="160"></canvas>
-  <button type="button" class="secondary btn-mini" style="margin-top:6px;" onclick="limpiarFirma()">Borrar firma</button>
-  <textarea id="entrega_observaciones" rows="2" placeholder="Observaciones (opcional)" style="margin-top:8px;"></textarea>
-  <button style="margin-top:10px;" onclick="confirmarEntrega()">Confirmar entrega</button>
+  <div id="seccion_firmar">
+    <div class="campo">
+      <label>Nombre de quien firma</label>
+      <input id="firma_nombre">
+    </div>
+    <label>Firma</label>
+    <canvas id="firma_canvas" width="400" height="160"></canvas>
+    <button type="button" class="secondary btn-mini" style="margin-top:6px;" onclick="limpiarFirma()">Borrar trazo</button>
+    <textarea id="entrega_observaciones" rows="2" placeholder="Observaciones (opcional)" style="margin-top:8px;"></textarea>
+    <button style="margin-top:10px;" onclick="confirmarEntrega()">Confirmar entrega</button>
+  </div>
 </div>
 
 <script>
@@ -360,14 +366,23 @@ function firmaVacia() {
   return true;
 }
 
+let entregaActivaId = null;
+
 async function cargarEntregaPrevia() {
   const { data } = await client.from("entregas")
-    .select("firmante_nombre, firmado_at, firma_storage_path")
+    .select("id, firmante_nombre, firmado_at, firma_storage_path")
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden)
     .order("firmado_at", { ascending: false }).limit(1).maybeSingle();
 
   const cont = document.getElementById("entrega_previa");
-  if (!data) { cont.innerHTML = ""; return; }
+  entregaActivaId = data ? data.id : null;
+
+  if (!data) {
+    cont.innerHTML = "";
+    document.getElementById("entrega_previa_botones").style.display = "none";
+    document.getElementById("seccion_firmar").style.display = "block";
+    return;
+  }
 
   cont.innerHTML = `<div class="item">Ya firmado por <strong>${data.firmante_nombre || "-"}</strong> el ${new Date(data.firmado_at).toLocaleString("es-ES")}</div>`;
 
@@ -375,6 +390,23 @@ async function cargarEntregaPrevia() {
     const { data: signed } = await client.storage.from("ordenes-adjuntos").createSignedUrl(data.firma_storage_path, 300);
     if (signed) cont.innerHTML += `<img src="${signed.signedUrl}" alt="Firma" style="max-width:100%;border:1px solid var(--border);border-radius:8px;margin-top:6px;">`;
   }
+
+  document.getElementById("entrega_previa_botones").style.display = "block";
+  document.getElementById("seccion_firmar").style.display = "none";
+}
+
+function rehacerFirma() {
+  document.getElementById("seccion_firmar").style.display = "block";
+  document.getElementById("entrega_previa_botones").style.display = "none";
+  limpiarFirma();
+}
+
+async function borrarFirma() {
+  if (!entregaActivaId) return;
+  if (!confirm("¿Eliminar la firma registrada? El montador podrá volver a firmar.")) return;
+  const { error } = await client.from("entregas").delete().eq("id", entregaActivaId);
+  if (error) { alert("No se pudo eliminar: " + error.message); return; }
+  await cargarEntregaPrevia();
 }
 
 async function confirmarEntrega() {
