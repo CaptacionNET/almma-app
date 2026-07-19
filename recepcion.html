@@ -99,6 +99,11 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
   <button class="secondary" onclick="reiniciarBusqueda()" style="float:right;">Buscar otro pedido</button>
   <h3 style="margin-top:0;">Entrada para el pedido <span id="entrada_titulo"></span></h3>
 
+  <h4>Líneas de este pedido</h4>
+  <datalist id="dl_fabricantes"></datalist>
+  <div id="lista_lineas_pedido" class="mini-list"></div>
+
+  <h4 style="margin-top:24px;">Añadir línea que no estaba en el pedido</h4>
   <div class="form-grid">
     <div class="campo">
       <label for="ent_almacen">Almacén</label>
@@ -137,7 +142,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
   <p id="error_entrada" class="error"></p>
   <button style="margin-top:14px;" onclick="anyadirLineaEntrada()">+ Añadir línea</button>
 
-  <h4>Líneas añadidas en esta entrada</h4>
+  <h4>Líneas adicionales añadidas en esta entrada</h4>
   <div id="lista_lineas_entrada" class="mini-list"><div class="meta">Todavía no has añadido ninguna línea.</div></div>
 </div>
 
@@ -155,6 +160,8 @@ const client = supabase.createClient(
 let tabla = null;
 let pedidoActivo = null;
 let fabricanteSeleccionado = null;
+let staffUserId = null;
+let fabricantesPorNombre = {};
 
 document.querySelectorAll(".menu-item").forEach(item => {
   item.querySelector("span").addEventListener("click", (e) => {
@@ -175,10 +182,15 @@ async function comprobarSesion() {
   if (!user) { window.location.href = "login.html"; return; }
   const { data: staffRow } = await client.from("staff").select("user_id").eq("user_id", user.id).maybeSingle();
   if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
+  staffUserId = staffRow.user_id;
 
   const { data: almacenes } = await client.from("almacenes").select("codigo, texto").order("texto");
   document.getElementById("ent_almacen").innerHTML = (almacenes || []).map(a => `<option value="${a.codigo}">${a.texto || a.codigo}</option>`).join("");
   document.getElementById("ent_fecha").value = new Date().toISOString().slice(0, 10);
+
+  const { data: fabricantes } = await client.from("proveedores_mat").select("codigo, nombre").order("nombre");
+  document.getElementById("dl_fabricantes").innerHTML = (fabricantes || []).map(f => `<option value="${(f.nombre || "").replace(/"/g, "&quot;")}">`).join("");
+  (fabricantes || []).forEach(f => { if (f.nombre) fabricantesPorNombre[f.nombre.toLowerCase()] = f.codigo; });
 
   cargarMovimientos();
 }
@@ -253,6 +265,69 @@ function activarPedido(orden, numPedido) {
     `${orden.anyo}/${orden.orden} — Nº pedido "${orden.num_pedido || numPedido}"${orden.nombre_cli ? " — " + orden.nombre_cli : ""}${orden.tiendas?.nombre ? " (" + orden.tiendas.nombre + ")" : ""}`;
   document.getElementById("card_entrada").style.display = "block";
   document.getElementById("lista_lineas_entrada").innerHTML = '<div class="meta">Todavía no has añadido ninguna línea.</div>';
+  cargarLineasPedido();
+}
+
+async function cargarLineasPedido() {
+  const { data: lineas, error } = await client.from("linorden")
+    .select("linea, articulo, descripcion, cantidad, ubicacion, bultos, albaran, proveedor, recibido_at, proveedores_mat ( nombre )")
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden)
+    .order("linea");
+
+  const cont = document.getElementById("lista_lineas_pedido");
+  if (error) { cont.innerHTML = `<div class="meta">Error al cargar líneas: ${error.message}</div>`; return; }
+  if (!lineas || !lineas.length) { cont.innerHTML = '<div class="meta">Este pedido todavía no tiene líneas.</div>'; return; }
+
+  const esc = (v) => (v ?? "").toString().replace(/"/g, "&quot;");
+
+  cont.innerHTML = lineas.map(l => {
+    const nombreLinea = l.descripcion || l.articulo || `línea ${l.linea}`;
+    if (l.recibido_at) {
+      return `<div class="item">
+        <strong>${nombreLinea}</strong> — ${l.cantidad ?? ""} ud.
+        <div class="meta">Recibida el ${new Date(l.recibido_at).toLocaleString("es-ES")}${l.proveedores_mat?.nombre ? " · " + l.proveedores_mat.nombre : ""}${l.ubicacion ? " · " + l.ubicacion : ""}${l.bultos ? " · " + l.bultos + " bultos" : ""}${l.albaran ? " · albarán " + l.albaran : ""}</div>
+        <button class="secondary btn-mini" style="margin-top:6px;" onclick="deshacerRecepcionLinea(${l.linea})">Deshacer recepción</button>
+      </div>`;
+    }
+    return `<div class="item">
+      <strong>${nombreLinea}</strong> — ${l.cantidad ?? ""} ud. pedida(s)
+      <div class="form-grid" style="margin-top:8px;">
+        <div class="campo"><label>Fabricante</label><input id="rl_fab_${l.linea}" list="dl_fabricantes" value="${esc(l.proveedores_mat?.nombre)}"></div>
+        <div class="campo"><label>Cantidad recibida</label><input id="rl_cant_${l.linea}" type="number" step="any" value="${esc(l.cantidad)}"></div>
+        <div class="campo"><label>Ubicación</label><input id="rl_ubi_${l.linea}" value="${esc(l.ubicacion)}"></div>
+        <div class="campo"><label>Bultos</label><input id="rl_bul_${l.linea}" type="number" value="${esc(l.bultos)}"></div>
+        <div class="campo"><label>Albarán</label><input id="rl_alb_${l.linea}" value="${esc(l.albaran)}"></div>
+      </div>
+      <button class="btn-mini" style="margin-top:8px;" onclick="marcarLineaRecibida(${l.linea})">Marcar recibida</button>
+    </div>`;
+  }).join("");
+}
+
+async function marcarLineaRecibida(linea) {
+  const fabTexto = document.getElementById(`rl_fab_${linea}`).value.trim();
+  const cantidad = parseFloat(document.getElementById(`rl_cant_${linea}`).value);
+  const ubicacion = document.getElementById(`rl_ubi_${linea}`).value.trim() || null;
+  const bultos = document.getElementById(`rl_bul_${linea}`).value ? parseInt(document.getElementById(`rl_bul_${linea}`).value, 10) : null;
+  const albaran = document.getElementById(`rl_alb_${linea}`).value.trim() || null;
+
+  const valores = { ubicacion, bultos, albaran, recibido_at: new Date().toISOString(), recibido_por: staffUserId };
+  if (!isNaN(cantidad)) valores.cantidad = cantidad;
+  if (fabTexto) {
+    const codigo = fabricantesPorNombre[fabTexto.toLowerCase()];
+    if (codigo) valores.proveedor = codigo;
+  }
+
+  const { error } = await client.from("linorden").update(valores)
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).eq("linea", linea);
+  if (error) { alert("No se pudo marcar como recibida: " + error.message); return; }
+  await cargarLineasPedido();
+}
+
+async function deshacerRecepcionLinea(linea) {
+  const { error } = await client.from("linorden").update({ recibido_at: null, recibido_por: null })
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).eq("linea", linea);
+  if (error) { alert("No se pudo deshacer: " + error.message); return; }
+  await cargarLineasPedido();
 }
 
 function reiniciarBusqueda() {
