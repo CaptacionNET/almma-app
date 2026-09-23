@@ -82,8 +82,8 @@ button:disabled{opacity:.6;cursor:default;}
 
       const { data: { user } } = await client.auth.getUser();
 
-      const { data: staffRow } = await client.from("staff").select("user_id").eq("user_id", user.id).maybeSingle();
-      if (staffRow) { window.location.href = "pedidos.html"; return; }
+      const { data: staffRow } = await client.from("staff").select("user_id, solo_deca").eq("user_id", user.id).maybeSingle();
+      if (staffRow) { window.location.href = staffRow.solo_deca ? "deca.html" : "pedidos.html"; return; }
 
       const { data: depRow } = await client.from("dependientes").select("id").eq("user_id", user.id).maybeSingle();
       if (depRow) { window.location.href = "mis-pedidos.html"; return; }

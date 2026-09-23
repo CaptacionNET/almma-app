@@ -181,8 +181,9 @@ function proximamente(nombre) {
 async function comprobarSesion() {
   const { data: { user } } = await client.auth.getUser();
   if (!user) { window.location.href = "login.html"; return; }
-  const { data: staffRow } = await client.from("staff").select("user_id").eq("user_id", user.id).maybeSingle();
+  const { data: staffRow } = await client.from("staff").select("user_id, solo_deca").eq("user_id", user.id).maybeSingle();
   if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
+  if (staffRow.solo_deca) { window.location.href = "deca.html"; return; }
   staffUserId = staffRow.user_id;
 
   const { data: almacenes } = await client.from("almacenes").select("codigo, texto").order("texto");

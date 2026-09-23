@@ -44,7 +44,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 
 <div id="menubar">
   <div class="brand">ALMMA</div>
-  <div class="menu-item" data-menu="sistema">
+  <div class="menu-item" id="menu_sistema" data-menu="sistema">
     <span>Sistema</span>
     <div class="menu-drop">
       <a href="sistema.html?cat=tiendas">Tiendas</a>
@@ -54,7 +54,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
       <a href="sistema.html?cat=articulos">Artículos</a>
     </div>
   </div>
-  <div class="menu-item" data-menu="ordenes">
+  <div class="menu-item" id="menu_ordenes" data-menu="ordenes">
     <span>Ordenes de Trabajo</span>
     <div class="menu-drop">
       <a href="pedidos.html">Introducción/Consulta</a>
@@ -68,9 +68,9 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 </div>
 
 <div id="toolbar">
-  <button class="secondary" onclick="window.location.href='pedidos.html'">Ordenes</button>
-  <button class="secondary" onclick="window.location.href='recepcion.html'">Entradas Almacén</button>
-  <button class="secondary" onclick="window.location.href='montador.html'">Mis montajes</button>
+  <button id="btn_nav_ordenes" class="secondary" onclick="window.location.href='pedidos.html'">Ordenes</button>
+  <button id="btn_nav_recepcion" class="secondary" onclick="window.location.href='recepcion.html'">Entradas Almacén</button>
+  <button id="btn_nav_montador" class="secondary" onclick="window.location.href='montador.html'">Mis montajes</button>
   <button class="secondary" onclick="window.location.href='deca.html'">DeCA</button>
   <div class="spacer"></div>
   <button class="secondary" onclick="logout()">Salir</button>
@@ -133,9 +133,15 @@ function proximamente(nombre) {
 async function comprobarSesion() {
   const { data: { user } } = await client.auth.getUser();
   if (!user) { window.location.href = "login.html"; return; }
-  const { data: staffRow } = await client.from("staff").select("user_id").eq("user_id", user.id).maybeSingle();
+  const { data: staffRow } = await client.from("staff").select("user_id, solo_deca").eq("user_id", user.id).maybeSingle();
   if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
   staffUserId = staffRow.user_id;
+  if (staffRow.solo_deca) {
+    ["btn_nav_ordenes", "btn_nav_recepcion", "btn_nav_montador", "menu_sistema", "menu_ordenes"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = "none";
+    });
+  }
   document.getElementById("deca_fecha").value = new Date().toISOString().slice(0, 10);
   cargarHistorial();
 }

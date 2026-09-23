@@ -168,8 +168,9 @@ function proximamente(nombre) {
 async function comprobarSesion() {
   const { data: { user } } = await client.auth.getUser();
   if (!user) { window.location.href = "login.html"; return; }
-  const { data: staffRow } = await client.from("staff").select("user_id, es_montador").eq("user_id", user.id).maybeSingle();
-  if (!staffRow || !staffRow.es_montador) { window.location.href = "pedidos.html"; return; }
+  const { data: staffRow } = await client.from("staff").select("user_id, es_montador, solo_deca").eq("user_id", user.id).maybeSingle();
+  if (!staffRow || staffRow.solo_deca) { window.location.href = staffRow?.solo_deca ? "deca.html" : "pedidos.html"; return; }
+  if (!staffRow.es_montador) { window.location.href = "pedidos.html"; return; }
   montadorUserId = staffRow.user_id;
   cargarMontajes();
 }
