@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
 <style>
@@ -77,21 +78,18 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 
 <div class="card">
   <h3 style="margin-top:0;">Generar DeCA (documento de transporte con QR)</h3>
-  <p class="meta">Sube el PDF de rutas que ya generas. Te devolvemos el mismo PDF con un código QR incrustado que enlaza a una copia pública (sin necesidad de iniciar sesión), tal y como exige la normativa. Puedes descargarlo, imprimirlo o enviarlo por WhatsApp.</p>
+  <p class="meta">Sube el PDF de rutas que ya generas. La normativa exige un documento por cada operación de transporte (cada vehículo/transportista), así que si el PDF trae varias rutas, cada una debe llevar su propio QR — detectamos automáticamente dónde empieza cada ruta por el nombre que cambia arriba a la izquierda de cada página.</p>
   <p id="error" class="error"></p>
   <p id="aviso" class="aviso-ok"></p>
 
-  <div class="form-grid">
-    <div class="campo">
-      <label for="deca_nombre">Nombre / referencia (ej. "Ruta martes 23/9")</label>
-      <input id="deca_nombre" placeholder="Opcional, si no se usa el nombre del archivo">
-    </div>
-    <div class="campo">
-      <label for="deca_archivo">PDF de rutas</label>
-      <input id="deca_archivo" type="file" accept="application/pdf">
-    </div>
+  <div class="campo" style="max-width:420px;">
+    <label for="deca_archivo">PDF de rutas</label>
+    <input id="deca_archivo" type="file" accept="application/pdf">
   </div>
-  <button id="btn_generar" style="margin-top:16px;" onclick="generarDeca()">Generar QR y PDF</button>
+
+  <div id="grupos_detectados" style="margin-top:16px;"></div>
+
+  <button id="btn_generar" style="margin-top:16px;display:none;" onclick="generarDeca()">Generar QR y PDF (uno por ruta)</button>
 </div>
 
 <div class="tabla-scroll">
@@ -105,9 +103,12 @@ const client = supabase.createClient(
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k"
 );
 
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+
 let tabla = null;
 let staffUserId = null;
 let nombresCache = {};
+let gruposDetectados = [];
 
 document.querySelectorAll(".menu-item").forEach(item => {
   item.querySelector("span").addEventListener("click", (e) => {
@@ -137,6 +138,68 @@ async function logout() {
   window.location.href = "login.html";
 }
 
+// La cabecera de cada pagina tiene forma "NOMBRE1/NOMBRE2 muebles almma ALBARANES
+// DIARIOS": el texto antes de "muebles almma" identifica al transportista/vehiculo
+// de esa ruta. Paginas consecutivas con la misma etiqueta son la misma ruta.
+function extraerEtiquetaRuta(textoPagina) {
+  const m = textoPagina.match(/^(.{1,60}?)\s+muebles\s+almma/i);
+  return m ? m[1].trim() : null;
+}
+
+document.getElementById("deca_archivo").addEventListener("change", analizarArchivo);
+
+async function analizarArchivo() {
+  const errorBox = document.getElementById("error");
+  const avisoBox = document.getElementById("aviso");
+  const contGrupos = document.getElementById("grupos_detectados");
+  const btnGenerar = document.getElementById("btn_generar");
+  errorBox.style.display = "none";
+  avisoBox.style.display = "none";
+  contGrupos.innerHTML = "";
+  btnGenerar.style.display = "none";
+  gruposDetectados = [];
+
+  const archivo = document.getElementById("deca_archivo").files[0];
+  if (!archivo) return;
+  if (archivo.type !== "application/pdf") { errorBox.textContent = "El archivo debe ser un PDF."; errorBox.style.display = "block"; return; }
+
+  contGrupos.innerHTML = '<p class="meta">Analizando el PDF...</p>';
+
+  try {
+    const bytes = await archivo.arrayBuffer();
+    const doc = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
+
+    let etiquetaAnterior = null;
+    for (let i = 1; i <= doc.numPages; i++) {
+      const pagina = await doc.getPage(i);
+      const contenido = await pagina.getTextContent();
+      const texto = contenido.items.map(it => it.str).join(" ");
+      const etiqueta = extraerEtiquetaRuta(texto) || `Página ${i}`;
+      if (etiquetaAnterior === etiqueta && gruposDetectados.length) {
+        gruposDetectados[gruposDetectados.length - 1].paginas.push(i - 1);
+      } else {
+        gruposDetectados.push({ etiqueta, paginas: [i - 1], nombre: etiqueta });
+      }
+      etiquetaAnterior = etiqueta;
+    }
+
+    contGrupos.innerHTML = `<p class="meta">${gruposDetectados.length === 1 ? "Se ha detectado 1 ruta" : `Se han detectado ${gruposDetectados.length} rutas`} — revisa los nombres antes de generar:</p>` +
+      gruposDetectados.map((g, i) => `
+        <div class="form-grid" style="margin-bottom:8px;">
+          <div class="campo">
+            <label>${g.paginas.length > 1 ? `Páginas ${g.paginas[0] + 1}-${g.paginas[g.paginas.length - 1] + 1}` : `Página ${g.paginas[0] + 1}`}</label>
+            <input value="${g.nombre.replace(/"/g, "&quot;")}" oninput="gruposDetectados[${i}].nombre = this.value">
+          </div>
+        </div>`).join("");
+
+    btnGenerar.style.display = "inline-block";
+  } catch (err) {
+    errorBox.textContent = "No se pudo analizar el PDF: " + (err.message || err);
+    errorBox.style.display = "block";
+    contGrupos.innerHTML = "";
+  }
+}
+
 async function generarDeca() {
   const errorBox = document.getElementById("error");
   const avisoBox = document.getElementById("aviso");
@@ -145,50 +208,58 @@ async function generarDeca() {
   avisoBox.style.display = "none";
 
   const archivo = document.getElementById("deca_archivo").files[0];
-  if (!archivo) { errorBox.textContent = "Elige un PDF primero."; errorBox.style.display = "block"; return; }
-  if (archivo.type !== "application/pdf") { errorBox.textContent = "El archivo debe ser un PDF."; errorBox.style.display = "block"; return; }
+  if (!archivo || !gruposDetectados.length) { errorBox.textContent = "Elige y analiza un PDF primero."; errorBox.style.display = "block"; return; }
 
   btn.disabled = true;
   btn.textContent = "Generando...";
+  const enlaces = [];
   try {
-    const nombre = document.getElementById("deca_nombre").value.trim() || archivo.name;
-    const rutaArchivo = `${Date.now()}-${archivo.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-
-    const { data: urlData } = client.storage.from("deca-documentos").getPublicUrl(rutaArchivo);
-    const urlPublica = urlData.publicUrl;
-
-    const qrDataUrl = await QRCode.toDataURL(urlPublica, { width: 300, margin: 1 });
-    const qrBytes = await fetch(qrDataUrl).then(r => r.arrayBuffer());
-
     const bytesOriginales = await archivo.arrayBuffer();
-    const pdfDoc = await PDFLib.PDFDocument.load(bytesOriginales);
-    const qrImagen = await pdfDoc.embedPng(qrBytes);
-    const primeraPagina = pdfDoc.getPages()[0];
-    const { width, height } = primeraPagina.getSize();
-    const tamQr = 110;
-    primeraPagina.drawImage(qrImagen, { x: width - tamQr - 20, y: height - tamQr - 20, width: tamQr, height: tamQr });
-    const bytesFinales = await pdfDoc.save();
 
-    const { error: errSubida } = await client.storage.from("deca-documentos")
-      .upload(rutaArchivo, new Blob([bytesFinales], { type: "application/pdf" }), { contentType: "application/pdf" });
-    if (errSubida) throw errSubida;
+    for (const grupo of gruposDetectados) {
+      const srcDoc = await PDFLib.PDFDocument.load(bytesOriginales);
+      const nuevoDoc = await PDFLib.PDFDocument.create();
+      const copiadas = await nuevoDoc.copyPages(srcDoc, grupo.paginas);
+      copiadas.forEach(p => nuevoDoc.addPage(p));
 
-    const { error: errFila } = await client.from("deca_documentos").insert({
-      nombre, pdf_path: rutaArchivo, subido_por: staffUserId,
-    });
-    if (errFila) throw errFila;
+      const rutaArchivo = `${Date.now()}-${grupo.nombre.replace(/[^a-zA-Z0-9._-]/g, "_")}.pdf`;
+      const { data: urlData } = client.storage.from("deca-documentos").getPublicUrl(rutaArchivo);
+      const urlPublica = urlData.publicUrl;
 
-    avisoBox.innerHTML = `Listo. <a href="${urlPublica}" target="_blank">Abrir el PDF con el QR</a>`;
+      const qrDataUrl = await QRCode.toDataURL(urlPublica, { width: 300, margin: 1 });
+      const qrBytes = await fetch(qrDataUrl).then(r => r.arrayBuffer());
+      const qrImagen = await nuevoDoc.embedPng(qrBytes);
+      const primeraPagina = nuevoDoc.getPages()[0];
+      const { width, height } = primeraPagina.getSize();
+      const tamQr = 110;
+      primeraPagina.drawImage(qrImagen, { x: width - tamQr - 20, y: height - tamQr - 20, width: tamQr, height: tamQr });
+      const bytesFinales = await nuevoDoc.save();
+
+      const { error: errSubida } = await client.storage.from("deca-documentos")
+        .upload(rutaArchivo, new Blob([bytesFinales], { type: "application/pdf" }), { contentType: "application/pdf" });
+      if (errSubida) throw errSubida;
+
+      const { error: errFila } = await client.from("deca_documentos").insert({
+        nombre: grupo.nombre, pdf_path: rutaArchivo, subido_por: staffUserId,
+      });
+      if (errFila) throw errFila;
+
+      enlaces.push({ nombre: grupo.nombre, url: urlPublica });
+    }
+
+    avisoBox.innerHTML = "Listo. " + enlaces.map(e => `<a href="${e.url}" target="_blank">${e.nombre}</a>`).join(" · ");
     avisoBox.style.display = "block";
     document.getElementById("deca_archivo").value = "";
-    document.getElementById("deca_nombre").value = "";
+    document.getElementById("grupos_detectados").innerHTML = "";
+    gruposDetectados = [];
+    btn.style.display = "none";
     await cargarHistorial();
   } catch (err) {
     errorBox.textContent = "No se pudo generar: " + (err.message || err);
     errorBox.style.display = "block";
   } finally {
     btn.disabled = false;
-    btn.textContent = "Generar QR y PDF";
+    btn.textContent = "Generar QR y PDF (uno por ruta)";
   }
 }
 
