@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - DeCA</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
+<style>
+:root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+#menubar{background:#1f2430;color:#e5e7eb;display:flex;align-items:center;padding:0 12px;font-size:13px;position:relative;z-index:20;}
+#menubar .brand{font-weight:700;color:#fff;padding:10px 16px 10px 0;font-size:15px;}
+.menu-item{position:relative;}
+.menu-item > span{display:block;padding:10px 14px;cursor:pointer;}
+.menu-item:hover > span, .menu-item.abierto > span{background:#374151;}
+.menu-drop{display:none;position:absolute;top:100%;left:0;background:#fff;color:var(--text);min-width:220px;box-shadow:0 10px 30px -10px rgba(0,0,0,.4);border-radius:0 0 8px 8px;overflow:hidden;}
+.menu-item.abierto .menu-drop{display:block;}
+.menu-drop a{display:block;padding:10px 16px;color:var(--text);text-decoration:none;font-size:13px;border-bottom:1px solid var(--border);}
+.menu-drop a:hover{background:var(--bg);}
+#toolbar{display:flex;gap:8px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center;}
+#toolbar .spacer{flex:1;}
+button{background:var(--primary);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;}
+button:hover{opacity:.9;}
+button.secondary{background:#fff;color:var(--text);border:1px solid var(--border);}
+button:disabled{opacity:.5;cursor:default;}
+input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;margin:24px;padding:20px;}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;}
+.campo label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;}
+.campo input{width:100%;}
+.aviso-ok{display:none;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px;font-size:13px;margin-top:16px;}
+.error{display:none;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;font-size:13px;margin-top:16px;}
+.tabla-scroll{margin:0 24px 24px;overflow-x:auto;}
+.meta{color:var(--muted);font-size:13px;}
+</style>
+</head>
+<body>
+
+<div id="menubar">
+  <div class="brand">ALMMA</div>
+  <div class="menu-item" data-menu="sistema">
+    <span>Sistema</span>
+    <div class="menu-drop">
+      <a href="sistema.html?cat=tiendas">Tiendas</a>
+      <a href="sistema.html?cat=fabricantes">Fabricantes</a>
+      <a href="sistema.html?cat=dependientes">Dependientes</a>
+      <a href="sistema.html?cat=montadores">Montadores</a>
+      <a href="sistema.html?cat=articulos">Artículos</a>
+    </div>
+  </div>
+  <div class="menu-item" data-menu="ordenes">
+    <span>Ordenes de Trabajo</span>
+    <div class="menu-drop">
+      <a href="pedidos.html">Introducción/Consulta</a>
+      <a href="punteo.html">Punteo de Ordenes</a>
+      <a href="#" onclick="proximamente('Listado de Rutas');return false;">Listado de Rutas</a>
+      <a href="#" onclick="proximamente('Realizar Montajes');return false;">Realizar Montajes</a>
+      <a href="#" onclick="proximamente('Gestión de Incidencias');return false;">Gestión de Incidencias</a>
+      <a href="#" onclick="proximamente('Contacto Cliente');return false;">Contacto Cliente</a>
+    </div>
+  </div>
+</div>
+
+<div id="toolbar">
+  <button class="secondary" onclick="window.location.href='pedidos.html'">Ordenes</button>
+  <button class="secondary" onclick="window.location.href='recepcion.html'">Entradas Almacén</button>
+  <button class="secondary" onclick="window.location.href='montador.html'">Mis montajes</button>
+  <button class="secondary" onclick="window.location.href='deca.html'">DeCA</button>
+  <div class="spacer"></div>
+  <button class="secondary" onclick="logout()">Salir</button>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0;">Generar DeCA (documento de transporte con QR)</h3>
+  <p class="meta">Sube el PDF de rutas que ya generas. Te devolvemos el mismo PDF con un código QR incrustado que enlaza a una copia pública (sin necesidad de iniciar sesión), tal y como exige la normativa. Puedes descargarlo, imprimirlo o enviarlo por WhatsApp.</p>
+  <p id="error" class="error"></p>
+  <p id="aviso" class="aviso-ok"></p>
+
+  <div class="form-grid">
+    <div class="campo">
+      <label for="deca_nombre">Nombre / referencia (ej. "Ruta martes 23/9")</label>
+      <input id="deca_nombre" placeholder="Opcional, si no se usa el nombre del archivo">
+    </div>
+    <div class="campo">
+      <label for="deca_archivo">PDF de rutas</label>
+      <input id="deca_archivo" type="file" accept="application/pdf">
+    </div>
+  </div>
+  <button id="btn_generar" style="margin-top:16px;" onclick="generarDeca()">Generar QR y PDF</button>
+</div>
+
+<div class="tabla-scroll">
+  <h4 style="margin:0 24px 8px;">Documentos generados</h4>
+  <div id="tabla_deca"></div>
+</div>
+
+<script>
+const client = supabase.createClient(
+  "https://uamgbtbsxbrgymhqalak.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k"
+);
+
+let tabla = null;
+let staffUserId = null;
+let nombresCache = {};
+
+document.querySelectorAll(".menu-item").forEach(item => {
+  item.querySelector("span").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const yaAbierto = item.classList.contains("abierto");
+    document.querySelectorAll(".menu-item").forEach(i => i.classList.remove("abierto"));
+    if (!yaAbierto) item.classList.add("abierto");
+  });
+});
+document.addEventListener("click", () => document.querySelectorAll(".menu-item").forEach(i => i.classList.remove("abierto")));
+
+function proximamente(nombre) {
+  alert(`"${nombre}" todavía no está construido en la app nueva — próximamente.`);
+}
+
+async function comprobarSesion() {
+  const { data: { user } } = await client.auth.getUser();
+  if (!user) { window.location.href = "login.html"; return; }
+  const { data: staffRow } = await client.from("staff").select("user_id").eq("user_id", user.id).maybeSingle();
+  if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
+  staffUserId = staffRow.user_id;
+  cargarHistorial();
+}
+
+async function logout() {
+  await client.auth.signOut();
+  window.location.href = "login.html";
+}
+
+async function generarDeca() {
+  const errorBox = document.getElementById("error");
+  const avisoBox = document.getElementById("aviso");
+  const btn = document.getElementById("btn_generar");
+  errorBox.style.display = "none";
+  avisoBox.style.display = "none";
+
+  const archivo = document.getElementById("deca_archivo").files[0];
+  if (!archivo) { errorBox.textContent = "Elige un PDF primero."; errorBox.style.display = "block"; return; }
+  if (archivo.type !== "application/pdf") { errorBox.textContent = "El archivo debe ser un PDF."; errorBox.style.display = "block"; return; }
+
+  btn.disabled = true;
+  btn.textContent = "Generando...";
+  try {
+    const nombre = document.getElementById("deca_nombre").value.trim() || archivo.name;
+    const rutaArchivo = `${Date.now()}-${archivo.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+
+    const { data: urlData } = client.storage.from("deca-documentos").getPublicUrl(rutaArchivo);
+    const urlPublica = urlData.publicUrl;
+
+    const qrDataUrl = await QRCode.toDataURL(urlPublica, { width: 300, margin: 1 });
+    const qrBytes = await fetch(qrDataUrl).then(r => r.arrayBuffer());
+
+    const bytesOriginales = await archivo.arrayBuffer();
+    const pdfDoc = await PDFLib.PDFDocument.load(bytesOriginales);
+    const qrImagen = await pdfDoc.embedPng(qrBytes);
+    const primeraPagina = pdfDoc.getPages()[0];
+    const { width, height } = primeraPagina.getSize();
+    const tamQr = 110;
+    primeraPagina.drawImage(qrImagen, { x: width - tamQr - 20, y: height - tamQr - 20, width: tamQr, height: tamQr });
+    const bytesFinales = await pdfDoc.save();
+
+    const { error: errSubida } = await client.storage.from("deca-documentos")
+      .upload(rutaArchivo, new Blob([bytesFinales], { type: "application/pdf" }), { contentType: "application/pdf" });
+    if (errSubida) throw errSubida;
+
+    const { error: errFila } = await client.from("deca_documentos").insert({
+      nombre, pdf_path: rutaArchivo, subido_por: staffUserId,
+    });
+    if (errFila) throw errFila;
+
+    avisoBox.innerHTML = `Listo. <a href="${urlPublica}" target="_blank">Abrir el PDF con el QR</a>`;
+    avisoBox.style.display = "block";
+    document.getElementById("deca_archivo").value = "";
+    document.getElementById("deca_nombre").value = "";
+    await cargarHistorial();
+  } catch (err) {
+    errorBox.textContent = "No se pudo generar: " + (err.message || err);
+    errorBox.style.display = "block";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Generar QR y PDF";
+  }
+}
+
+async function nombrePorUserId(id) {
+  if (!id) return null;
+  if (nombresCache[id]) return nombresCache[id];
+  const { data } = await client.from("staff").select("nombre").eq("user_id", id).maybeSingle();
+  nombresCache[id] = data?.nombre || null;
+  return nombresCache[id];
+}
+
+async function cargarHistorial() {
+  const { data, error } = await client.from("deca_documentos")
+    .select("id, nombre, pdf_path, subido_por, created_at")
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) { console.error(error); return; }
+
+  for (const fila of data || []) {
+    fila.subido_por_nombre = await nombrePorUserId(fila.subido_por);
+    fila.url = client.storage.from("deca-documentos").getPublicUrl(fila.pdf_path).data.publicUrl;
+  }
+
+  const columnas = [
+    { title: "Fecha", field: "created_at", formatter: (c) => c.getValue() ? new Date(c.getValue()).toLocaleString("es-ES") : "" },
+    { title: "Nombre", field: "nombre" },
+    { title: "Subido por", field: "subido_por_nombre" },
+  ];
+
+  if (!tabla) {
+    tabla = new Tabulator("#tabla_deca", { data, columns: columnas, layout: "fitColumns", height: "400px" });
+    // no usamos la opcion rowClick de Tabulator: bloquea el callback si detecta
+    // cualquier seleccion de texto activa en la pagina (falso positivo frecuente
+    // en Safari/trackpad de Mac), dejando el click sin efecto. Escuchamos el click
+    // directamente sobre el contenedor para evitar ese bloqueo.
+    document.getElementById("tabla_deca").addEventListener("click", (e) => {
+      const rowEl = e.target.closest(".tabulator-row");
+      if (!rowEl) return;
+      const row = tabla.getRows().find(r => r.getElement() === rowEl);
+      if (row) window.open(row.getData().url, "_blank");
+    });
+  } else {
+    tabla.setData(data);
+  }
+}
+
+comprobarSesion();
+</script>
+</body>
+</html>
