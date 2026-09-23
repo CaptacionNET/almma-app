@@ -6,7 +6,7 @@
 <title>ALMMA - DeCA</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
@@ -147,10 +147,42 @@ async function logout() {
 
 // La cabecera de cada pagina tiene forma "NOMBRE1/NOMBRE2 muebles almma ALBARANES
 // DIARIOS": el texto antes de "muebles almma" identifica al transportista/vehiculo
-// de esa ruta. Paginas consecutivas con la misma etiqueta son la misma ruta.
-function extraerEtiquetaRuta(textoPagina) {
-  const m = textoPagina.match(/^(.{1,60}?)\s+muebles\s+almma/i);
-  return m ? m[1].trim() : null;
+// de esa ruta. pdf.js no garantiza que los items vengan en orden de lectura visual
+// (no se puede unir todo el texto de la pagina y esperar que quede en orden), asi
+// que en vez de reconstruir la linea entera nos anclamos a la palabra fija
+// "almma" (parte del nombre de la empresa: unica en la pagina, a diferencia de
+// "muebles" que tambien aparece en el cuerpo del documento como parte del
+// nombre de fabricantes, ej. "Muebles Morte, S.L.") y cogemos los items de su
+// misma linea y a su izquierda, quitando la propia palabra "muebles": eso es
+// el nombre, sin arrastrar "ALBARANES DIARIOS" ni nada de mas a la derecha.
+function extraerEtiquetaRuta(items) {
+  const ancla = items.find(it => it.str.trim().toLowerCase() === "almma");
+  if (!ancla) return null;
+  const yAncla = ancla.transform[5];
+  const xAncla = ancla.transform[4];
+  const nombre = items
+    .filter(it => Math.abs(it.transform[5] - yAncla) < 3 && it.transform[4] < xAncla && it.str.trim().toLowerCase() !== "muebles")
+    .sort((a, b) => a.transform[4] - b.transform[4])
+    .map(it => it.str.trim())
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  return nombre || null;
+}
+
+// La libreria qrcodejs no tiene una funcion "dame directamente una imagen":
+// dibuja el QR dentro de un elemento del documento (crea un <canvas> ahi
+// dentro). Se crea un contenedor oculto, se deja dibujar, se lee el canvas
+// como imagen y se quita el contenedor.
+function generarQrDataUrl(texto, tamano) {
+  const contenedor = document.createElement("div");
+  contenedor.style.display = "none";
+  document.body.appendChild(contenedor);
+  new QRCode(contenedor, { text: texto, width: tamano, height: tamano, correctLevel: QRCode.CorrectLevel.M });
+  const canvas = contenedor.querySelector("canvas");
+  const dataUrl = canvas.toDataURL("image/png");
+  document.body.removeChild(contenedor);
+  return dataUrl;
 }
 
 document.getElementById("deca_archivo").addEventListener("change", analizarArchivo);
@@ -180,8 +212,7 @@ async function analizarArchivo() {
     for (let i = 1; i <= doc.numPages; i++) {
       const pagina = await doc.getPage(i);
       const contenido = await pagina.getTextContent();
-      const texto = contenido.items.map(it => it.str).join(" ");
-      const etiqueta = extraerEtiquetaRuta(texto) || `Página ${i}`;
+      const etiqueta = extraerEtiquetaRuta(contenido.items) || `Página ${i}`;
       if (etiquetaAnterior === etiqueta && gruposDetectados.length) {
         gruposDetectados[gruposDetectados.length - 1].paginas.push(i - 1);
       } else {
@@ -233,7 +264,7 @@ async function generarDeca() {
       const { data: urlData } = client.storage.from("deca-documentos").getPublicUrl(rutaArchivo);
       const urlPublica = urlData.publicUrl;
 
-      const qrDataUrl = await QRCode.toDataURL(urlPublica, { width: 300, margin: 1 });
+      const qrDataUrl = generarQrDataUrl(urlPublica, 300);
       const qrBytes = await fetch(qrDataUrl).then(r => r.arrayBuffer());
       const qrImagen = await nuevoDoc.embedPng(qrBytes);
       const primeraPagina = nuevoDoc.getPages()[0];
