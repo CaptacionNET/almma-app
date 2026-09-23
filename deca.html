@@ -148,20 +148,22 @@ async function logout() {
 // La cabecera de cada pagina tiene forma "NOMBRE1/NOMBRE2 muebles almma ALBARANES
 // DIARIOS": el texto antes de "muebles almma" identifica al transportista/vehiculo
 // de esa ruta. pdf.js no garantiza que los items vengan en orden de lectura visual
-// (no se puede unir todo el texto de la pagina y esperar que quede en orden), asi
-// que en vez de reconstruir la linea entera nos anclamos a la palabra fija
-// "almma" (parte del nombre de la empresa: unica en la pagina, a diferencia de
-// "muebles" que tambien aparece en el cuerpo del documento como parte del
-// nombre de fabricantes, ej. "Muebles Morte, S.L.") y cogemos los items de su
-// misma linea y a su izquierda, quitando la propia palabra "muebles": eso es
-// el nombre, sin arrastrar "ALBARANES DIARIOS" ni nada de mas a la derecha.
+// (no se puede unir todo el texto de la pagina y esperar que quede en orden), y
+// ademas junta palabras contiguas en un mismo item ("muebles almma" llega como
+// un unico string, no como dos) -- probado con pdf.js real contra un PDF de
+// ejemplo. Por eso se busca por SUBCADENA "almma" (unica en la pagina, a
+// diferencia de "muebles" que tambien aparece en el cuerpo como parte de
+// nombres de fabricantes, ej. "Muebles Morte, S.L.") y se cogen los items de su
+// misma linea (con margen amplio: los items de una misma fila visual pueden
+// venir con la Y ligeramente distinta) y a su izquierda, descartando los que
+// contengan "muebles": eso es el nombre, sin arrastrar "ALBARANES DIARIOS".
 function extraerEtiquetaRuta(items) {
-  const ancla = items.find(it => it.str.trim().toLowerCase() === "almma");
+  const ancla = items.find(it => it.str.toLowerCase().includes("almma"));
   if (!ancla) return null;
   const yAncla = ancla.transform[5];
   const xAncla = ancla.transform[4];
   const nombre = items
-    .filter(it => Math.abs(it.transform[5] - yAncla) < 3 && it.transform[4] < xAncla && it.str.trim().toLowerCase() !== "muebles")
+    .filter(it => Math.abs(it.transform[5] - yAncla) < 8 && it.transform[4] < xAncla && !it.str.toLowerCase().includes("muebles"))
     .sort((a, b) => a.transform[4] - b.transform[4])
     .map(it => it.str.trim())
     .filter(Boolean)
