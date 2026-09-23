@@ -82,9 +82,15 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
   <p id="error" class="error"></p>
   <p id="aviso" class="aviso-ok"></p>
 
-  <div class="campo" style="max-width:420px;">
-    <label for="deca_archivo">PDF de rutas</label>
-    <input id="deca_archivo" type="file" accept="application/pdf">
+  <div class="form-grid" style="max-width:600px;">
+    <div class="campo">
+      <label for="deca_fecha">Día al que corresponde el reparto</label>
+      <input id="deca_fecha" type="date">
+    </div>
+    <div class="campo">
+      <label for="deca_archivo">PDF de rutas</label>
+      <input id="deca_archivo" type="file" accept="application/pdf">
+    </div>
   </div>
 
   <div id="grupos_detectados" style="margin-top:16px;"></div>
@@ -130,6 +136,7 @@ async function comprobarSesion() {
   const { data: staffRow } = await client.from("staff").select("user_id").eq("user_id", user.id).maybeSingle();
   if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
   staffUserId = staffRow.user_id;
+  document.getElementById("deca_fecha").value = new Date().toISOString().slice(0, 10);
   cargarHistorial();
 }
 
@@ -241,6 +248,7 @@ async function generarDeca() {
 
       const { error: errFila } = await client.from("deca_documentos").insert({
         nombre: grupo.nombre, pdf_path: rutaArchivo, subido_por: staffUserId,
+        fecha_documento: document.getElementById("deca_fecha").value || null,
       });
       if (errFila) throw errFila;
 
@@ -273,7 +281,7 @@ async function nombrePorUserId(id) {
 
 async function cargarHistorial() {
   const { data, error } = await client.from("deca_documentos")
-    .select("id, nombre, pdf_path, subido_por, created_at")
+    .select("id, nombre, pdf_path, subido_por, created_at, fecha_documento")
     .order("created_at", { ascending: false })
     .limit(200);
   if (error) { console.error(error); return; }
@@ -284,7 +292,8 @@ async function cargarHistorial() {
   }
 
   const columnas = [
-    { title: "Fecha", field: "created_at", formatter: (c) => c.getValue() ? new Date(c.getValue()).toLocaleString("es-ES") : "" },
+    { title: "Día del reparto", field: "fecha_documento", formatter: (c) => c.getValue() ? new Date(c.getValue() + "T00:00:00").toLocaleDateString("es-ES") : "" },
+    { title: "Subido el", field: "created_at", formatter: (c) => c.getValue() ? new Date(c.getValue()).toLocaleString("es-ES") : "" },
     { title: "Nombre", field: "nombre" },
     { title: "Subido por", field: "subido_por_nombre" },
   ];
