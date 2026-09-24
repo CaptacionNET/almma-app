@@ -36,6 +36,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .campo input{width:100%;}
 .aviso-ok{display:none;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px;font-size:13px;margin-top:16px;}
 .error{display:none;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;font-size:13px;margin-top:16px;}
+.btn-mini{padding:4px 8px;font-size:12px;border-radius:5px;}
 .tabla-scroll{margin:0 24px 24px;overflow-x:auto;}
 .meta{color:var(--muted);font-size:13px;}
 </style>
@@ -310,6 +311,18 @@ async function generarDeca() {
   }
 }
 
+async function eliminarDocumentoDeca(fila) {
+  if (!confirm(`¿Eliminar "${fila.nombre}"? El PDF y su QR dejarán de estar disponibles (el enlace ya no funcionará si alguien lo tenía guardado).`)) return;
+
+  const { error: errStorage } = await client.storage.from("deca-documentos").remove([fila.pdf_path]);
+  if (errStorage) { alert("No se pudo eliminar el archivo: " + errStorage.message); return; }
+
+  const { error: errFila } = await client.from("deca_documentos").delete().eq("id", fila.id);
+  if (errFila) { alert("No se pudo eliminar el registro: " + errFila.message); return; }
+
+  await cargarHistorial();
+}
+
 async function nombrePorUserId(id) {
   if (!id) return null;
   if (nombresCache[id]) return nombresCache[id];
@@ -335,6 +348,7 @@ async function cargarHistorial() {
     { title: "Subido el", field: "created_at", formatter: (c) => c.getValue() ? new Date(c.getValue()).toLocaleString("es-ES") : "" },
     { title: "Nombre", field: "nombre" },
     { title: "Subido por", field: "subido_por_nombre" },
+    { title: "", width: 100, formatter: () => '<button class="secondary btn-mini" data-eliminar="1">Eliminar</button>' },
   ];
 
   if (!tabla) {
@@ -347,7 +361,9 @@ async function cargarHistorial() {
       const rowEl = e.target.closest(".tabulator-row");
       if (!rowEl) return;
       const row = tabla.getRows().find(r => r.getElement() === rowEl);
-      if (row) window.open(row.getData().url, "_blank");
+      if (!row) return;
+      if (e.target.closest("[data-eliminar]")) { eliminarDocumentoDeca(row.getData()); return; }
+      window.open(row.getData().url, "_blank");
     });
   } else {
     tabla.setData(data);
