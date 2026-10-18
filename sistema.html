@@ -256,13 +256,13 @@ const CATALOGOS = {
   },
   articulos: {
     tabla: "articulos", pk: "articulo", pkGenerado: false, titulo: "Artículo",
-    columnasLista: ["articulo", "descripcion", "_tienda", "importe", "serie"],
-    cabeceras: { articulo: "Código", descripcion: "Descripción", _tienda: "Tienda", importe: "Importe", serie: "Serie" },
+    columnasLista: ["articulo", "descripcion", "_tienda", "importe", "porcentaje", "serie"],
+    cabeceras: { articulo: "Código", descripcion: "Descripción", _tienda: "Tienda", importe: "Importe", porcentaje: "% a cobrar a la tienda", serie: "Serie" },
     campos: [
       { id: "articulo", label: "Código de artículo", requerido: true },
       { id: "descripcion", label: "Descripción", requerido: true },
       { id: "proveedor", label: "Código de tienda", tipo: "number" },
-      { id: "porcentaje", label: "Porcentaje", tipo: "number" },
+      { id: "porcentaje", label: "% a cobrar a la tienda", tipo: "number" },
       { id: "importe", label: "Importe", tipo: "number" },
       { id: "serie", label: "Serie", tipo: "number" },
       { id: "esmercancia", label: "Es mercancía (S/N)" },
