@@ -95,9 +95,10 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
       <select id="n_tipo" onchange="cambiaTipo()">
         <option value="oficina">Oficina / almacén</option><option value="montador">Montador</option>
         <option value="dependiente">Dependiente de tienda</option><option value="admin_tienda">Administrador de tienda</option><option value="admin">Administrador</option></select>
-      <span id="n_tienda_caja" style="display:none">
-        <input id="n_tienda_buscar" placeholder="1º Buscar tienda..." oninput="filtrarTiendas()" style="width:170px">
-        <select id="n_tienda" onchange="cargaDependientes()"></select></span>
+      <span id="n_tienda_caja" style="display:none;position:relative">
+        <input id="n_tienda_buscar" placeholder="Escribe para buscar la tienda..." oninput="filtrarTiendas()" onfocus="filtrarTiendas()" autocomplete="off" style="width:280px">
+        <input type="hidden" id="n_tienda">
+        <div id="n_tienda_res" style="display:none;position:absolute;top:100%;left:0;z-index:10;background:#fff;border:1px solid #93c5fd;border-radius:6px;max-height:280px;overflow:auto;width:360px;box-shadow:0 8px 20px -8px rgba(0,0,0,.4)"></div></span>
       <select id="n_vinculo" style="display:none"></select>
       <input id="n_nombre" placeholder="Nombre">
       <input id="n_email" type="email" placeholder="Email">
@@ -450,17 +451,29 @@ async function cambiaTipo(){
     const { data } = await client.from("montadores").select("id, nombre").eq("activo", true).eq("especial", false).is("staff_user_id", null).order("nombre");
     sel.innerHTML = '<option value="">¿Qué montador?</option>' + (data||[]).map(m => '<option value="'+m.id+'" data-n="'+esc(m.nombre)+'">'+esc(m.nombre)+'</option>').join("");
   } else if (esTienda) {
-    if (!tiendasCache) { const { data } = await client.from("tiendas").select("id, nombre").order("nombre"); tiendasCache = data || []; }
-    filtrarTiendas();
+    document.getElementById("n_tienda_res").style.display = "none"; cargaDependientes();
   }
 }
-function filtrarTiendas(){
-  const q = norm(document.getElementById("n_tienda_buscar").value), sel = document.getElementById("n_tienda");
-  const l = (tiendasCache || []).filter(x => !q || norm(x.nombre).includes(q)).slice(0, 200);
-  sel.innerHTML = '<option value="">— Elige la tienda —</option>' + l.map(x => '<option value="'+x.id+'">'+esc(x.nombre)+'</option>').join("");
-  if (l.length === 1) sel.value = l[0].id;
+async function filtrarTiendas(){
+  if (!tiendasCache) { const { data } = await client.from("tiendas").select("id, nombre").order("nombre"); tiendasCache = data || []; }
+  const inp = document.getElementById("n_tienda_buscar"), res = document.getElementById("n_tienda_res");
+  document.getElementById("n_tienda").value = ""; inp.style.borderColor = "";
+  const q = norm(inp.value).split(" ").filter(Boolean);
+  const l = tiendasCache.filter(x => q.every(p => norm(x.nombre).includes(p)));
+  res.innerHTML = l.slice(0, 40).map(x => '<div class="opt" data-id="'+x.id+'" style="padding:8px 10px;cursor:pointer;border-bottom:1px solid #eaf2ff">'+esc(x.nombre)+'</div>').join("")
+    + (l.length > 40 ? '<div class="muted" style="padding:6px 10px">Hay '+l.length+' coincidencias; escribe más para afinar.</div>' : "")
+    + (!l.length ? '<div class="muted" style="padding:8px 10px">Ninguna tienda coincide.</div>' : "");
+  res.style.display = "block";
+  res.querySelectorAll(".opt").forEach(d => d.onmousedown = () => elegirTienda(d.dataset.id, d.textContent));
   cargaDependientes();
 }
+function elegirTienda(id, nombre){
+  document.getElementById("n_tienda").value = id;
+  const inp = document.getElementById("n_tienda_buscar"); inp.value = nombre; inp.style.borderColor = "#16a34a";
+  document.getElementById("n_tienda_res").style.display = "none";
+  cargaDependientes();
+}
+document.addEventListener("click", e => { if (!e.target.closest("#n_tienda_caja")) { const r = document.getElementById("n_tienda_res"); if (r) r.style.display = "none"; } });
 async function cargaDependientes(){
   const tid = document.getElementById("n_tienda").value, sel = document.getElementById("n_vinculo");
   if (!tid) { sel.innerHTML = '<option value="">Primero elige la tienda</option>'; return; }
