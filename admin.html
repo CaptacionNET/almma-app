@@ -431,7 +431,7 @@ async function cargarUsuarios(){
   const f = r.usuarios.sort((a,b) => (a.tipo+a.nombre).localeCompare(b.tipo+b.nombre));
   let h = "<table><tr><th>Nombre</th><th>Email</th><th>Tipo</th><th>Tienda</th><th>Último acceso</th><th>Estado</th><th></th></tr>";
   window._lista = f;
-  for (const x of f) h += '<tr class="'+(x.bloqueado?'sin':'con')+'"><td>'+esc(x.nombre)+(x.montador?' <span class="muted">('+esc(x.montador)+')</span>':'')+'</td><td>'+esc(x.email)+'</td><td>'+esc(x.tipo)+'</td><td>'+esc(x.tienda || '')+'</td><td>'+(x.ultimo_acceso?new Date(x.ultimo_acceso).toLocaleString("es-ES"):'<span class="muted">Nunca</span>')+'</td><td>'+(x.bloqueado?'Bloqueado':'Activo')+'</td><td><button class="secondary" onclick="editarUsuario(\''+x.user_id+'\')">Editar</button> <button class="secondary" onclick="cambiarBloqueo(\''+x.user_id+'\','+x.bloqueado+')">'+(x.bloqueado?'Desbloquear':'Bloquear')+'</button> <button class="secondary" onclick="cambiarPass(\''+x.user_id+'\')">Contraseña</button></td></tr>';
+  for (const x of f) h += '<tr class="'+(x.bloqueado?'sin':'con')+'"><td>'+esc(x.nombre)+(x.montador?' <span class="muted">('+esc(x.montador)+')</span>':'')+'</td><td>'+esc(x.email)+'</td><td>'+esc(x.tipo)+'</td><td>'+esc(x.tienda || '')+((x.tiendas_extra||[]).length ? ' <span class="muted">+ '+x.tiendas_extra.map(t => esc(t.nombre)).join(', ')+'</span>' : '')+'</td><td>'+(x.ultimo_acceso?new Date(x.ultimo_acceso).toLocaleString("es-ES"):'<span class="muted">Nunca</span>')+'</td><td>'+(x.bloqueado?'Bloqueado':'Activo')+'</td><td><button class="secondary" onclick="editarUsuario(\''+x.user_id+'\')">Editar</button> <button class="secondary" onclick="cambiarBloqueo(\''+x.user_id+'\','+x.bloqueado+')">'+(x.bloqueado?'Desbloquear':'Bloquear')+'</button> <button class="secondary" onclick="cambiarPass(\''+x.user_id+'\')">Contraseña</button></td></tr>';
   document.getElementById("u_tabla").innerHTML = h + "</table>";
 }
 async function cambiarBloqueo(id, bloqueado){
@@ -518,10 +518,28 @@ async function editarUsuario(id){
     f += cb("ed_admin_tienda","Administrador de tienda",x.es_admin_tienda,"Ve todas las órdenes y facturas de su tienda y gestiona a sus dependientes. Sin marcar, solo ve sus propios pedidos.")+
       '<div style="margin:10px 0"><span class="muted">Tienda actual: <b>'+esc(x.tienda||"—")+'</b></span><br>'+
       '<span style="position:relative;display:inline-block"><input id="ed_tienda_buscar" placeholder="Cambiar de tienda: escribe para buscar..." oninput="filtrarTiendasEd()" onfocus="filtrarTiendasEd()" autocomplete="off" style="width:330px"><input type="hidden" id="ed_tienda">'+
-      '<div id="ed_tienda_res" style="display:none;position:absolute;top:100%;left:0;z-index:50;background:#fff;border:1px solid #93c5fd;border-radius:6px;max-height:240px;overflow:auto;width:360px"></div></span></div>';
+      '<div id="ed_tienda_res" style="display:none;position:absolute;top:100%;left:0;z-index:50;background:#fff;border:1px solid #93c5fd;border-radius:6px;max-height:240px;overflow:auto;width:360px"></div></span></div>'+
+      '<div style="margin:10px 0"><b>Tiendas adicionales</b> <span class="muted">(solo cuenta si es administrador de tienda)</span><div id="ed_extras" style="margin:6px 0"></div>'+
+      '<span style="position:relative;display:inline-block"><input id="ed_extra_buscar" placeholder="Añadir otra tienda: escribe para buscar..." oninput="filtrarExtra()" onfocus="filtrarExtra()" autocomplete="off" style="width:330px">'+
+      '<div id="ed_extra_res" style="display:none;position:absolute;top:100%;left:0;z-index:50;background:#fff;border:1px solid #93c5fd;border-radius:6px;max-height:240px;overflow:auto;width:360px"></div></span></div>';
   }
+  edExtras = (x.tiendas_extra || []).map(t => ({ id:t.id, nombre:t.nombre }));
   f += '<button style="margin-top:10px" onclick="guardarEdicion(\''+id+'\')">Guardar cambios</button>';
   document.getElementById("ed_cuerpo").innerHTML = f;
+  pintarExtras();
+}
+let edExtras = [];
+function pintarExtras(){
+  const c = document.getElementById("ed_extras"); if (!c) return;
+  c.innerHTML = edExtras.length ? edExtras.map((t,i) => '<span class="chip">'+esc(t.nombre)+'<button title="Quitar" onclick="edExtras.splice('+i+',1);pintarExtras()">×</button></span>').join("") : '<span class="muted">Ninguna.</span>';
+}
+async function filtrarExtra(){
+  if (!tiendasCache) { const { data } = await client.from("tiendas").select("id, nombre").order("nombre"); tiendasCache = data || []; }
+  const inp = document.getElementById("ed_extra_buscar"), res = document.getElementById("ed_extra_res");
+  const q = norm(inp.value).split(" ").filter(Boolean), l = tiendasCache.filter(x => q.every(p => norm(x.nombre).includes(p)) && !edExtras.some(e => e.id === x.id));
+  res.innerHTML = l.slice(0,40).map(x => '<div class="opt" data-id="'+x.id+'" style="padding:8px 10px;cursor:pointer;border-bottom:1px solid #eaf2ff">'+esc(x.nombre)+'</div>').join("") + (!l.length ? '<div class="muted" style="padding:8px">Ninguna coincide.</div>' : "");
+  res.style.display = "block";
+  res.querySelectorAll(".opt").forEach(d => d.onmousedown = () => { edExtras.push({ id:d.dataset.id, nombre:d.textContent }); inp.value = ""; res.style.display = "none"; pintarExtras(); });
 }
 async function filtrarTiendasEd(){
   if (!tiendasCache) { const { data } = await client.from("tiendas").select("id, nombre").order("nombre"); tiendasCache = data || []; }
@@ -540,7 +558,7 @@ async function guardarEdicion(id){
     cuerpo.montador_id = cuerpo.es_montador ? (g("ed_montador_id").value || x.montador_id) : null;
     if (cuerpo.es_admin !== x.es_admin && !confirm(cuerpo.es_admin ? "¿Dar acceso de SUPERUSUARIO a esta cuenta?" : "¿Quitar el acceso de superusuario?")) return;
   }
-  if (x.es_dependiente) { cuerpo.es_admin_tienda = g("ed_admin_tienda").checked; if (g("ed_tienda").value) cuerpo.tienda_id = g("ed_tienda").value; }
+  if (x.es_dependiente) { cuerpo.es_admin_tienda = g("ed_admin_tienda").checked; if (g("ed_tienda").value) cuerpo.tienda_id = g("ed_tienda").value; cuerpo.tiendas_extra = edExtras.map(t => t.id); }
   const r = await llamar(cuerpo);
   if (r.error) { alert(r.error); return; }
   cerrarEditor(); cargarUsuarios();

@@ -35,6 +35,7 @@ tr.bloq td:first-child{border-left:5px solid #d97706;}
   <b>ALMMA · <span id="tienda_nombre">Mi tienda</span></b>
   <button class="secondary" onclick="location.href='mis-pedidos.html'">Nuevo pedido</button>
   <div class="spacer"></div>
+  <select id="t_sel" style="display:none" onchange="cambiaTienda()"></select>
   <span id="quien" class="muted"></span>
   <button class="secondary" onclick="logout()">Salir</button>
 </div>
@@ -81,7 +82,7 @@ tr.bloq td:first-child{border-left:5px solid #d97706;}
 
 <script>
 const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
-let ordenes = [];
+let ordenes = [], misTiendas = [], tiendaSel = "";
 const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const eur = n => Number(n||0).toLocaleString("es-ES",{style:"currency",currency:"EUR"});
 const iso = d => d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
@@ -97,9 +98,18 @@ async function iniciar(){
   const { data: d } = await client.from("dependientes").select("nombre, es_admin_tienda, tiendas(nombre)").eq("user_id", user.id).maybeSingle();
   if (!d || !d.es_admin_tienda) { location.href = "mis-pedidos.html"; return; }
   document.getElementById("tienda_nombre").textContent = d.tiendas?.nombre || "Mi tienda";
+  const { data: ts } = await client.from("tiendas").select("id, nombre").order("nombre");
+  misTiendas = ts || [];
+  if (misTiendas.length > 1) {
+    document.getElementById("tienda_nombre").textContent = "Mis tiendas";
+    const sel = document.getElementById("t_sel"); sel.style.display = "";
+    sel.innerHTML = '<option value="">Todas mis tiendas</option>' + misTiendas.map(t => '<option value="'+t.id+'">'+esc(t.nombre)+'</option>').join("");
+  }
   document.getElementById("quien").textContent = d.nombre || user.email;
   cargarResumen(); cargarOrdenes(); cargarFacturas(); cargarEquipo();
 }
+function cambiaTienda(){ tiendaSel = document.getElementById("t_sel").value; cargarResumen(); cargarOrdenes(); cargarFacturas(); cargarEquipo(); }
+const multi = () => misTiendas.length > 1;
 
 /* Resumen */
 function rango(p){
@@ -117,7 +127,7 @@ async function cargarResumen(){
   document.getElementById("r_fechas_otro").style.display = p==="otro" ? "" : "none";
   const [d,h] = rango(p);
   document.getElementById("r_rango").textContent = d.toLocaleDateString("es-ES")+" – "+h.toLocaleDateString("es-ES");
-  const { data, error } = await client.rpc("resumen_tienda", { p_desde: iso(d), p_hasta: iso(h) });
+  const { data, error } = await client.rpc("resumen_tienda", { p_desde: iso(d), p_hasta: iso(h), p_tienda: tiendaSel || null });
   if (error) { document.getElementById("r_tarjetas").innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
   const t = [["Pedidos creados",data.ordenes_creadas,""],["Montajes completados",data.montadas,""],["Facturas emitidas",data.facturas,""],["Facturado (sin IVA)",eur(data.facturado),""],["Pedidos pendientes ahora",data.pendientes_ahora,""],["Con incidencia",data.con_incidencia,data.con_incidencia?"aviso":""]];
   document.getElementById("r_tarjetas").innerHTML = t.map(x => '<div class="tarjeta '+x[2]+'"><div class="n">'+x[1]+'</div><div class="t">'+x[0]+'</div></div>').join("");
@@ -128,8 +138,9 @@ async function cargarResumen(){
 
 /* Órdenes */
 async function cargarOrdenes(){
-  let q = client.from("ordenes").select("anyo, orden, nombre_cli, num_pedido, estado, fecha_creacion")
+  let q = client.from("ordenes").select("anyo, orden, nombre_cli, num_pedido, estado, fecha_creacion, tiendas(nombre)")
     .order("anyo",{ascending:false}).order("orden",{ascending:false}).limit(1000);
+  if (tiendaSel) q = q.eq("tienda_id", tiendaSel);
   if (!document.getElementById("o_antiguas").checked) q = q.gte("anyo", new Date().getFullYear()-3);
   const { data, error } = await q;
   if (error) { document.getElementById("o_tabla").innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
@@ -138,18 +149,20 @@ async function cargarOrdenes(){
 function pintarOrdenes(){
   const b = document.getElementById("o_buscar").value.trim().toLowerCase();
   const f = ordenes.filter(o => !b || [o.nombre_cli,o.num_pedido,o.anyo+"/"+o.orden].join(" ").toLowerCase().includes(b)).slice(0,500);
-  document.getElementById("o_tabla").innerHTML = '<table><tr><th>Orden</th><th>Cliente</th><th>Referencia</th><th>Estado</th><th>Creada</th></tr>'+
-    f.map(o => '<tr><td><a href="orden_tienda.html?anyo='+o.anyo+'&orden='+o.orden+'">'+o.anyo+'/'+o.orden+'</a></td><td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.num_pedido)+'</td><td>'+esc((o.estado||"").replace(/_/g," "))+'</td><td>'+(o.fecha_creacion?new Date(o.fecha_creacion).toLocaleDateString("es-ES"):"")+'</td></tr>').join("")+'</table>'+
+  document.getElementById("o_tabla").innerHTML = '<table><tr><th>Orden</th>'+(multi()?'<th>Tienda</th>':'')+'<th>Cliente</th><th>Referencia</th><th>Estado</th><th>Creada</th></tr>'+
+    f.map(o => '<tr><td><a href="orden_tienda.html?anyo='+o.anyo+'&orden='+o.orden+'">'+o.anyo+'/'+o.orden+'</a></td>'+(multi()?'<td>'+esc(o.tiendas?.nombre)+'</td>':'')+'<td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.num_pedido)+'</td><td>'+esc((o.estado||"").replace(/_/g," "))+'</td><td>'+(o.fecha_creacion?new Date(o.fecha_creacion).toLocaleDateString("es-ES"):"")+'</td></tr>').join("")+'</table>'+
     '<div class="muted" style="margin-top:6px">'+f.length+' órdenes'+(ordenes.length>500?' (se muestran las 500 primeras; afina con el buscador)':'')+'</div>';
 }
 
 /* Facturas */
 async function cargarFacturas(){
-  const { data, error } = await client.from("cabfacturas").select("anyo, serie, factura, ffactura, impbruto, impiva, impneto")
+  let q = client.from("cabfacturas").select("anyo, serie, factura, ffactura, impbruto, impiva, impneto, tiendas!tienda_id(nombre)")
     .order("ffactura",{ascending:false}).limit(500);
+  if (tiendaSel) q = q.eq("tienda_id", tiendaSel);
+  const { data, error } = await q;
   if (error) { document.getElementById("f_tabla").innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
-  document.getElementById("f_tabla").innerHTML = data.length ? '<table><tr><th>Factura</th><th>Fecha</th><th>Base</th><th>IVA</th><th>Total</th><th></th></tr>'+
-    data.map(f => { const n = f.anyo+'-'+f.serie+'-'+f.factura; return '<tr><td>'+f.serie+'-'+f.anyo+'/'+f.factura+'</td><td>'+(f.ffactura?new Date(f.ffactura).toLocaleDateString("es-ES"):"")+'</td><td>'+eur(f.impbruto)+'</td><td>'+eur(f.impiva)+'</td><td>'+eur(f.impneto)+'</td><td><a href="factura_imprimir.html?ids='+n+'" target="_blank">Ver / imprimir</a></td></tr>'; }).join("")+'</table>'
+  document.getElementById("f_tabla").innerHTML = data.length ? '<table><tr><th>Factura</th>'+(multi()?'<th>Tienda</th>':'')+'<th>Fecha</th><th>Base</th><th>IVA</th><th>Total</th><th></th></tr>'+
+    data.map(f => { const n = f.anyo+'-'+f.serie+'-'+f.factura; return '<tr><td>'+f.serie+'-'+f.anyo+'/'+f.factura+'</td>'+(multi()?'<td>'+esc(f.tiendas?.nombre)+'</td>':'')+'<td>'+(f.ffactura?new Date(f.ffactura).toLocaleDateString("es-ES"):"")+'</td><td>'+eur(f.impbruto)+'</td><td>'+eur(f.impiva)+'</td><td>'+eur(f.impneto)+'</td><td><a href="factura_imprimir.html?ids='+n+'" target="_blank">Ver / imprimir</a></td></tr>'; }).join("")+'</table>'
     : '<span class="muted">Todavía no hay facturas.</span>';
 }
 
@@ -162,13 +175,14 @@ async function llamar(cuerpo){
 async function cargarEquipo(){
   const r = await llamar({ accion:"listar" });
   if (r.error) { document.getElementById("e_tabla").innerHTML = '<span class="muted">Error: '+esc(r.error)+'</span>'; return; }
-  document.getElementById("e_tabla").innerHTML = '<table><tr><th>Nombre</th><th>Email</th><th>Tipo</th><th>Último acceso</th><th>Estado</th><th></th></tr>'+
-    r.usuarios.map(x => '<tr class="'+(x.bloqueado?'bloq':'')+'"><td>'+esc(x.nombre)+'</td><td>'+esc(x.email)+'</td><td>'+esc(x.tipo)+'</td><td>'+(x.ultimo_acceso?new Date(x.ultimo_acceso).toLocaleString("es-ES"):"Nunca")+'</td><td>'+(x.bloqueado?"Bloqueado":"Activo")+'</td><td>'+(x.tipo==="Dependiente"?'<button class="secondary" onclick="bloqueo(\''+x.user_id+'\','+x.bloqueado+')">'+(x.bloqueado?"Desbloquear":"Bloquear")+'</button> <button class="secondary" onclick="pass(\''+x.user_id+'\')">Contraseña</button>':'')+'</td></tr>').join("")+'</table>';
+  document.getElementById("e_tabla").innerHTML = '<table><tr><th>Nombre</th><th>Email</th><th>Tipo</th>'+(multi()?'<th>Tienda</th>':'')+'<th>Último acceso</th><th>Estado</th><th></th></tr>'+
+    r.usuarios.filter(x => !tiendaSel || x.tienda_id === tiendaSel).map(x => '<tr class="'+(x.bloqueado?'bloq':'')+'"><td>'+esc(x.nombre)+'</td><td>'+esc(x.email)+'</td><td>'+esc(x.tipo)+'</td>'+(multi()?'<td>'+esc(x.tienda)+'</td>':'')+'<td>'+(x.ultimo_acceso?new Date(x.ultimo_acceso).toLocaleString("es-ES"):"Nunca")+'</td><td>'+(x.bloqueado?"Bloqueado":"Activo")+'</td><td>'+(x.tipo==="Dependiente"?'<button class="secondary" onclick="bloqueo(\''+x.user_id+'\','+x.bloqueado+')">'+(x.bloqueado?"Desbloquear":"Bloquear")+'</button> <button class="secondary" onclick="pass(\''+x.user_id+'\')">Contraseña</button>':'')+'</td></tr>').join("")+'</table>';
 }
 async function bloqueo(id, b){ if(!b && !confirm("¿Bloquear esta cuenta?")) return; const r = await llamar({accion:b?"desbloquear":"bloquear",user_id:id}); if(r.error) alert(r.error); else cargarEquipo(); }
 async function pass(id){ const p = prompt("Nueva contraseña (mínimo 10 caracteres):"); if(!p) return; const r = await llamar({accion:"password",user_id:id,password:p}); alert(r.error||"Contraseña cambiada."); }
 async function crearDep(){
-  const r = await llamar({ accion:"crear", tipo:"dependiente", nombre:document.getElementById("n_nombre").value, email:document.getElementById("n_email").value, password:document.getElementById("n_pass").value });
+  if (multi() && !tiendaSel) { alert("Elige arriba la tienda concreta en la que crear el dependiente."); return; }
+  const r = await llamar({ accion:"crear", tipo:"dependiente", tienda_id: tiendaSel || undefined, nombre:document.getElementById("n_nombre").value, email:document.getElementById("n_email").value, password:document.getElementById("n_pass").value });
   if (r.error) { alert(r.error); return; }
   ["n_nombre","n_email","n_pass"].forEach(i => document.getElementById(i).value = ""); cargarEquipo();
 }
