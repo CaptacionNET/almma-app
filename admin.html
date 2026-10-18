@@ -79,6 +79,8 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
     <b id="rango_semana"></b>
     <button class="secondary" onclick="moverSemana(1)">Semana siguiente &rarr;</button>
     <button class="secondary" onclick="moverSemana(0)">Hoy</button>
+    <select id="f_dia" onchange="pintarMontajes()"><option value="">Todos los días</option></select>
+    <select id="f_eq" onchange="pintarMontajes()"><option value="">Todos los equipos</option></select>
     <label class="muted"><input type="checkbox" id="solo_sin" onchange="pintarMontajes()"> Solo sin montador</label>
   </div>
   <div id="hoja_msg" class="muted" style="margin-bottom:10px"></div>
@@ -260,9 +262,17 @@ async function cargarMontajes(){
     .select("anyo, orden, nombre_cli, localidad_cli, estado, fecha_prev_montaje, horamont, ordenes_montadores(montador_id)")
     .gte("fecha_prev_montaje", iso(semanaIni)).lt("fecha_prev_montaje", iso(fin)).order("fecha_prev_montaje");
   if (error) { document.getElementById("montajes_tabla").innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
-  ordenesSemana = data || []; pintarMontajes();
+  ordenesSemana = data || []; rellenarFiltros(); pintarMontajes();
 }
 const SIN_EQ = "SIN MONTADOR";
+function rellenarFiltros(){
+  const fd = document.getElementById("f_dia"), fe = document.getElementById("f_eq"), antD = fd.value, antE = fe.value;
+  const dias = [...new Set(ordenesSemana.map(o => String(o.fecha_prev_montaje).slice(0,10)))].sort();
+  const eqs = [...new Set(ordenesSemana.map(claveEquipo))].sort((a,b) => (a === SIN_EQ) - (b === SIN_EQ) || a.localeCompare(b));
+  fd.innerHTML = '<option value="">Todos los días</option>' + dias.map(d => '<option value="'+d+'">'+new Date(d+"T12:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"})+'</option>').join("");
+  fe.innerHTML = '<option value="">Todos los equipos</option>' + eqs.map(e => '<option value="'+esc(e)+'">'+esc(e)+'</option>').join("");
+  if (dias.includes(antD)) fd.value = antD; if (eqs.includes(antE)) fe.value = antE;
+}
 function claveEquipo(o){
   const nom = Object.fromEntries(montadores.map(m => [m.id, m.nombre]));
   const n = o.ordenes_montadores.map(a => (nom[a.montador_id] || "?").toUpperCase()).sort();
@@ -271,7 +281,8 @@ function claveEquipo(o){
 const porHora = (a,b) => (a.horamont || "99").localeCompare(b.horamont || "99") || a.orden - b.orden;
 function pintarMontajes(){
   const soloSin = document.getElementById("solo_sin").checked, nom = Object.fromEntries(montadores.map(m => [m.id, m.nombre]));
-  const filas = ordenesSemana.filter(o => !soloSin || !o.ordenes_montadores.length);
+  const fDia = document.getElementById("f_dia").value, fEq = document.getElementById("f_eq").value;
+  const filas = ordenesSemana.filter(o => (!soloSin || !o.ordenes_montadores.length) && (!fDia || String(o.fecha_prev_montaje).slice(0,10) === fDia) && (!fEq || claveEquipo(o) === fEq));
   if (!filas.length) { document.getElementById("montajes_tabla").innerHTML = '<span class="muted">No hay montajes con esos criterios.</span>'; return; }
   const dias = [...new Set(filas.map(o => String(o.fecha_prev_montaje).slice(0,10)))].sort();
   let h = '<table><tr><th>Hora</th><th>Orden</th><th>Cliente</th><th>Localidad</th><th>Estado</th><th>Montadores</th><th>Añadir</th></tr>';
@@ -343,7 +354,7 @@ async function imprimirHoja(dia, equipo, btn){
     const F = await doc.embedFont(StandardFonts.Helvetica), B = await doc.embedFont(StandardFonts.HelveticaBold);
     const qr = await doc.embedPng(await fetch(generarQrDataUrl(urlPublica, 300)).then(r => r.arrayBuffer()));
     const W = 842, H = 595, M = 30, fechaLarga = new Date(dia + "T12:00").toLocaleDateString("es-ES", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
-    const COL = { hora:M, orden:68, pedido:128, cli:200, tel:450, tienda:540 }, L = { ubi:68, desc:170, cant:500, fab:540, bul:760 };
+    const COL = { hora:M, orden:66, pedido:118, cli:222, tel:462, prov:545 }, L = { bul:66, ubi:100, desc:178, cant:500, fab:540 };
     let page, y;
     const t = (s, x, yy, sz = 8.5, f = F) => page.drawText(limpiar(s), { x, y: yy, size: sz, font: f, color: rgb(0,0,0) });
     const nueva = () => {
@@ -354,24 +365,30 @@ async function imprimirHoja(dia, equipo, btn){
       page.drawImage(qr, { x: W-M-70, y: H-M-60, width: 70, height: 70 });
       y = H-104;
       page.drawRectangle({ x: M, y: y-4, width: W-2*M, height: 14, color: rgb(.86,.92,.99) });
-      [["HORA",COL.hora],["ORDEN",COL.orden],["PEDIDO",COL.pedido],["CLIENTE / DIRECCIÓN",COL.cli],["TELÉFONO",COL.tel],["TIENDA",COL.tienda]].forEach(([s,x]) => t(s, x, y, 8, B));
+      [["HORA",COL.hora],["ORDEN",COL.orden],["PEDIDO",COL.pedido],["CLIENTE / DIRECCIÓN",COL.cli],["TELÉFONO",COL.tel],["PROVEEDOR",COL.prov]].forEach(([s,x]) => t(s, x, y, 8, B));
+      y -= 15;
+      page.drawRectangle({ x: M, y: y-4, width: W-2*M, height: 13, color: rgb(.93,.96,1) });
+      [["BULTOS",L.bul],["UBICACIÓN",L.ubi],["DESCRIPCIÓN",L.desc],["CANT",L.cant],["FÁBRICA",L.fab]].forEach(([s,x]) => t(s, x, y, 7.5, B));
       y -= 16;
     };
     nueva();
     for (const o of det) {
-      const dir = envolver(F, 8.5, [o.domicilio_cli, o.localidad_cli].filter(Boolean).join(" - "), 240);
-      const obs = o.obs_albaran || o.observaciones ? envolver(F, 8.5, "Observaciones: " + (o.obs_albaran || o.observaciones), 240) : [];
+      const nom = envolver(B, 9, o.nombre_cli || "", 232), ped = envolver(F, 8.5, o.num_pedido || "", 98);
+      const dir = envolver(F, 8.5, [o.domicilio_cli, o.localidad_cli].filter(Boolean).join(" - "), 232);
+      const obs = o.obs_albaran || o.observaciones ? envolver(F, 8.5, "Observaciones: " + (o.obs_albaran || o.observaciones), 232) : [];
       const lineas = o.linorden.filter(l => l.tipolinea !== 4).sort((a,b) => a.linea - b.linea).map(l => ({ ubi: l.ubicacion || "", desc: envolver(F, 8.5, l.descripcion || "", 320), cant: l.cantidad ?? "", fab: envolver(F, 8.5, fab[l.proveedor] || "", 210), bul: l.bultos ?? "" }));
-      const hCab = 12 + (dir.length + obs.length) * 10.5, hLin = lineas.reduce((s,l) => s + Math.max(l.desc.length, l.fab.length) * 10.5, 0);
+      const hCab = 12 + (nom.length + dir.length + obs.length) * 10.5, hLin = lineas.reduce((s,l) => s + Math.max(l.desc.length, l.fab.length) * 10.5, 0);
       if (y - (hCab + hLin) < 36 && y < H-130) nueva();
-      t(o.horamont || "-", COL.hora, y, 9, B); t(o.anyo + "/" + o.orden, COL.orden, y, 9, B); t(o.num_pedido || "", COL.pedido, y, 8.5);
-      t(o.nombre_cli || "", COL.cli, y, 9, B); t([o.telefono_cli, o.telefono2_cli].filter(Boolean).join(" / "), COL.tel, y, 8.5);
-      envolver(F, 8.5, o.tiendas?.nombre || "", 260).slice(0,2).forEach((s,i) => t(s, COL.tienda, y - i*10.5, 8.5));
-      let yy = y - 11; [...dir, ...obs].forEach((s,i) => { t(s, COL.cli, yy, 8.5, i >= dir.length ? B : F); yy -= 10.5; });
-      y = Math.min(yy, y - 22);
+      t(o.horamont || "-", COL.hora, y, 9, B); t(o.anyo + "/" + o.orden, COL.orden, y, 9, B);
+      ped.forEach((s,i) => t(s, COL.pedido, y - i*10.5, 8.5));
+      nom.forEach((s,i) => t(s, COL.cli, y - i*10.5, 9, B));
+      t([o.telefono_cli, o.telefono2_cli].filter(Boolean).join(" / "), COL.tel, y, 8.5);
+      envolver(F, 8.5, o.tiendas?.nombre || "", 245).slice(0,2).forEach((s,i) => t(s, COL.prov, y - i*10.5, 8.5));
+      let yy = y - nom.length * 10.5 - 1; [...dir, ...obs].forEach((s,i) => { t(s, COL.cli, yy, 8.5, i >= dir.length ? B : F); yy -= 10.5; });
+      y = Math.min(yy, y - Math.max(ped.length, 2) * 10.5 - 2);
       for (const l of lineas) {
         if (y < 40) nueva();
-        t(l.ubi, L.ubi, y); t(String(l.cant), L.cant, y); t(String(l.bul), L.bul, y);
+        t(String(l.bul), L.bul, y); t(l.ubi, L.ubi, y); t(String(l.cant), L.cant, y);
         l.desc.forEach((s,i) => t(s, L.desc, y - i*10.5)); l.fab.forEach((s,i) => t(s, L.fab, y - i*10.5));
         y -= Math.max(l.desc.length, l.fab.length) * 10.5;
       }
