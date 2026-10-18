@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - Imprimir facturas</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--text:#1f2430;--muted:#6b7280;--line:#cfd6e4;}
+*{box-sizing:border-box;}
+body{margin:0;background:#e8ebf2;color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:13px;}
+#barra{position:sticky;top:0;z-index:5;background:#1f2430;color:#fff;padding:10px 20px;display:flex;gap:12px;align-items:center;}
+#barra button{background:#2563eb;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:14px;cursor:pointer;}
+#barra button.sec{background:#fff;color:#1f2430;}
+.hoja{width:210mm;min-height:297mm;margin:16px auto;background:#fff;padding:16mm 16mm 14mm;box-shadow:0 2px 14px rgba(0,0,0,.18);display:flex;flex-direction:column;}
+.cab{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;}
+.emisor{line-height:1.5;}
+.emisor strong{font-size:16px;}
+.titulo{text-align:right;}
+.titulo .tipo{font-size:22px;font-weight:800;letter-spacing:.5px;}
+.titulo .num{font-size:16px;font-weight:700;margin-top:2px;}
+.sinmembrete{height:6mm;}
+.cliente{margin-top:16px;border:1px solid var(--line);border-radius:6px;padding:10px 14px;line-height:1.5;}
+.cliente .et{font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.6px;}
+.datos{display:flex;gap:30px;margin-top:12px;color:var(--muted);flex-wrap:wrap;}
+.datos b{color:var(--text);}
+table{width:100%;border-collapse:collapse;margin-top:16px;}
+th{background:#f1f4fa;text-align:left;padding:7px 8px;border-bottom:2px solid var(--line);font-size:12px;}
+td{padding:6px 8px;border-bottom:1px solid #e6eaf2;vertical-align:top;}
+td.num,th.num{text-align:right;white-space:nowrap;}
+.totales{margin-top:14px;margin-left:auto;width:62mm;}
+.totales div{display:flex;justify-content:space-between;padding:4px 0;}
+.totales .total{border-top:2px solid var(--text);margin-top:4px;padding-top:8px;font-size:16px;font-weight:800;}
+.rect{margin-top:12px;padding:8px 12px;background:#fff5f5;border:1px solid #fecaca;border-radius:6px;}
+.pie{margin-top:auto;padding-top:18px;color:var(--muted);line-height:1.5;border-top:1px solid #e6eaf2;font-size:12px;}
+.pie b{color:var(--text);}
+@page{size:A4;margin:0;}
+@media print{
+  body{background:#fff;}
+  #barra{display:none;}
+  .hoja{margin:0;box-shadow:none;width:auto;min-height:0;height:296mm;page-break-after:always;break-after:page;}
+  .hoja:last-child{page-break-after:auto;break-after:auto;}
+}
+</style>
+</head>
+<body>
+<div id="barra"><button onclick="window.print()">Imprimir</button><button class="sec" onclick="window.close()">Cerrar</button><span id="estado"></span></div>
+<div id="hojas"></div>
+<script>
+const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
+const euros = (n) => (n === null || n === undefined || n === "" || isNaN(n)) ? "" : Number(n).toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+const fechaES = (v) => v ? String(v).slice(8, 10) + "/" + String(v).slice(5, 7) + "/" + String(v).slice(0, 4) : "";
+const TITULOS = { ordinaria: "FACTURA", rectificativa: "FACTURA RECTIFICATIVA", adicional: "FACTURA ADICIONAL", proforma: "PROFORMA" };
+function numeroFactura(c, ss) {
+  return `${c.serie}-${c.anyo}/${c.factura}`;   // la serie manda: 1-2026/118, 5-2026/32 (proforma)
+}
+
+async function iniciar() {
+  const { data: { user } } = await client.auth.getUser();
+  if (!user) { window.location.href = "login.html"; return; }
+  const params = new URLSearchParams(location.search);
+  const ids = (params.get("ids") || "").split(",").filter(Boolean).map(x => x.split("-").map(Number)).filter(a => a.length === 3 && a.every(n => !isNaN(n)));
+  if (!ids.length) { document.getElementById("estado").textContent = "No se ha indicado ninguna factura."; return; }
+  document.getElementById("estado").textContent = "Cargando…";
+  const filtro = ids.map(([a, s, f]) => `and(anyo.eq.${a},serie.eq.${s},factura.eq.${f})`).join(",");
+  const [{ data: cabs, error: e1 }, { data: lins, error: e2 }, { data: series }] = await Promise.all([
+    client.from("cabfacturas").select("*").or(filtro),
+    client.from("linfacturas").select("*").or(filtro).order("linea"),
+    client.from("series").select("*"),
+  ]);
+  if (e1 || e2) { document.getElementById("estado").textContent = "Error: " + (e1 || e2).message; return; }
+  const ss = Object.fromEntries((series || []).map(s => [s.codigo, s]));
+  // facturas originales de las rectificativas / adicionales (para decir "rectifica a …")
+  const origFiltro = (cabs || []).filter(c => c.rectifica_factura).map(c => `and(anyo.eq.${c.rectifica_anyo},serie.eq.${c.rectifica_serie},factura.eq.${c.rectifica_factura})`);
+  const originales = origFiltro.length ? (await client.from("cabfacturas").select("anyo, serie, factura, ffactura, tipo_factura").or(origFiltro.join(","))).data || [] : [];
+  // tiendas de las facturas antiguas (no guardaban los datos del cliente)
+  const sinReceptor = (cabs || []).filter(c => !c.receptor && c.tienda_id).map(c => c.tienda_id);
+  const tiendas = sinReceptor.length ? (await client.from("tiendas").select("id, nombre, nombre_comercial, cif, direccion, cp, localidad, provincia").in("id", [...new Set(sinReceptor)])).data || [] : [];
+  const tiendaPorId = Object.fromEntries(tiendas.map(t => [t.id, t]));
+
+  const orden = ids.map(([a, s, f]) => (cabs || []).find(c => c.anyo === a && c.serie === s && c.factura === f)).filter(Boolean);
+  document.getElementById("hojas").innerHTML = orden.map(c => hoja(c, (lins || []).filter(l => l.anyo === c.anyo && l.serie === c.serie && l.factura === c.factura), ss, originales, tiendaPorId)).join("");
+  document.getElementById("estado").textContent = `${orden.length} factura(s) lista(s) para imprimir. Elige "Guardar como PDF" en el cuadro de impresión si prefieres un fichero.`;
+  document.title = orden.length === 1 ? "Factura " + numeroFactura(orden[0], ss) : `Facturas (${orden.length})`;
+  if (params.get("auto") === "1") setTimeout(() => window.print(), 600);
+}
+
+function hoja(c, lineas, ss, originales, tiendaPorId) {
+  const s = ss[c.serie] || {};
+  const proforma = c.tipo_factura === "proforma";
+  const emisor = c.emisor || { nombre: s.emisor_nombre, nif: s.emisor_nif, direccion: s.emisor_direccion, cp_localidad: s.emisor_cp_localidad, iban: s.emisor_iban, con_cabecera: s.con_cabecera !== false };
+  const conCabecera = !proforma && emisor.con_cabecera !== false && !!emisor.nombre;
+  const r = c.receptor || tiendaPorId[c.tienda_id] || {};
+  const orig = c.rectifica_factura ? originales.find(o => o.anyo === c.rectifica_anyo && o.serie === c.rectifica_serie && o.factura === c.rectifica_factura) : null;
+  const pct = c.iva_pct ?? (c.impbruto ? Math.round(c.impiva / c.impbruto * 10000) / 100 : 0);
+  const filas = lineas.map(l => `<tr>
+      <td>${l.anyoord ? `${l.anyoord}/${l.numeroord}` : ""}</td><td>${esc(l.referencia_pedido)}</td><td>${esc(l.cliente_final)}</td>
+      <td>${esc(l.descripcion)}</td><td class="num">${euros(l.importe)}</td><td class="num">${l.porcentaje !== null && l.porcentaje !== undefined ? Math.round(l.porcentaje * 100) / 100 + " %" : ""}</td>
+      <td class="num"><strong>${euros(l.importecobrar)}</strong></td></tr>`).join("");
+  return `<section class="hoja">
+    <div class="cab">
+      ${conCabecera ? `<div class="emisor"><strong>${esc(emisor.nombre)}</strong><br>NIF: ${esc(emisor.nif)}<br>${esc(emisor.direccion)}<br>${esc(emisor.cp_localidad)}</div>` : '<div class="sinmembrete"></div>'}
+      <div class="titulo"><div class="tipo">${TITULOS[c.tipo_factura] || "FACTURA"}</div><div class="num">Nº ${esc(numeroFactura(c, ss))}</div></div>
+    </div>
+    <div class="datos"><span>Fecha: <b>${fechaES(c.ffactura)}</b></span></div>
+    <div class="cliente"><div class="et">Cliente</div><strong>${esc(r.nombre)}</strong>${r.nombre_comercial && r.nombre_comercial !== r.nombre ? ` (${esc(r.nombre_comercial)})` : ""}<br>${r.cif ? "NIF/CIF: " + esc(r.cif) + "<br>" : ""}${esc(r.direccion)}${r.direccion ? "<br>" : ""}${[r.cp, r.localidad].filter(Boolean).map(esc).join(" ")}${r.provincia ? " (" + esc(r.provincia) + ")" : ""}</div>
+    ${c.rectifica_factura ? `<div class="rect"><strong>${c.tipo_factura === "rectificativa" ? "Rectifica" : "Amplía"} la factura ${esc(numeroFactura({ anyo: c.rectifica_anyo, serie: c.rectifica_serie, factura: c.rectifica_factura, tipo_factura: "ordinaria" }, ss))}${orig ? " de fecha " + fechaES(orig.ffactura) : ""}.</strong>${c.motivo ? "<br>Motivo: " + esc(c.motivo) : ""}</div>` : ""}
+    <table><thead><tr><th>Orden</th><th>Referencia de pedido</th><th>Cliente final</th><th>Concepto</th><th class="num">Base</th><th class="num">%</th><th class="num">Importe</th></tr></thead><tbody>${filas}</tbody></table>
+    <div class="totales">
+      <div><span>Base imponible</span><span>${euros(c.impbruto)}</span></div>
+      ${proforma ? "" : `<div><span>IVA ${pct} %</span><span>${euros(c.impiva)}</span></div><div class="total"><span>TOTAL</span><span>${euros(c.impneto)}</span></div>`}
+    </div>
+    ${proforma ? "" : `<div class="pie">${c.forma_pago ? `Forma de pago: <b>${esc(c.forma_pago)}</b><br>` : ""}${emisor.iban ? `Pago por transferencia a: <b>${esc(emisor.iban)}</b> (${esc(emisor.nombre)})<br>` : ""}${c.notas ? esc(c.notas) : ""}</div>`}
+  </section>`;
+}
+iniciar();
+</script>
+</body>
+</html>

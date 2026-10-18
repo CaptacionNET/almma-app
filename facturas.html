@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - Facturas emitidas</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
+<style>
+:root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+button{background:var(--primary);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;}
+button:hover{opacity:.9;}
+button.secondary{background:#fff;color:var(--text);border:1px solid var(--border);}
+input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;}
+
+#menubar{background:#1f2430;color:#e5e7eb;display:flex;align-items:center;padding:0 12px;font-size:13px;position:relative;z-index:20;}
+#menubar .brand{font-weight:700;color:#fff;padding:10px 16px 10px 0;font-size:15px;}
+.menu-item{position:relative;}
+.menu-item > span{display:block;padding:10px 14px;cursor:pointer;}
+.menu-item:hover > span, .menu-item.abierto > span{background:#374151;}
+.menu-drop{display:none;position:absolute;top:100%;left:0;background:#fff;color:var(--text);min-width:220px;box-shadow:0 10px 30px -10px rgba(0,0,0,.4);border-radius:0 0 8px 8px;overflow:hidden;}
+.menu-item.abierto .menu-drop{display:block;}
+.menu-drop a{display:block;padding:10px 16px;color:var(--text);text-decoration:none;font-size:13px;border-bottom:1px solid var(--border);}
+.menu-drop a:hover{background:var(--bg);}
+#toolbar{display:flex;gap:8px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center;}
+#toolbar .spacer{flex:1;}
+
+.cat-tabs{display:flex;gap:2px;padding:12px 24px 0;border-bottom:1px solid var(--border);background:var(--card);}
+.cat-tab{background:none;border:none;color:var(--muted);padding:10px 16px;font-size:14px;font-weight:600;border-bottom:2px solid transparent;}
+.cat-tab.activa{color:var(--primary);border-bottom-color:var(--primary);}
+.cat-panel{display:none;}
+.cat-panel.activa{display:block;}
+
+.barra{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:16px 24px;}
+.barra input{flex:1;min-width:220px;max-width:420px;}
+#filtros_articulos{align-items:flex-end;}
+#filtros_articulos label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;}
+#filtros_articulos input{min-width:200px;}
+.tabla-scroll{margin:0 24px 24px;overflow-x:auto;}
+
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.15);z-index:30;}
+#panel_editar{display:none;position:fixed;top:0;right:0;bottom:0;width:min(480px,100vw);background:var(--card);border-left:1px solid var(--border);box-shadow:-10px 0 30px -20px rgba(0,0,0,.3);z-index:31;padding:24px;overflow-y:auto;}
+.campo{margin-bottom:14px;}
+.campo label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;}
+.campo select,.campo input{width:100%;}
+.aviso-carga{color:var(--muted);font-size:13px;}
+#toolbar button:not([onclick="logout()"]){background:#dbeafe;color:#1e3a8a;border:1px solid #93c5fd;font-weight:600;}
+#toolbar button:not([onclick="logout()"]):hover{background:#bfdbfe;opacity:1;}
+#toolbar button.activo,#toolbar button.activo:hover{background:#1e40af;color:#fff;border:1px solid #1e3a8a;box-shadow:0 2px 6px rgba(30,64,175,.4);}
+#menubar .menu-item > span{background:#dbeafe;color:#1e3a8a;font-weight:600;margin:5px 3px;padding:6px 14px;border-radius:6px;border:1px solid #93c5fd;}
+#menubar .menu-item:hover > span,#menubar .menu-item.abierto > span{background:#bfdbfe;}
+#menubar .menu-item.activo-menu > span{background:#1e40af;color:#fff;border-color:#1e3a8a;box-shadow:0 2px 6px rgba(30,64,175,.4);}
+.menu-drop a{background:#eff6ff;color:#1e3a8a;}
+.menu-drop a:hover{background:#dbeafe;}
+.menu-drop a.activo-link{background:#1e40af;color:#fff;font-weight:600;}
+/* --- listados con el formato de las líneas de la orden: cabecera azul, filas alternas y banda de color a la izquierda --- */
+.tabulator{border:1px solid #bfdbfe;border-radius:8px;}
+.tabulator .tabulator-header{background:#dbeafe;border-bottom:2px solid #93c5fd;color:#1e3a8a;}
+.tabulator .tabulator-header .tabulator-col{background:#dbeafe;border-right:1px solid #bfdbfe;}
+.tabulator .tabulator-header .tabulator-col .tabulator-col-content{padding:9px 8px;}
+.tabulator .tabulator-header .tabulator-col .tabulator-col-title{font-weight:700;}
+.tabulator .tabulator-row{border-bottom:1px solid #dbeafe;}
+.tabulator .tabulator-row.tabulator-row-even{background:#f5f9ff;}
+.tabulator .tabulator-row:hover{background:#e0efff;}
+.tabulator .tabulator-row .tabulator-cell{padding:9px 8px;border-right:1px solid #eaf2ff;}
+.tabulator .tabulator-row .tabulator-cell:first-child{border-left:5px solid #94a3b8;}
+.tabulator .tabulator-row.est-en_proceso .tabulator-cell:first-child{border-left-color:#6366f1;}
+.tabulator .tabulator-row.est-recepcionado_parcial .tabulator-cell:first-child{border-left-color:#ca8a04;}
+.tabulator .tabulator-row.est-recepcionado_total .tabulator-cell:first-child{border-left-color:#0891b2;}
+.tabulator .tabulator-row.est-agendado .tabulator-cell:first-child{border-left-color:#7c3aed;}
+.tabulator .tabulator-row.est-completado .tabulator-cell:first-child{border-left-color:#16a34a;}
+.tabulator .tabulator-row.est-incidencia .tabulator-cell:first-child{border-left-color:#dc2626;}
+.tabulator .tabulator-row.est-terminado_incidencia .tabulator-cell:first-child{border-left-color:#9a3412;}
+.tabulator .tabulator-row.rec-si .tabulator-cell:first-child,.tabulator .tabulator-row.ent-exacta .tabulator-cell:first-child{border-left-color:#16a34a;}
+.tabulator .tabulator-row.rec-no .tabulator-cell:first-child{border-left-color:#d97706;background:#fffbeb;}
+.tabulator .tabulator-row.ent-deducida .tabulator-cell:first-child{border-left-color:#94a3b8;}
+.leyenda-listado{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11px;color:#6b7280;padding:6px 24px 8px;}
+.leyenda-listado span{border-left:5px solid var(--c,#94a3b8);padding-left:6px;}
+.mini-list .item{border-left:5px solid #2563eb;background:#f9fbff;border-color:#bfdbfe;border-left-color:#2563eb;}
+.item-pendiente{border-left:5px solid #d97706 !important;background:#fffbeb !important;}
+.linea-recibida{border-left:5px solid #16a34a !important;background:#f6fef9 !important;}
+.lineas-table{width:100%;font-size:13px;border-collapse:separate;border-spacing:0;margin-top:8px;border:1px solid #bfdbfe;border-radius:8px;overflow:hidden;}
+.lineas-table th{background:#dbeafe;color:#1e3a8a;font-weight:700;padding:8px 8px;text-align:left;border-bottom:2px solid #93c5fd;}
+.lineas-table td{border-bottom:1px solid #dbeafe;padding:9px 8px;text-align:left;vertical-align:middle;}
+.lineas-table tr:last-child td{border-bottom:none;}
+.lineas-table tbody tr:nth-child(even) td{background:#f5f9ff;}
+.lineas-table td:first-child{border-left:5px solid #94a3b8;font-weight:600;}
+.lineas-table tr.lin-t1 td:first-child{border-left-color:#2563eb;}   /* mercancía */
+.lineas-table tr.lin-t4 td:first-child{border-left-color:#d97706;}   /* servicio */
+.lineas-table tr.lin-t3 td:first-child{border-left-color:#7c3aed;}   /* texto libre */
+.lineas-table tr.lin-t2 td:first-child{border-left-color:#dc2626;}   /* devolución */
+.lineas-table tr.lin-pendiente td:first-child{background:#fffbeb;}
+.lineas-table tr:hover td{background:#e0efff;}
+.meta{color:var(--muted);font-size:12px;}
+.badge-tipo{display:inline-block;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:700;}
+.tabulator .tabulator-row.f-rectificativa .tabulator-cell:first-child{border-left-color:#dc2626;}
+.tabulator .tabulator-row.f-adicional .tabulator-cell:first-child{border-left-color:#2563eb;}
+.tabulator .tabulator-row.f-proforma .tabulator-cell:first-child{border-left-color:#94a3b8;}
+.tabulator .tabulator-row.f-ordinaria .tabulator-cell:first-child{border-left-color:#16a34a;}
+.tabulator .tabulator-row.f-rectificativa{background:#fff5f5 !important;}
+.modal-f{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);align-items:flex-start;justify-content:center;padding:30px 16px;overflow-y:auto;z-index:60;}
+.modal-f .caja{background:var(--card);border:1px solid var(--border);border-radius:10px;width:100%;max-width:900px;padding:20px;}
+</style>
+</head>
+<body>
+
+<div id="menubar">
+  <div class="brand">ALMMA</div>
+  <div class="menu-item" data-menu="sistema">
+    <span>Sistema</span>
+    <div class="menu-drop">
+      <a href="sistema.html?cat=tiendas">Tiendas</a>
+      <a href="sistema.html?cat=fabricantes">Fabricantes</a>
+      <a href="sistema.html?cat=dependientes">Dependientes</a>
+      <a href="sistema.html?cat=montadores">Montadores</a>
+      <a href="sistema.html?cat=articulos">Artículos</a>
+    </div>
+  </div>
+  <div class="menu-item" data-menu="ordenes">
+    <span>Ordenes de Trabajo</span>
+    <div class="menu-drop">
+      <a href="pedidos.html">Introducción/Consulta</a>
+      <a href="punteo.html">Punteo de Ordenes</a>
+      <a href="#" onclick="proximamente('Listado de Rutas');return false;">Listado de Rutas</a>
+      <a href="#" onclick="proximamente('Realizar Montajes');return false;">Realizar Montajes</a>
+      <a href="#" onclick="proximamente('Gestión de Incidencias');return false;">Gestión de Incidencias</a>
+      <a href="#" onclick="proximamente('Contacto Cliente');return false;">Contacto Cliente</a>
+    </div>
+  </div>
+  <div class="menu-item" data-menu="facturacion">
+    <span>Facturación</span>
+    <div class="menu-drop">
+      <a href="facturacion.html">Emitir facturas</a>
+      <a href="facturas.html">Facturas emitidas</a>
+    </div>
+  </div>
+</div>
+
+<div id="toolbar">
+  <button class="secondary" onclick="window.location.href='pedidos.html'">Ordenes</button>
+  <button class="secondary" onclick="window.location.href='recepcion.html'">Entradas Almacén</button>
+  <button class="secondary" onclick="window.location.href='montador.html'">Mis montajes</button>
+  <button class="secondary" onclick="window.location.href='deca.html'">DeCA</button>
+  <button class="secondary" onclick="window.location.href='facturas.html'">Facturación</button>
+  <div class="spacer"></div>
+  <button class="secondary" onclick="logout()">Salir</button>
+</div>
+
+<div class="filtros-entradas" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;padding:14px 24px 4px;">
+  <div><label style="display:block;font-size:11px;color:var(--muted);font-weight:600;margin-bottom:4px;">Año</label><input id="ff_anyo" type="number" style="width:90px;" onchange="cargar()"></div>
+  <div><label style="display:block;font-size:11px;color:var(--muted);font-weight:600;margin-bottom:4px;">Serie</label><select id="ff_serie" onchange="cargar()"></select></div>
+  <div><label style="display:block;font-size:11px;color:var(--muted);font-weight:600;margin-bottom:4px;">Tipo</label>
+    <select id="ff_tipo" onchange="cargar()"><option value="">Todos</option><option value="ordinaria">Facturas</option><option value="rectificativa">Rectificativas</option><option value="adicional">Adicionales</option><option value="proforma">Proformas</option></select></div>
+  <div><label style="display:block;font-size:11px;color:var(--muted);font-weight:600;margin-bottom:4px;">Tienda</label><input id="ff_tienda" placeholder="Parte del nombre" oninput="cargarDebounce()" autocomplete="off"></div>
+  <div><label style="display:block;font-size:11px;color:var(--muted);font-weight:600;margin-bottom:4px;">Fecha desde</label><input id="ff_desde" type="date" onchange="cargar()"></div>
+  <div><label style="display:block;font-size:11px;color:var(--muted);font-weight:600;margin-bottom:4px;">Fecha hasta</label><input id="ff_hasta" type="date" onchange="cargar()"></div>
+  <button class="secondary" onclick="limpiar()">Quitar filtros</button>
+  <button onclick="window.location.href='facturacion.html'">+ Emitir factura</button>
+</div>
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:6px 24px;">
+  <button id="btn_imprimir_sel" onclick="imprimirSeleccion()" disabled>Imprimir seleccionadas</button>
+  <span id="aviso_sel" class="meta"></span>
+  <span id="aviso" class="meta" style="margin-left:auto;"></span>
+</div>
+<div class="leyenda-listado" style="padding-top:0;">
+  <span style="--c:#16a34a">Factura</span><span style="--c:#dc2626">Rectificativa</span><span style="--c:#2563eb">Adicional</span><span style="--c:#94a3b8">Proforma</span>
+</div>
+<div class="tabla-scroll" style="margin:0 24px 24px;"><div id="tabla_facturas"></div></div>
+
+<!-- ventana de rectificativa / adicional -->
+<div id="modal_rect" class="modal-f"><div class="caja">
+  <button class="secondary" style="float:right;" onclick="cerrarModal()">✕</button>
+  <h3 id="mr_titulo" style="margin-top:0;"></h3>
+  <p class="meta" id="mr_explica"></p>
+  <table class="lineas-table" id="mr_tabla"></table>
+  <div style="margin:8px 0;"><button class="secondary btn-mini" onclick="anyadirLineaLibre()">+ Añadir línea libre</button></div>
+  <div style="margin-top:10px;"><label style="font-size:12px;font-weight:600;color:var(--muted);">Motivo (obligatorio, sale en la factura)</label>
+    <textarea id="mr_motivo" rows="2" style="width:100%;"></textarea></div>
+  <label id="mr_liberar_caja" style="display:flex;gap:8px;align-items:center;margin-top:10px;"><input type="checkbox" id="mr_liberar" style="width:auto;" checked> Dejar las órdenes otra vez pendientes de facturar (para volver a facturarlas bien)</label>
+  <div id="mr_totales" style="margin-top:12px;font-size:15px;"></div>
+  <p id="mr_error" class="error" style="display:none;color:#dc2626;"></p>
+  <div style="display:flex;gap:8px;margin-top:14px;"><button id="mr_emitir" onclick="emitirRect()">Emitir</button><button class="secondary" onclick="cerrarModal()">Cancelar</button></div>
+</div></div>
+
+<script>
+const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
+
+document.querySelectorAll(".menu-item").forEach(item => {
+  item.querySelector("span").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const yaAbierto = item.classList.contains("abierto");
+    document.querySelectorAll(".menu-item").forEach(i => i.classList.remove("abierto"));
+    if (!yaAbierto) item.classList.add("abierto");
+  });
+});
+document.addEventListener("click", () => document.querySelectorAll(".menu-item").forEach(i => i.classList.remove("abierto")));
+function proximamente(nombre) { alert(`"${nombre}" todavía no está construido en la app nueva — próximamente.`); }
+async function logout() { await client.auth.signOut(); window.location.href = "login.html"; }
+
+// ---- utilidades comunes de facturación ----
+const euros = (n) => (n === null || n === undefined || n === "" || isNaN(n)) ? "" : Number(n).toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+const fechaES = (v) => v ? String(v).slice(8, 10) + "/" + String(v).slice(5, 7) + "/" + String(v).slice(0, 4) : "";
+const diaSiguiente = (s) => { const [a, m, d] = s.split("-").map(Number); const x = new Date(a, m - 1, d + 1); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; };
+const hoyISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const TIPOS = { ordinaria: "Factura", rectificativa: "Rectificativa", adicional: "Adicional", proforma: "Proforma" };
+// nº de factura visible: prefijo de la serie (PF si es proforma) - año / número
+function numeroFactura(c, seriePorCodigo) {
+  return `${c.serie}-${c.anyo}/${c.factura}`;   // la serie manda: 1-2026/118, 5-2026/32 (proforma)
+}
+async function cargarSeries(soloActivas) {
+  let q = client.from("series").select("*").order("codigo");
+  if (soloActivas) q = q.eq("activa", true);
+  const { data } = await q;
+  return data || [];
+}
+async function comprobarSesionStaff() {
+  const { data: { user } } = await client.auth.getUser();
+  if (!user) { window.location.href = "login.html"; return false; }
+  const { data: staffRow } = await client.from("staff").select("user_id, solo_deca, solo_montajes").eq("user_id", user.id).maybeSingle();
+  if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return false; }
+  if (staffRow.solo_deca) { window.location.href = "deca.html"; return false; }
+  if (staffRow.solo_montajes) { window.location.href = "montador.html"; return false; }
+  return true;
+}
+
+
+let tabla = null, seriePorCodigo = {}, datos = [], seleccion = new Set(), debounce = null;
+const g = (id) => document.getElementById(id);
+const idDe = (c) => `${c.anyo}-${c.serie}-${c.factura}`;
+
+async function iniciar() {
+  if (!(await comprobarSesionStaff())) return;
+  const series = await cargarSeries(false);
+  seriePorCodigo = Object.fromEntries(series.map(s => [s.codigo, s]));
+  g("ff_serie").innerHTML = '<option value="">Todas</option>' + series.map(s => `<option value="${s.codigo}">${s.codigo} — ${esc(s.emisor_nombre || s.descripcion)}</option>`).join("");
+  g("ff_anyo").value = new Date().getFullYear();
+  cargar();
+}
+function cargarDebounce() { clearTimeout(debounce); debounce = setTimeout(cargar, 350); }
+function limpiar() { ["ff_anyo", "ff_serie", "ff_tipo", "ff_tienda", "ff_desde", "ff_hasta"].forEach(i => { g(i).value = ""; }); g("ff_anyo").value = new Date().getFullYear(); cargar(); }
+
+async function cargar() {
+  g("aviso").textContent = "Cargando...";
+  const anyo = g("ff_anyo").value, tienda = g("ff_tienda").value.trim();
+  let q = client.from("cabfacturas")
+    .select("anyo, serie, factura, ffactura, tipo_factura, origen, impbruto, impiva, impneto, iva_pct, motivo, rectifica_anyo, rectifica_serie, rectifica_factura, tienda_id, tiendas" + (tienda ? "!inner" : "") + "(nombre)")
+    .order("ffactura", { ascending: false }).order("factura", { ascending: false }).limit(500);
+  if (anyo) q = q.eq("anyo", anyo);
+  if (g("ff_serie").value) q = q.eq("serie", g("ff_serie").value);
+  if (g("ff_tipo").value) q = q.eq("tipo_factura", g("ff_tipo").value);
+  if (g("ff_desde").value) q = q.gte("ffactura", g("ff_desde").value);
+  if (g("ff_hasta").value) q = q.lt("ffactura", diaSiguiente(g("ff_hasta").value));
+  if (tienda) q = q.ilike("tiendas.nombre", `%${tienda}%`);
+  const { data, error } = await q;
+  if (error) { g("aviso").textContent = "Error: " + error.message; return; }
+  datos = (data || []).map(c => ({
+    ...c, id: idDe(c), numero: numeroFactura(c, seriePorCodigo), tienda_txt: c.tiendas?.nombre || "",
+    tipo_txt: TIPOS[c.tipo_factura] || c.tipo_factura, origen_txt: c.origen === "web" ? "Web" : "Programa antiguo",
+    rect_txt: c.rectifica_factura ? numeroFactura({ anyo: c.rectifica_anyo, serie: c.rectifica_serie, factura: c.rectifica_factura, tipo_factura: "ordinaria" }, seriePorCodigo) : "",
+  }));
+  g("aviso").textContent = `${datos.length} facturas${datos.length >= 500 ? " (las 500 más recientes: usa los filtros)" : ""}.`;
+  seleccion = new Set([...seleccion].filter(id => datos.some(d => d.id === id)));
+  pintar();
+}
+
+function pintar() {
+  const columnas = [
+    { title: '<input type="checkbox" id="chk_todas" title="Seleccionar todas las del listado">', field: "id", width: 44, headerSort: false, hozAlign: "center",
+      formatter: (c) => `<input type="checkbox" data-id="${c.getValue()}" ${seleccion.has(c.getValue()) ? "checked" : ""}>` },
+    { title: "Nº factura", field: "numero", minWidth: 120, formatter: (c) => `<strong>${esc(c.getValue())}</strong>` },
+    { title: "Acciones", field: "id", width: 290, headerSort: false, formatter: (c) => {
+        const d = c.getRow().getData(), id = d.id;
+        return `<button class="btn-mini" onclick="imprimirUna('${id}')">Imprimir</button> ` +
+          (d.tipo_factura === "proforma" ? "" : `<button class="secondary btn-mini" onclick="abrirModal('${id}','rectificativa')">Rectificativa</button> <button class="secondary btn-mini" onclick="abrirModal('${id}','adicional')">Adicional</button>`);
+      } },
+    { title: "Fecha", field: "ffactura", width: 100, formatter: (c) => fechaES(c.getValue()), sorter: "string" },
+    { title: "Tienda", field: "tienda_txt", minWidth: 180 },
+    { title: "Tipo", field: "tipo_txt", width: 110 },
+    { title: "Base", field: "impbruto", hozAlign: "right", width: 105, formatter: (c) => euros(c.getValue()) },
+    { title: "IVA", field: "impiva", hozAlign: "right", width: 95, formatter: (c) => euros(c.getValue()) },
+    { title: "Total", field: "impneto", hozAlign: "right", width: 110, formatter: (c) => `<strong>${euros(c.getValue())}</strong>` },
+    { title: "Rectifica / amplía a", field: "rect_txt", minWidth: 130 },
+    { title: "Origen", field: "origen_txt", width: 130 },
+  ];
+  const opciones = { data: datos, columns: columnas, layout: "fitColumns", height: "calc(100vh - 300px)", placeholder: "No hay facturas con esos filtros",
+    rowFormatter: (row) => { row.getElement().classList.add("f-" + row.getData().tipo_factura); } };
+  if (!tabla) {
+    tabla = new Tabulator("#tabla_facturas", opciones);
+    g("tabla_facturas").addEventListener("change", (e) => {
+      const chk = e.target.closest('input[type="checkbox"]'); if (!chk) return;
+      if (chk.id === "chk_todas") { seleccion = chk.checked ? new Set(datos.map(d => d.id)) : new Set(); tabla.redraw(true); }
+      else if (chk.dataset.id) { chk.checked ? seleccion.add(chk.dataset.id) : seleccion.delete(chk.dataset.id); }
+      resumenSeleccion();
+    });
+  } else { tabla.setData(datos); }
+  resumenSeleccion();
+}
+function resumenSeleccion() {
+  g("btn_imprimir_sel").disabled = !seleccion.size;
+  g("aviso_sel").textContent = seleccion.size ? `${seleccion.size} seleccionadas` : "Marca las facturas que quieras imprimir juntas";
+}
+function imprimirUna(id) { window.open(`factura_imprimir.html?ids=${id}&auto=1`, "_blank"); }
+function imprimirSeleccion() {
+  if (!seleccion.size) return;
+  const ids = datos.filter(d => seleccion.has(d.id)).sort((a, b) => (a.ffactura + a.serie + String(a.factura).padStart(8, "0")).localeCompare(b.ffactura + b.serie + String(b.factura).padStart(8, "0"))).map(d => d.id);
+  window.open(`factura_imprimir.html?ids=${ids.join(",")}&auto=1`, "_blank");
+}
+
+// ---------------------------------------------------------------- rectificativa / adicional
+let mr = null;   // { cab, modo, lineas: [{...}] }
+async function abrirModal(id, modo) {
+  const cab = datos.find(d => d.id === id); if (!cab) return;
+  const { data, error } = await client.from("linfacturas").select("linea, descripcion, cantidad, porcentaje, importe, importecobrar, anyoord, numeroord, orden_linea, referencia_pedido, cliente_final")
+    .eq("anyo", cab.anyo).eq("serie", cab.serie).eq("factura", cab.factura).order("linea");
+  if (error) { alert("No se pudieron cargar las líneas: " + error.message); return; }
+  mr = { cab, modo, lineas: (data || []).map(l => ({ ...l, incluir: true, valor: Math.abs(Number(l.importecobrar || 0)), libre: false })) };
+  const rect = modo === "rectificativa";
+  g("mr_titulo").textContent = `${rect ? "Emitir factura rectificativa" : "Emitir factura adicional"} sobre ${cab.numero}`;
+  g("mr_explica").textContent = rect
+    ? "Se genera una factura con los importes en NEGATIVO (se restan de la original) y queda enlazada con ella. Quita las líneas que no se rectifican o baja el importe para una rectificación parcial."
+    : "Se genera una factura nueva enlazada con la original, para cargar importes adicionales. Cambia los importes o quita líneas; también puedes añadir líneas libres.";
+  g("mr_liberar_caja").style.display = rect ? "flex" : "none";
+  g("mr_liberar").checked = rect;
+  g("mr_motivo").value = ""; g("mr_error").style.display = "none";
+  pintarModal();
+  g("modal_rect").style.display = "flex";
+}
+function cerrarModal() { g("modal_rect").style.display = "none"; mr = null; }
+function pintarModal() {
+  const rect = mr.modo === "rectificativa";
+  g("mr_tabla").innerHTML = `<tr><th style="width:36px;"></th><th>Orden / referencia</th><th>Descripción</th><th style="width:140px;text-align:right;">Importe ${rect ? "a restar" : "a cargar"} (€)</th></tr>` +
+    mr.lineas.map((l, i) => `<tr class="lin-t4">
+      <td><input type="checkbox" ${l.incluir ? "checked" : ""} onchange="mr.lineas[${i}].incluir=this.checked;totalModal()"></td>
+      <td class="meta">${l.libre ? "Línea libre" : `${l.anyoord ? l.anyoord + "/" + l.numeroord : ""} ${esc(l.referencia_pedido)} ${esc(l.cliente_final)}`}</td>
+      <td>${l.libre ? `<input value="${esc(l.descripcion)}" style="width:100%;" oninput="mr.lineas[${i}].descripcion=this.value" placeholder="Descripción">` : esc(l.descripcion)}</td>
+      <td style="text-align:right;"><input type="number" step="0.01" min="0" value="${l.valor}" style="width:120px;text-align:right;" oninput="mr.lineas[${i}].valor=parseFloat(this.value)||0;totalModal()"></td></tr>`).join("");
+  totalModal();
+}
+function anyadirLineaLibre() { mr.lineas.push({ descripcion: "", cantidad: 1, porcentaje: 100, importe: 0, importecobrar: 0, incluir: true, valor: 0, libre: true }); pintarModal(); }
+function totalModal() {
+  const rect = mr.modo === "rectificativa";
+  const base = mr.lineas.filter(l => l.incluir).reduce((a, l) => a + (l.valor || 0), 0);
+  const pct = Number(mr.cab.iva_pct ?? (mr.cab.impbruto ? mr.cab.impiva / mr.cab.impbruto * 100 : 0));
+  const iva = Math.round(base * pct) / 100, s = rect ? -1 : 1;
+  g("mr_totales").innerHTML = `Base ${euros(s * Math.round(base * 100) / 100)} · IVA ${pct}% ${euros(s * iva)} · <strong>Total ${euros(s * (Math.round(base * 100) / 100 + iva))}</strong>`;
+}
+async function emitirRect() {
+  const caja = g("mr_error"); caja.style.display = "none";
+  const rect = mr.modo === "rectificativa", s = rect ? -1 : 1;
+  const motivo = g("mr_motivo").value.trim();
+  const lineas = mr.lineas.filter(l => l.incluir && l.valor > 0);
+  if (!lineas.length) { caja.textContent = "No hay ninguna línea con importe."; caja.style.display = "block"; return; }
+  if (!motivo) { caja.textContent = "Escribe el motivo."; caja.style.display = "block"; return; }
+  if (lineas.some(l => l.libre && !l.descripcion.trim())) { caja.textContent = "Las líneas libres necesitan descripción."; caja.style.display = "block"; return; }
+  if (!confirm(`¿Emitir la factura ${rect ? "rectificativa" : "adicional"} sobre ${mr.cab.numero}?\n\nUna factura emitida no se puede modificar ni borrar.`)) return;
+  const payload = lineas.map(l => {
+    const original = Math.abs(Number(l.importecobrar || 0));
+    const editada = l.libre || Math.abs(l.valor - original) > 0.001;
+    return { descripcion: l.descripcion, cantidad: l.cantidad || 1,
+      importe: s * (editada ? l.valor : Math.abs(Number(l.importe || 0))), porcentaje: editada ? 100 : (l.porcentaje ?? 100),
+      importecobrar: s * l.valor, anyoord: l.anyoord || null, numeroord: l.numeroord || null, orden_linea: l.orden_linea || null,
+      referencia_pedido: l.referencia_pedido || null, cliente_final: l.cliente_final || null };
+  });
+  g("mr_emitir").disabled = true;
+  const { data, error } = await client.rpc("emitir_rectificativa", {
+    p_anyo: mr.cab.anyo, p_serie: mr.cab.serie, p_factura: mr.cab.factura, p_modo: mr.modo, p_motivo: motivo,
+    p_lineas: payload, p_liberar_ordenes: rect && g("mr_liberar").checked,
+  });
+  g("mr_emitir").disabled = false;
+  if (error) { caja.textContent = "No se pudo emitir: " + error.message; caja.style.display = "block"; return; }
+  const r = data[0], nueva = `${r.anyo}-${r.serie}-${r.factura}`;
+  cerrarModal();
+  await cargar();
+  if (confirm(`Factura ${rect ? "rectificativa" : "adicional"} ${numeroFactura({ anyo: r.anyo, serie: r.serie, factura: r.factura, tipo_factura: mr?.modo || "ordinaria" }, seriePorCodigo)} emitida.\n\n¿Imprimirla ahora?`)) imprimirUna(nueva);
+}
+
+iniciar();
+// leyendas de color de los listados
+(function () {
+  const estados = [["en_proceso", "En proceso", "#6366f1"], ["recepcionado_parcial", "Recepción parcial", "#ca8a04"], ["recepcionado_total", "Recepcionado", "#0891b2"],
+                   ["agendado", "Agendado", "#7c3aed"], ["completado", "Completado", "#16a34a"], ["incidencia", "Incidencia", "#dc2626"], ["terminado_incidencia", "Terminado con incidencia", "#9a3412"]];
+  const pon = (id, items) => { const el = document.getElementById(id); if (el) el.innerHTML = items.map(([c, t]) => `<span style="--c:${c}">${t}</span>`).join(""); };
+  pon("leyenda_estados", estados.map(([k, t, c]) => [c, t]));
+  pon("leyenda_recibido", [["#16a34a", "Recibido"], ["#d97706", "Pendiente de recibir"]]);
+  pon("leyenda_entradas", [["#16a34a", "Enlazada con su orden (exacta)"], ["#94a3b8", "Deducida por la referencia de pedido (entrada antigua)"]]);
+})();
+// marca en azul en qué pantalla y en qué menú estás
+(function () {
+  const pagina = location.pathname.split("/").pop() || "index.html";
+  const destino = { "punteo.html": "pedidos.html", "facturacion.html": "facturas.html" }[pagina] || pagina;
+  document.querySelectorAll("#toolbar button[onclick]").forEach(b => {
+    if ((b.getAttribute("onclick") || "").includes("'" + destino + "'")) b.classList.add("activo");
+  });
+  const menu = { "pedidos.html": "ordenes", "punteo.html": "ordenes", "sistema.html": "sistema", "facturacion.html": "facturacion", "facturas.html": "facturacion" }[pagina];
+  if (menu) { const m = document.querySelector('.menu-item[data-menu="' + menu + '"]'); if (m) m.classList.add("activo-menu"); }
+  // y, dentro de los menús desplegables, la opción de la pantalla actual
+  const cat = new URLSearchParams(location.search).get("cat") || "";
+  document.querySelectorAll(".menu-drop a[href]").forEach(a => {
+    const [ruta, consulta] = a.getAttribute("href").split("?");
+    if (ruta === pagina && (!consulta || (new URLSearchParams(consulta).get("cat") || "") === cat)) a.classList.add("activo-link");
+  });
+})();
+</script>
+</body>
+</html>

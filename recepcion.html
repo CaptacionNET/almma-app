@@ -110,6 +110,13 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
       <a href="#" onclick="proximamente('Contacto Cliente');return false;">Contacto Cliente</a>
     </div>
   </div>
+  <div class="menu-item" data-menu="facturacion">
+    <span>Facturación</span>
+    <div class="menu-drop">
+      <a href="facturacion.html">Emitir facturas</a>
+      <a href="facturas.html">Facturas emitidas</a>
+    </div>
+  </div>
 </div>
 
 <div id="toolbar">
@@ -117,6 +124,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
   <button class="secondary" onclick="window.location.href='recepcion.html'">Entradas Almacén</button>
   <button class="secondary" onclick="window.location.href='montador.html'">Mis montajes</button>
   <button class="secondary" onclick="window.location.href='deca.html'">DeCA</button>
+  <button class="secondary" onclick="window.location.href='facturas.html'">Facturación</button>
   <div class="spacer"></div>
   <button class="secondary" onclick="logout()">Salir</button>
 </div>
@@ -729,11 +737,11 @@ comprobarSesion();
 // marca en azul en qué pantalla y en qué menú estás
 (function () {
   const pagina = location.pathname.split("/").pop() || "index.html";
-  const destino = { "punteo.html": "pedidos.html" }[pagina] || pagina;
+  const destino = { "punteo.html": "pedidos.html", "facturacion.html": "facturas.html" }[pagina] || pagina;
   document.querySelectorAll("#toolbar button[onclick]").forEach(b => {
     if ((b.getAttribute("onclick") || "").includes("'" + destino + "'")) b.classList.add("activo");
   });
-  const menu = { "pedidos.html": "ordenes", "punteo.html": "ordenes", "sistema.html": "sistema" }[pagina];
+  const menu = { "pedidos.html": "ordenes", "punteo.html": "ordenes", "sistema.html": "sistema", "facturacion.html": "facturacion", "facturas.html": "facturacion" }[pagina];
   if (menu) { const m = document.querySelector('.menu-item[data-menu="' + menu + '"]'); if (m) m.classList.add("activo-menu"); }
   // y, dentro de los menús desplegables, la opción de la pantalla actual
   const cat = new URLSearchParams(location.search).get("cat") || "";
