@@ -194,17 +194,27 @@ async function cargarPunteo() {
   // dos consultas simples (1 nivel de embed cada una) en vez de un embed anidado de 2
   // niveles: PostgREST genera un plan muy lento para embeds anidados profundos y
   // llegaba al statement timeout. Se cruzan en JS por anyo+orden.
+  // El servidor entrega como mucho 1000 filas por petición, aunque se pida más. Antes se
+  // pedía todo de golpe ordenado solo por nº de orden (que se repite cada año), así que con
+  // dos años el corte de 1000 dejaba fuera casi todo el segundo. Ahora se ordena por año y
+  // orden y se pide de 1000 en 1000 hasta traerlo todo.
+  const asc = document.getElementById("orden_sort").value === "asc";
+  async function traerTodo(tabla_, columnas) {
+    let todo = [], desde = 0;
+    while (true) {
+      const { data, error } = await client.from(tabla_).select(columnas)
+        .gte("anyo", anyoDesde).lte("anyo", anyoHasta)
+        .order("anyo", { ascending: asc }).order("orden", { ascending: asc })
+        .range(desde, desde + 999);
+      if (error) return { data: null, error };
+      todo = todo.concat(data);
+      if (data.length < 1000 || todo.length >= 20000) return { data: todo, error: null };
+      desde += 1000;
+    }
+  }
   const [{ data: lineas, error: errLineas }, { data: ordenesData, error: errOrdenes }] = await Promise.all([
-    client.from("linorden")
-      .select("anyo, orden, linea, descripcion, frecepcion, observacion, recibido_at, fabricantes ( nombre )")
-      .gte("anyo", anyoDesde).lte("anyo", anyoHasta)
-      .order("orden", { ascending: document.getElementById("orden_sort").value === "asc" })
-      .limit(5000),
-    client.from("ordenes")
-      .select("anyo, orden, num_pedido, fecha_prev_montaje, fecha_montaje, tiendas ( nombre ), dependientes ( nombre )")
-      .gte("anyo", anyoDesde).lte("anyo", anyoHasta)
-      .order("orden", { ascending: document.getElementById("orden_sort").value === "asc" })
-      .limit(5000),
+    traerTodo("linorden", "anyo, orden, linea, descripcion, frecepcion, observacion, recibido_at, fabricantes ( nombre )"),
+    traerTodo("ordenes", "anyo, orden, num_pedido, fecha_prev_montaje, fecha_montaje, tiendas ( nombre ), dependientes ( nombre )"),
   ]);
 
   if (errLineas || errOrdenes) {
@@ -235,7 +245,7 @@ async function cargarPunteo() {
   });
 
   avisoBox.textContent = `${datosCompletos.length} líneas cargadas.` +
-    (datosCompletos.length >= 1000 ? " Puede haber más — acota el rango de años o usa la búsqueda para ver resultados concretos." : "");
+    (datosCompletos.length >= 20000 ? " Hay más de 20.000 — acota el rango de años." : "");
   aplicarFiltroTexto();
 }
 
