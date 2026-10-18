@@ -60,6 +60,7 @@ header .quien{font-size:.8rem;opacity:.85;flex:1;white-space:nowrap;overflow:hid
 .opciones .btn{width:100%;margin-bottom:10px;justify-content:flex-start;padding-left:18px;background:#fff;color:var(--txt);border:2px solid #cbd5e1;font-weight:700;}
 .opciones .btn.sel{border-color:var(--naranja);background:#fffbeb;}
 #toast{position:fixed;left:16px;right:16px;bottom:calc(64px + env(safe-area-inset-bottom));background:#0f172a;color:#fff;padding:16px;border-radius:14px;font-weight:700;z-index:80;display:none;text-align:center;}
+#toast .btn.az{background:#dbeafe;color:#1e40af;} #toast .btn.pl{background:#334155;color:#fff;}
 #aviso_instalar{margin:12px 16px 0;background:#e0f2fe;border-radius:14px;padding:14px;font-size:.9rem;display:none;}
 #aviso_instalar button{margin-top:8px;border:none;background:var(--azul);color:#fff;border-radius:10px;padding:10px 16px;font-weight:700;font-size:.9rem;}
 #mensaje{padding:40px 24px;text-align:center;font-size:1.1rem;display:none;}
@@ -148,6 +149,12 @@ let uid = null, nombreMontador = "", paquete = null, cola = [], diaVista = 0, si
 /* ---------- Avisos ---------- */
 let tToast;
 function toast(t, ms = 3500){ const e = document.getElementById("toast"); e.textContent = t; e.style.display = "block"; clearTimeout(tToast); tToast = setTimeout(() => e.style.display = "none", ms); }
+function toastOtraFoto(texto, k){
+  const e = document.getElementById("toast"); clearTimeout(tToast);
+  e.innerHTML = '<div>' + texto + '</div><button class="btn az" style="width:100%;margin-top:12px" onclick="document.getElementById(\'toast\').style.display=\'none\';hacerFoto(\'' + k + '\')">📷 OTRA FOTO</button>' +
+    '<button class="btn pl" style="width:100%;margin-top:8px;min-height:44px" onclick="document.getElementById(\'toast\').style.display=\'none\'">Ya está</button>';
+  e.style.display = "block"; tToast = setTimeout(() => e.style.display = "none", 15000);
+}
 function cerrarPantalla(id){ document.getElementById(id).style.display = "none"; }
 function mensaje(t){ const m = document.getElementById("mensaje"); m.innerHTML = t; m.style.display = "block"; document.getElementById("lista").innerHTML = ""; }
 
@@ -273,7 +280,7 @@ document.getElementById("cam").addEventListener("change", async e => {
   const rnd = Math.random().toString(36).slice(2, 8);
   await colaAdd({ tipo:"foto", anyo:o.anyo, orden:o.orden, blob, path:o.anyo + "/" + o.orden + "/fotos/" + Date.now() + "-" + rnd + ".jpg", categoria:(o.estado === "incidencia" || enCola(o, "incidencia").length) ? "incidencia" : "entrega_ok", ts:Date.now() });
   cola = await colaAll(); pintar(); estadoBarra();
-  toast(navigator.onLine ? "✔ Foto guardada" : "✔ Foto guardada en el móvil. Se enviará cuando haya cobertura");
+  toastOtraFoto(navigator.onLine ? "✔ Foto guardada" : "✔ Foto guardada en el móvil. Se enviará cuando haya cobertura", o.anyo + "/" + o.orden);
   enviarCola(false);
 });
 
