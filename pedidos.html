@@ -847,12 +847,14 @@ async function leerPdfNuevaOrden() {
     poner("no_domicilio_cli", data.domicilio_cli);
     poner("no_localidad_cli", data.localidad_cli);
     poner("no_num_pedido", data.num_pedido);
+    const avisosTienda = await elegirTiendaYVendedorDesdePdf(data);
     lineasPdfNuevaOrden = (data.lineas || []).map(l => ({ descripcion: l.descripcion, cantidad: l.cantidad || 1 }));
     pintarLineasPdfNuevaOrden();
     pdfNuevaOrden = file;
     estado.textContent = "Listo. Revisa los datos y elige la tienda antes de crear. El PDF se guardará con la orden.";
-    if (data.avisos && data.avisos.length) {
-      avisos.innerHTML = data.avisos.map(a => `<li>${escMont(a)}</li>`).join("");
+    const todosAvisos = [...avisosTienda, ...(data.avisos || [])];
+    if (todosAvisos.length) {
+      avisos.innerHTML = todosAvisos.map(a => `<li>${escMont(a)}</li>`).join("");
       avisos.style.display = "block";
     }
   } catch (e) {
@@ -861,6 +863,56 @@ async function leerPdfNuevaOrden() {
   } finally {
     boton.disabled = false;
   }
+}
+
+// Empareja la empresa que emite el PDF con una tienda de ALMMA: primero por CIF, y si no, por el nombre.
+// Solo se elige cuando hay UNA coincidencia clara; si no, se deja vacío y se avisa.
+const FORMAS_LEGALES = new Set(["sl", "sa", "slu", "scp", "cb", "s", "l", "a", "u"]);
+const palabrasNombre = s => sinAcentos(s).replace(/[^a-z0-9]+/g, " ").split(" ").filter(w => w && !FORMAS_LEGALES.has(w));
+const soloAlfanumerico = s => sinAcentos(s).replace(/[^a-z0-9]/g, "");
+
+async function elegirTiendaYVendedorDesdePdf(data) {
+  const avisos = [];
+  if (!data.tienda_nombre && !data.tienda_cif) {
+    avisos.push("El PDF no dice qué tienda lo emite: elige la tienda a mano.");
+    return avisos;
+  }
+  const { data: tiendas } = await client.from("tiendas").select("id, nombre, cif, codigo_legado, codigo").order("nombre");
+  const lista = tiendas || [];
+  let elegida = null;
+
+  if (data.tienda_cif) {
+    const cif = soloAlfanumerico(data.tienda_cif);
+    const porCif = lista.filter(t => t.cif && soloAlfanumerico(t.cif) === cif);
+    if (porCif.length === 1) elegida = porCif[0];
+  }
+  if (!elegida && data.tienda_nombre) {
+    const doc = new Set(palabrasNombre(data.tienda_nombre));
+    const cand = lista.map(t => ({ t, w: palabrasNombre(t.nombre) }))
+      .filter(x => x.w.length && x.w.every(w => doc.has(w)));
+    const mejor = Math.max(0, ...cand.map(x => x.w.length));
+    const mejores = cand.filter(x => x.w.length === mejor);
+    if (mejores.length === 1) elegida = mejores[0].t;
+  }
+  if (!elegida) {
+    avisos.push(`No he reconocido la tienda "${data.tienda_nombre || data.tienda_cif}": elígela a mano.`);
+    return avisos;
+  }
+
+  if (!tiendasNuevaOrden.some(x => x.id === elegida.id)) tiendasNuevaOrden.push(elegida);
+  document.getElementById("no_tienda").innerHTML = `<option value="${elegida.id}" selected></option>`;
+  document.getElementById("no_tienda").value = elegida.id;
+  elegirTiendaNuevaOrden();                       // pone el nombre y carga sus dependientes
+  await llenarSelectDependiente(elegida.id, null, "no_dependiente");
+
+  if (data.vendedor) {
+    const quiero = palabrasNombre(data.vendedor);
+    const sel = document.getElementById("no_dependiente");
+    const opciones = [...sel.options].filter(o => o.value && quiero.every(w => palabrasNombre(o.textContent).includes(w)));
+    if (opciones.length === 1) sel.value = opciones[0].value;
+    else avisos.push(`Vendedor "${data.vendedor}": ${opciones.length ? "hay varios dependientes que encajan" : "no lo encuentro entre los dependientes de la tienda"}; elígelo a mano.`);
+  }
+  return avisos;
 }
 
 // guarda las líneas del PDF y el propio PDF en la orden recién creada; devuelve un texto con los fallos, o ""
