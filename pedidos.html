@@ -104,6 +104,33 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .menu-drop a{background:#eff6ff;color:#1e3a8a;}
 .menu-drop a:hover{background:#dbeafe;}
 .menu-drop a.activo-link{background:#1e40af;color:#fff;font-weight:600;}
+/* --- listados con el formato de las líneas de la orden: cabecera azul, filas alternas y banda de color a la izquierda --- */
+.tabulator{border:1px solid #bfdbfe;border-radius:8px;}
+.tabulator .tabulator-header{background:#dbeafe;border-bottom:2px solid #93c5fd;color:#1e3a8a;}
+.tabulator .tabulator-header .tabulator-col{background:#dbeafe;border-right:1px solid #bfdbfe;}
+.tabulator .tabulator-header .tabulator-col .tabulator-col-content{padding:9px 8px;}
+.tabulator .tabulator-header .tabulator-col .tabulator-col-title{font-weight:700;}
+.tabulator .tabulator-row{border-bottom:1px solid #dbeafe;}
+.tabulator .tabulator-row.tabulator-row-even{background:#f5f9ff;}
+.tabulator .tabulator-row:hover{background:#e0efff;}
+.tabulator .tabulator-row .tabulator-cell{padding:9px 8px;border-right:1px solid #eaf2ff;}
+.tabulator .tabulator-row .tabulator-cell:first-child{border-left:5px solid #94a3b8;}
+.tabulator .tabulator-row.est-en_proceso .tabulator-cell:first-child{border-left-color:#6366f1;}
+.tabulator .tabulator-row.est-recepcionado_parcial .tabulator-cell:first-child{border-left-color:#ca8a04;}
+.tabulator .tabulator-row.est-recepcionado_total .tabulator-cell:first-child{border-left-color:#0891b2;}
+.tabulator .tabulator-row.est-agendado .tabulator-cell:first-child{border-left-color:#7c3aed;}
+.tabulator .tabulator-row.est-completado .tabulator-cell:first-child{border-left-color:#16a34a;}
+.tabulator .tabulator-row.est-incidencia .tabulator-cell:first-child{border-left-color:#dc2626;}
+.tabulator .tabulator-row.est-terminado_incidencia .tabulator-cell:first-child{border-left-color:#9a3412;}
+.tabulator .tabulator-row.rec-si .tabulator-cell:first-child,.tabulator .tabulator-row.ent-exacta .tabulator-cell:first-child{border-left-color:#16a34a;}
+.tabulator .tabulator-row.rec-no .tabulator-cell:first-child{border-left-color:#d97706;background:#fffbeb;}
+.tabulator .tabulator-row.ent-deducida .tabulator-cell:first-child{border-left-color:#94a3b8;}
+.leyenda-listado{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11px;color:#6b7280;padding:6px 24px 8px;}
+.leyenda-listado span{border-left:5px solid var(--c,#94a3b8);padding-left:6px;}
+.mini-list .item{border-left:5px solid #2563eb;background:#f9fbff;border-color:#bfdbfe;border-left-color:#2563eb;}
+.estado-terminado_incidencia{background:#fff7ed;color:#9a3412;}
+.item-pendiente{border-left:5px solid #d97706 !important;background:#fffbeb !important;}
+.linea-recibida{border-left:5px solid #16a34a !important;background:#f6fef9 !important;}
 </style>
 </head>
 <body>
@@ -189,19 +216,20 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 </div>
 <div class="aviso-carga" id="aviso_carga"></div>
 
+<div class="leyenda-listado" id="leyenda_estados"></div>
 <div class="tabla-scroll"><div id="tabla_pedidos"></div></div>
 
 <div id="modal_traspaso" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto;z-index:60;">
   <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;width:100%;max-width:680px;padding:20px;">
     <button class="secondary" onclick="cerrarTraspaso()" style="float:right;">✕</button>
     <h3 style="margin-top:0;">Traspasar a incidencia</h3>
-    <p class="meta" style="font-size:13px;">Elige las líneas de la orden <strong id="tr_orden"></strong> que pasan a la nueva orden de incidencia.
-      Las líneas elegidas se <strong>mueven</strong>: dejan de estar en la orden original. La orden original pasa a "terminado con incidencia" y queda pendiente de facturar.</p>
+    <p class="meta" style="font-size:13px;">Elige las líneas de la orden <strong id="tr_orden"></strong> que se <strong>copian</strong> a la nueva orden de incidencia.
+      La orden original <strong>conserva todas sus líneas</strong> y se marca como "incidencia". Las líneas copiadas llegan a la nueva orden como pendientes de recibir.</p>
     <label style="display:flex;gap:6px;align-items:center;font-weight:600;margin:10px 0 6px;"><input type="checkbox" id="tr_todas" style="width:auto;" onchange="marcarTodasTraspaso(this.checked)"> Seleccionar todas</label>
     <div id="tr_lista" class="mini-list"></div>
     <p id="tr_error" class="error"></p>
     <div style="display:flex;gap:8px;margin-top:14px;">
-      <button onclick="confirmarTraspaso()">Traspasar las líneas elegidas</button>
+      <button onclick="confirmarTraspaso()">Crear la incidencia con las líneas elegidas</button>
       <button class="secondary" onclick="cerrarTraspaso()">Cancelar</button>
     </div>
   </div>
@@ -859,14 +887,14 @@ async function cargarPedidos() {
       } },
     { title: "Estado", field: "estado", formatter: (cell) => {
         const v = cell.getValue() || "en_proceso";
-        return `<span class="estado-pill estado-${v}">${v}</span>`;
+        return `<span class="estado-pill estado-${v}">${v.replace(/_/g, " ")}</span>`;
       } },
     { title: "Importe", field: "importe_total", formatter: "money", formatterParams: { symbol: "€", precision: 2 } },
   ];
 
   if (!tabla) {
     tabla = new Tabulator("#tabla_pedidos", {
-      data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 210px)",
+      data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 240px)", rowFormatter: (row) => { row.getElement().classList.add("est-" + (row.getData().estado || "en_proceso")); },
     });
     // no usamos la opcion rowClick de Tabulator: bloquea el callback si detecta
     // cualquier seleccion de texto activa en la pagina (falso positivo frecuente
@@ -1320,7 +1348,7 @@ async function confirmarTraspaso() {
   }
   const nueva = data[0];
   cerrarTraspaso();
-  alert(`Creada la orden de incidencia ${nueva.anyo}/${nueva.orden}` + (lineas.length ? ` con ${lineas.length} línea(s) movidas desde la ${pedidoActivo.anyo}/${pedidoActivo.orden}.` : " (vacía).") + "\nQueda enlazada en el Historial.");
+  alert(`Creada la orden de incidencia ${nueva.anyo}/${nueva.orden}` + (lineas.length ? ` con ${lineas.length} línea(s) copiadas de la ${pedidoActivo.anyo}/${pedidoActivo.orden}, que sigue con todas sus líneas y queda marcada como incidencia.` : " (vacía).") + "\nQueda enlazada en el Historial.");
   const { data: ord } = await client.from("ordenes").select("estado, pendiente_facturar").eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).maybeSingle();
   if (ord) { document.getElementById("ch_estado").value = ord.estado; document.getElementById("ch_pendiente_facturar").checked = !!ord.pendiente_facturar; }
   cargarPedidos();
@@ -1458,6 +1486,15 @@ async function registrarLlamada() {
 }
 
 comprobarSesion();
+// leyendas de color de los listados
+(function () {
+  const estados = [["en_proceso", "En proceso", "#6366f1"], ["recepcionado_parcial", "Recepción parcial", "#ca8a04"], ["recepcionado_total", "Recepcionado", "#0891b2"],
+                   ["agendado", "Agendado", "#7c3aed"], ["completado", "Completado", "#16a34a"], ["incidencia", "Incidencia", "#dc2626"], ["terminado_incidencia", "Terminado con incidencia", "#9a3412"]];
+  const pon = (id, items) => { const el = document.getElementById(id); if (el) el.innerHTML = items.map(([c, t]) => `<span style="--c:${c}">${t}</span>`).join(""); };
+  pon("leyenda_estados", estados.map(([k, t, c]) => [c, t]));
+  pon("leyenda_recibido", [["#16a34a", "Recibido"], ["#d97706", "Pendiente de recibir"]]);
+  pon("leyenda_entradas", [["#16a34a", "Enlazada con su orden (exacta)"], ["#94a3b8", "Deducida por el nº de pedido (entrada antigua)"]]);
+})();
 // marca en azul en qué pantalla y en qué menú estás
 (function () {
   const pagina = location.pathname.split("/").pop() || "index.html";
