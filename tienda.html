@@ -196,6 +196,27 @@ async function crearDep(){
   ["n_nombre","n_email","n_pass"].forEach(i => document.getElementById(i).value = ""); cargarEquipo();
 }
 iniciar();
+
+// --- banner de mensajes sin leer (migracion/61_chat_ordenes_sin_leer.sql) ---
+(function () {
+  const enStaff = location.pathname.endsWith("pedidos.html");
+  const enlace = (a, o) => (enStaff ? "pedidos.html" : "orden_tienda.html") + "?anyo=" + a + "&orden=" + o;
+  async function pintarBanner() {
+    const { data, error } = await client.rpc("ordenes_con_chat_sin_leer");
+    let b = document.getElementById("banner_mensajes");
+    if (error || !data || !data.length) { if (b) b.remove(); return; }
+    if (!b) {
+      b = document.createElement("div"); b.id = "banner_mensajes";
+      b.style.cssText = "position:sticky;top:0;z-index:9999;background:#dc2626;color:#fff;padding:9px 16px;font:600 14px -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;text-align:center";
+      document.body.prepend(b);
+    }
+    const orden = data.slice().sort((x, y) => y.anyo - x.anyo || y.orden - x.orden);
+    b.innerHTML = "💬 MENSAJES SIN LEER (" + orden.length + (orden.length === 1 ? " orden" : " órdenes") + "): " +
+      orden.slice(0, 8).map(r => '<a style="color:#fff;text-decoration:underline;margin:0 6px" href="' + enlace(r.anyo, r.orden) + '">' + r.anyo + "/" + r.orden + "</a>").join("") +
+      (orden.length > 8 ? " y " + (orden.length - 8) + " más" : "");
+  }
+  pintarBanner(); setInterval(pintarBanner, 60000);
+})();
 </script>
 </body>
 </html>
