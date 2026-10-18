@@ -182,8 +182,10 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
     <p id="no_error" class="error"></p>
     <div class="form-grid">
       <div class="campo">
-        <label for="no_tienda">Tienda</label>
-        <select id="no_tienda" onchange="cambioTiendaNuevaOrden()"></select>
+        <label for="no_tienda_filtro">Tienda <span id="no_tienda_contador" style="font-weight:normal;"></span></label>
+        <input id="no_tienda_filtro" placeholder="Escribe para filtrar las tiendas…" autocomplete="off" oninput="filtrarTiendasNuevaOrden()" onkeydown="if(event.key==='Enter'){event.preventDefault();elegirPrimeraTiendaNuevaOrden();}">
+        <select id="no_tienda" size="6" onchange="cambioTiendaNuevaOrden()" style="margin-top:6px;"></select>
+        <label style="display:flex;gap:6px;align-items:center;font-weight:normal;margin-top:6px;"><input type="checkbox" id="no_tiendas_todas" style="width:auto;" onchange="cargarListaTiendasNuevaOrden()"> Incluir tiendas sin pedidos en los últimos 4 años</label>
       </div>
       <div class="campo">
         <label for="no_dependiente">Dependiente</label>
@@ -521,12 +523,53 @@ async function llenarSelectDependiente(tiendaId, dependienteIdActual, selectId =
   sel.value = dependienteIdActual || "";
 }
 
+// --- selector de tienda de "Nueva orden": con filtro y limitado a tiendas con pedidos en los últimos 4 años ---
+let tiendasNuevaOrden = [];
+
+function sinAcentos(s) { return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase(); }
+
+async function cargarListaTiendasNuevaOrden() {
+  const todas = document.getElementById("no_tiendas_todas").checked;
+  const contador = document.getElementById("no_tienda_contador");
+  contador.textContent = "(cargando…)";
+  let lista;
+  if (todas) {
+    lista = await cargarTodasTiendas();
+  } else {
+    const anyoMinimo = new Date().getFullYear() - 3;
+    const { data, error } = await client.rpc("tiendas_con_actividad", { p_anyo_desde: anyoMinimo });
+    if (error) {   // si todavía no existe la función en la base de datos, se enseñan todas
+      console.warn("tiendas_con_actividad no disponible, se muestran todas:", error.message);
+      lista = await cargarTodasTiendas();
+    } else lista = data || [];
+  }
+  tiendasNuevaOrden = lista;
+  filtrarTiendasNuevaOrden();
+}
+
+function filtrarTiendasNuevaOrden() {
+  const palabras = sinAcentos(document.getElementById("no_tienda_filtro").value).split(/\s+/).filter(Boolean);
+  const sel = document.getElementById("no_tienda");
+  const anterior = sel.value;
+  const visibles = tiendasNuevaOrden.filter(t => palabras.every(p => sinAcentos(t.nombre).includes(p)));
+  sel.innerHTML = visibles.map(t => `<option value="${t.id}">${(t.nombre || "").replace(/</g, "&lt;")}</option>`).join("");
+  if (visibles.some(t => t.id === anterior)) sel.value = anterior;
+  else { sel.selectedIndex = -1; document.getElementById("no_dependiente").innerHTML = '<option value="">-- sin asignar --</option>'; }
+  document.getElementById("no_tienda_contador").textContent = `(${visibles.length} de ${tiendasNuevaOrden.length})`;
+  if (visibles.length === 1 && sel.value !== visibles[0].id) { sel.value = visibles[0].id; cambioTiendaNuevaOrden(); }
+}
+
+function elegirPrimeraTiendaNuevaOrden() {
+  const sel = document.getElementById("no_tienda");
+  if (sel.options.length) { sel.selectedIndex = 0; cambioTiendaNuevaOrden(); }
+}
+
 async function abrirModalNuevaOrden() {
   document.getElementById("no_error").style.display = "none";
-  const tiendas = await cargarTodasTiendas();
-  const selTienda = document.getElementById("no_tienda");
-  selTienda.innerHTML = '<option value="">-- selecciona --</option>' +
-    tiendas.map(t => `<option value="${t.id}">${t.nombre}</option>`).join("");
+  document.getElementById("no_tienda_filtro").value = "";
+  document.getElementById("no_tiendas_todas").checked = false;
+  await cargarListaTiendasNuevaOrden();
+  document.getElementById("no_tienda_filtro").focus();
   document.getElementById("no_dependiente").innerHTML = '<option value="">-- sin asignar --</option>';
   document.getElementById("no_tipo_orden").value = 1;
   ["no_num_pedido", "no_nombre_cli", "no_domicilio_cli", "no_localidad_cli", "no_provincia_cli", "no_telefono_cli", "no_telefono2_cli", "no_dni_cli"]
