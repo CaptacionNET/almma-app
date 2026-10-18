@@ -84,6 +84,7 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
     <button class="secondary" onclick="moverSemana(0)">Hoy</button>
     <select id="f_dia" onchange="pintarMontajes()"><option value="">Todos los días</option></select>
     <select id="f_eq" onchange="pintarMontajes()"><option value="">Todos los equipos</option></select>
+    <label class="muted" id="l_mios" style="display:none"><input type="checkbox" id="solo_mios" onchange="pintarMontajes()"> <b>Solo mis montajes</b></label>
     <label class="muted"><input type="checkbox" id="solo_sin" onchange="pintarMontajes()"> Solo sin montador</label>
   </div>
   <div id="hoja_msg" class="muted" style="margin-bottom:10px"></div>
@@ -125,7 +126,7 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
 
 <script>
 const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
-let montadores = [], semanaIni = lunes(new Date()), ordenesSemana = [];
+let miMontador = null, montadores = [], semanaIni = lunes(new Date()), ordenesSemana = [];
 
 function lunes(d){ d = new Date(d.getFullYear(), d.getMonth(), d.getDate()); const w = (d.getDay()+6)%7; d.setDate(d.getDate()-w); return d; }
 function iso(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
@@ -143,8 +144,10 @@ async function iniciar(){
   const { data: st } = await client.from("staff").select("nombre, solo_deca, solo_montajes").eq("user_id", user.id).maybeSingle();
   if (!st || st.solo_deca || st.solo_montajes) { location.href = "login.html"; return; }
   document.getElementById("quien").textContent = st.nombre || user.email;
-  const r = await client.from("montadores").select("id, nombre, activo, especial").eq("activo", true).order("especial").order("nombre");
+  const r = await client.from("montadores").select("id, nombre, activo, especial, staff_user_id").eq("activo", true).order("especial").order("nombre");
   montadores = r.data || [];
+  miMontador = (montadores.find(m => m.staff_user_id === user.id) || {}).id || null;
+  if (miMontador) document.getElementById("l_mios").style.display = "";
   cargarResumen(); cargarMontajes(); cargarUsuarios(); cargarControl();
 }
 
@@ -289,7 +292,8 @@ const porHora = (a,b) => (a.horamont || "99").localeCompare(b.horamont || "99") 
 function pintarMontajes(){
   const soloSin = document.getElementById("solo_sin").checked, nom = Object.fromEntries(montadores.map(m => [m.id, m.nombre]));
   const fDia = document.getElementById("f_dia").value, fEq = document.getElementById("f_eq").value;
-  const filas = ordenesSemana.filter(o => (!soloSin || !o.ordenes_montadores.length) && (!fDia || String(o.fecha_prev_montaje).slice(0,10) === fDia) && (!fEq || claveEquipo(o) === fEq));
+  const soloMios = document.getElementById("solo_mios").checked;
+  const filas = ordenesSemana.filter(o => (!soloSin || !o.ordenes_montadores.length) && (!soloMios || o.ordenes_montadores.some(a => a.montador_id === miMontador)) && (!fDia || String(o.fecha_prev_montaje).slice(0,10) === fDia) && (!fEq || claveEquipo(o) === fEq));
   if (!filas.length) { document.getElementById("montajes_tabla").innerHTML = '<span class="muted">No hay montajes con esos criterios.</span>'; return; }
   const dias = [...new Set(filas.map(o => String(o.fecha_prev_montaje).slice(0,10)))].sort();
   let h = '<table><tr><th>Hora</th><th>Orden</th><th>Cliente</th><th>Localidad</th><th>Estado</th><th>Montadores</th><th>Añadir</th></tr>';
