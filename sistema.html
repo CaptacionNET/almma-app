@@ -122,6 +122,7 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
   <h3 id="p_titulo"></h3>
   <div id="p_campos"></div>
   <button onclick="guardarRegistro()" style="margin-top:10px;">Grabar</button>
+  <button id="btn_borrar" class="secondary" onclick="borrarRegistro()" style="margin-top:10px;margin-left:8px;color:#dc2626;border-color:#fca5a5;display:none;">Borrar</button>
 </div>
 
 <script>
@@ -418,6 +419,7 @@ async function abrirEditar(registro) {
   const cfg = CATALOGOS[catalogoActivo];
   document.getElementById("p_titulo").textContent = `Editar ${cfg.titulo}`;
   await renderFormulario(cfg, registro);
+  document.getElementById("btn_borrar").style.display = "inline-block";
   document.getElementById("panel_editar").style.display = "block";
   document.getElementById("overlay").style.display = "block";
 }
@@ -427,6 +429,7 @@ async function abrirNuevo() {
   const cfg = CATALOGOS[catalogoActivo];
   document.getElementById("p_titulo").textContent = `Nuevo ${cfg.titulo}`;
   await renderFormulario(cfg, {});
+  document.getElementById("btn_borrar").style.display = "none";
   document.getElementById("panel_editar").style.display = "block";
   document.getElementById("overlay").style.display = "block";
 }
@@ -486,6 +489,65 @@ async function renderFormulario(cfg, registro) {
       <button type="button" class="secondary" onclick="proximamente('Crear acceso de dependiente')">Crear acceso</button>`;
   }
   cont.innerHTML = html;
+}
+
+// --- borrar: solo si nada lo usa (para no dejar órdenes, líneas o facturas apuntando a algo que ya no existe) ---
+async function contar(tabla, columna, valor, soloConUsuario) {
+  let q = client.from(tabla).select("*", { count: "exact", head: true }).eq(columna, valor);
+  if (soloConUsuario) q = q.not("user_id", "is", null);
+  const { count, error } = await q;
+  if (error) throw error;
+  return count || 0;
+}
+
+const USOS_CATALOGO = {
+  tiendas:      (r) => [["órdenes", "ordenes", "tienda_id", r.id], ["facturas", "cabfacturas", "tienda_id", r.id], ["movimientos de almacén", "alm_movimientos", "tienda_id", r.id]],
+  fabricantes:  (r) => [["órdenes", "ordenes", "proveedor", r.codigo], ["líneas de pedido", "linorden", "proveedor", r.codigo]],
+  dependientes: (r) => [["órdenes", "ordenes", "dependiente_id", r.id]],
+  montadores:   (r) => [["asignaciones a órdenes", "ordenes_montadores", "montador_id", r.id]],
+  articulos:    (r) => [["líneas de pedido", "linorden", "articulo", r.articulo], ["líneas de factura", "linfacturas", "articulo", r.articulo], ["movimientos de almacén", "alm_movimientos", "articulo", r.articulo]],
+};
+
+async function borrarRegistro() {
+  if (!registroActivo) return;
+  const cfg = CATALOGOS[catalogoActivo];
+  const nombre = registroActivo.nombre || registroActivo.articulo || "este registro";
+  let extra = "";
+  let nArticulos = 0, nDependientes = 0;
+  try {
+    const usos = [];
+    for (const [etiqueta, tabla, columna, valor] of USOS_CATALOGO[catalogoActivo](registroActivo)) {
+      const n = await contar(tabla, columna, valor);
+      if (n) usos.push(`${n.toLocaleString("es-ES")} ${etiqueta}`);
+    }
+    if (usos.length) {
+      alert(`No se puede borrar "${nombre}": se usa en ${usos.join(", ")}.` +
+        (catalogoActivo === "montadores" ? "\n\nSi ya no trabaja, desmárcalo como Activo y dejará de salir en la lista de asignar." : "") +
+        (catalogoActivo === "tiendas" ? "\n\nUna tienda con historial no se puede borrar, para no perder sus órdenes y facturas." : ""));
+      return;
+    }
+    if (catalogoActivo === "tiendas") {
+      if (await contar("dependientes", "tienda_id", registroActivo.id, true)) {
+        alert(`No se puede borrar "${nombre}": tiene dependientes con cuenta de acceso.`);
+        return;
+      }
+      nArticulos = await contar("articulos", "proveedor", registroActivo.codigo);
+      nDependientes = await contar("dependientes", "tienda_id", registroActivo.id);
+      if (nArticulos || nDependientes) extra = `\n\nSe borrarán también sus ${nArticulos} artículos y sus ${nDependientes} dependientes.`;
+    }
+    if (!confirm(`¿Borrar "${nombre}"?${extra}\n\nNo se puede deshacer.`)) return;
+    if (catalogoActivo === "tiendas") {
+      if (nArticulos) { const { error } = await client.from("articulos").delete().eq("proveedor", registroActivo.codigo); if (error) throw error; }
+      if (nDependientes) { const { error } = await client.from("dependientes").delete().eq("tienda_id", registroActivo.id); if (error) throw error; }
+    }
+    const { error } = await client.from(cfg.tabla).delete().eq(cfg.pk, registroActivo[cfg.pk]);
+    if (error) throw error;
+  } catch (e) {
+    alert("No se pudo borrar: " + (e.message || e));
+    return;
+  }
+  cerrarPanel();
+  if (catalogoActivo === "articulos") buscarArticulos(); else cargarCatalogo();
 }
 
 function cerrarPanel() {

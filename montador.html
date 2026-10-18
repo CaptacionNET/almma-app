@@ -42,6 +42,9 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 #panel_detalle label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;}
 #panel_detalle select,#panel_detalle textarea,#panel_detalle input{width:100%;}
 #overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.15);z-index:35;}
+.filtros-montajes{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;padding:14px 24px 0;}
+.filtros-montajes label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;}
+.filtros-montajes input{min-width:170px;}
 .badge{display:inline-block;margin-left:6px;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700;}
 .badge-fotos{background:#e0f2fe;color:#0369a1;}
 .badge-firmado{background:#dcfce7;color:#15803d;}
@@ -104,7 +107,16 @@ canvas#firma_canvas{border:1px solid var(--border);border-radius:8px;width:100%;
   <button class="secondary" onclick="logout()">Salir</button>
 </div>
 
-<div class="tabla-scroll"><div id="tabla_montajes"></div></div>
+<div class="filtros-montajes">
+  <div><label>Montaje previsto: desde</label><input id="f_prev_desde" type="date" onchange="cargarMontajes()"></div>
+  <div><label>hasta</label><input id="f_prev_hasta" type="date" onchange="cargarMontajes()"></div>
+  <div><label>Nombre de cliente</label><input id="f_cliente" type="text" placeholder="Parte del nombre" oninput="filtrarClienteDebounce()" autocomplete="off"></div>
+  <div><label>Montaje hecho (firma): desde</label><input id="f_real_desde" type="date" onchange="cargarMontajes()"></div>
+  <div><label>hasta</label><input id="f_real_hasta" type="date" onchange="cargarMontajes()"></div>
+  <button class="secondary btn-mini" style="padding:8px 12px;" onclick="limpiarFiltrosMontajes()">Quitar filtros</button>
+  <span id="aviso_montajes" class="meta" style="align-self:center;"></span>
+</div>
+<div class="tabla-scroll" style="margin-top:12px;"><div id="tabla_montajes"></div></div>
 
 <div id="overlay" onclick="cerrarPanel()"></div>
 <div id="panel_detalle">
@@ -194,6 +206,13 @@ async function logout() {
   window.location.href = "login.html";
 }
 
+let debounceClienteMontajes = null;
+function filtrarClienteDebounce() { clearTimeout(debounceClienteMontajes); debounceClienteMontajes = setTimeout(cargarMontajes, 300); }
+function limpiarFiltrosMontajes() {
+  ["f_prev_desde", "f_prev_hasta", "f_cliente", "f_real_desde", "f_real_hasta"].forEach(id => { document.getElementById(id).value = ""; });
+  cargarMontajes();
+}
+
 async function cargarMontajes() {
   // Esta persona (montador) y las órdenes en las que va asignada. La base de datos ya solo
   // le deja ver las suyas; el filtro "mio" hace lo mismo para el administrador que también monta.
@@ -202,9 +221,26 @@ async function cargarMontajes() {
     document.getElementById("tabla_montajes").innerHTML = '<p style="padding:20px;">Tu usuario todavía no está enlazado con ninguna persona de la lista de montadores. Avisa al administrador.</p>';
     return;
   }
-  const { data: crudos, error } = await client.from("ordenes")
-    .select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, estado, fecha_prev_montaje, horamont, mio:ordenes_montadores!inner(montador_id), equipo:ordenes_montadores(montadores(nombre)), fotos:fotos_orden(id), firmas:entregas(firmado_at)")
-    .eq("mio.montador_id", yo.id)
+  // filtros: rango de fechas del montaje previsto, nombre del cliente y rango de fechas en que se hizo (la firma)
+  const fPrevDesde = document.getElementById("f_prev_desde").value;
+  const fPrevHasta = document.getElementById("f_prev_hasta").value;
+  const fCliente = document.getElementById("f_cliente").value.trim();
+  const fRealDesde = document.getElementById("f_real_desde").value;
+  const fRealHasta = document.getElementById("f_real_hasta").value;
+  const hayRealizado = !!(fRealDesde || fRealHasta);
+  const embedFirmas = hayRealizado ? "firmas:entregas!inner(firmado_at)" : "firmas:entregas(firmado_at)";
+  const trozos = (s) => s.split("-").map(Number);
+  const diaTexto = (f) => `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, "0")}-${String(f.getDate()).padStart(2, "0")}`;
+  let consulta = client.from("ordenes")
+    .select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, estado, fecha_prev_montaje, horamont, mio:ordenes_montadores!inner(montador_id), equipo:ordenes_montadores(montadores(nombre)), fotos:fotos_orden(id), " + embedFirmas)
+    .eq("mio.montador_id", yo.id);
+  // los rangos incluyen el día "hasta" entero
+  if (fPrevDesde) consulta = consulta.gte("fecha_prev_montaje", fPrevDesde);
+  if (fPrevHasta) { const [a, m, d] = trozos(fPrevHasta); consulta = consulta.lt("fecha_prev_montaje", diaTexto(new Date(a, m - 1, d + 1))); }
+  if (fCliente) consulta = consulta.ilike("nombre_cli", `%${fCliente}%`);
+  if (fRealDesde) { const [a, m, d] = trozos(fRealDesde); consulta = consulta.gte("firmas.firmado_at", new Date(a, m - 1, d).toISOString()); }
+  if (fRealHasta) { const [a, m, d] = trozos(fRealHasta); consulta = consulta.lt("firmas.firmado_at", new Date(a, m - 1, d + 1).toISOString()); }
+  const { data: crudos, error } = await consulta
     .order("anyo", { ascending: false })
     .order("orden", { ascending: false })
     .limit(200);
@@ -228,8 +264,11 @@ async function cargarMontajes() {
     { title: "Pedido", field: "orden", width: 90 },
     { title: "Cliente", field: "nombre_cli" },
     { title: "Equipo", field: "equipo_txt" },
-    { title: "Fecha y hora propuesta", field: "propuesta_txt", width: 170 },
-    { title: "Fecha y hora realizada", field: "realizada_txt", width: 170 },
+    // se ordenan por la fecha completa (año-mes-día), no por el texto "dd/mm/aaaa", que ordenaría por día
+    { title: "Fecha y hora propuesta", field: "fecha_prev_montaje", width: 170, sorter: "string", sorterParams: { alignEmptyValues: "bottom" },
+      formatter: (cell) => cell.getRow().getData().propuesta_txt },
+    { title: "Fecha y hora realizada", field: "firmado_at", width: 170, sorter: "string", sorterParams: { alignEmptyValues: "bottom" },
+      formatter: (cell) => cell.getRow().getData().realizada_txt },
     { title: "Dirección", field: "domicilio_cli" },
     { title: "Localidad", field: "localidad_cli" },
     { title: "Estado", field: "estado", formatter: (cell) => {
@@ -240,6 +279,10 @@ async function cargarMontajes() {
           (d.firmado_at ? `<span class="badge badge-firmado">FIRMADO</span>` : "");
       } },
   ];
+
+  const hayFiltros = !!(fPrevDesde || fPrevHasta || fCliente || hayRealizado);
+  document.getElementById("aviso_montajes").textContent = `${data.length} montajes` +
+    (data.length >= 200 ? " (los 200 más recientes: usa los filtros para encontrar otros)" : "") + (hayFiltros ? " con los filtros aplicados." : ".");
 
   if (!tabla) {
     tabla = new Tabulator("#tabla_montajes", {
