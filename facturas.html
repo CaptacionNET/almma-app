@@ -247,7 +247,7 @@ async function cargar() {
   g("aviso").textContent = "Cargando...";
   const anyo = g("ff_anyo").value, tienda = g("ff_tienda").value.trim();
   let q = client.from("cabfacturas")
-    .select("anyo, serie, factura, ffactura, tipo_factura, origen, impbruto, impiva, impneto, iva_pct, motivo, rectifica_anyo, rectifica_serie, rectifica_factura, tienda_id, tiendas" + (tienda ? "!inner" : "") + "(nombre)")
+    .select("anyo, serie, factura, ffactura, tipo_factura, origen, impbruto, impiva, impneto, iva_pct, motivo, rectifica_anyo, rectifica_serie, rectifica_factura, tienda_id, tiendas!tienda_id" + (tienda ? "!inner" : "") + "(nombre)")
     .order("ffactura", { ascending: false }).order("factura", { ascending: false }).limit(500);
   if (anyo) q = q.eq("anyo", anyo);
   if (g("ff_serie").value) q = q.eq("serie", g("ff_serie").value);
