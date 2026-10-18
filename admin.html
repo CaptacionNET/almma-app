@@ -40,8 +40,11 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
 </style>
 </head>
 <body>
-<div id="overlay" onclick="cerrarDetalle()"></div>
+<div id="overlay" onclick="cerrarDetalle();cerrarEditor()"></div>
 <div id="detalle"><div class="barra"><b id="det_titulo" style="font-size:16px"></b><span style="flex:1"></span><button class="secondary" onclick="cerrarDetalle()">Cerrar</button></div><div id="det_cuerpo"></div></div>
+<div id="editor" style="display:none;position:fixed;top:0;right:0;bottom:0;width:min(460px,100vw);background:var(--card);border-left:1px solid var(--border);box-shadow:-10px 0 30px -20px rgba(0,0,0,.3);z-index:41;padding:20px;overflow-y:auto">
+  <div class="barra"><b id="ed_titulo" style="font-size:16px"></b><span style="flex:1"></span><button class="secondary" onclick="cerrarEditor()">Cerrar</button></div>
+  <div id="ed_cuerpo"></div></div>
 <div id="toolbar">
   <b>ALMMA · Administración</b>
   <button class="secondary" onclick="location.href='pedidos.html'">Órdenes</button>
@@ -426,8 +429,9 @@ async function cargarUsuarios(){
   aviso.style.display = "none";
   window._usuarios = r.usuarios; pintarAccesos();
   const f = r.usuarios.sort((a,b) => (a.tipo+a.nombre).localeCompare(b.tipo+b.nombre));
-  let h = "<table><tr><th>Nombre</th><th>Email</th><th>Tipo</th><th>Último acceso</th><th>Estado</th><th></th></tr>";
-  for (const x of f) h += '<tr class="'+(x.bloqueado?'sin':'con')+'"><td>'+esc(x.nombre)+(x.montador?' <span class="muted">('+esc(x.montador)+')</span>':'')+'</td><td>'+esc(x.email)+'</td><td>'+esc(x.tipo)+'</td><td>'+(x.ultimo_acceso?new Date(x.ultimo_acceso).toLocaleString("es-ES"):'<span class="muted">Nunca</span>')+'</td><td>'+(x.bloqueado?'Bloqueado':'Activo')+'</td><td><button class="secondary" onclick="cambiarBloqueo(\''+x.user_id+'\','+x.bloqueado+')">'+(x.bloqueado?'Desbloquear':'Bloquear')+'</button> <button class="secondary" onclick="cambiarPass(\''+x.user_id+'\')">Contraseña</button></td></tr>';
+  let h = "<table><tr><th>Nombre</th><th>Email</th><th>Tipo</th><th>Tienda</th><th>Último acceso</th><th>Estado</th><th></th></tr>";
+  window._lista = f;
+  for (const x of f) h += '<tr class="'+(x.bloqueado?'sin':'con')+'"><td>'+esc(x.nombre)+(x.montador?' <span class="muted">('+esc(x.montador)+')</span>':'')+'</td><td>'+esc(x.email)+'</td><td>'+esc(x.tipo)+'</td><td>'+esc(x.tienda || '')+'</td><td>'+(x.ultimo_acceso?new Date(x.ultimo_acceso).toLocaleString("es-ES"):'<span class="muted">Nunca</span>')+'</td><td>'+(x.bloqueado?'Bloqueado':'Activo')+'</td><td><button class="secondary" onclick="editarUsuario(\''+x.user_id+'\')">Editar</button> <button class="secondary" onclick="cambiarBloqueo(\''+x.user_id+'\','+x.bloqueado+')">'+(x.bloqueado?'Desbloquear':'Bloquear')+'</button> <button class="secondary" onclick="cambiarPass(\''+x.user_id+'\')">Contraseña</button></td></tr>';
   document.getElementById("u_tabla").innerHTML = h + "</table>";
 }
 async function cambiarBloqueo(id, bloqueado){
@@ -492,6 +496,56 @@ async function crearCuenta(){
   ["n_nombre","n_email","n_pass"].forEach(i => document.getElementById(i).value = "");
   document.getElementById("u_nuevo").style.display = "none"; cargarUsuarios();
 }
+
+/* ---------- Editar permisos de una cuenta ---------- */
+function cerrarEditor(){ document.getElementById("editor").style.display = "none"; document.getElementById("overlay").style.display = "none"; }
+async function editarUsuario(id){
+  const x = (window._lista || []).find(u => u.user_id === id); if (!x) return;
+  document.getElementById("editor").style.display = "block"; document.getElementById("overlay").style.display = "block";
+  document.getElementById("ed_titulo").textContent = "Editar: " + (x.nombre || x.email);
+  const cb = (i, t, v, ayuda) => '<label style="display:block;margin:10px 0"><input type="checkbox" id="'+i+'" '+(v?'checked':'')+'> <b>'+t+'</b>'+(ayuda?'<br><span class="muted">'+ayuda+'</span>':'')+'</label>';
+  let f = '<div class="muted">'+esc(x.email)+' · '+esc(x.tipo)+'</div><label class="muted">Nombre</label><br><input id="ed_nombre" value="'+esc(x.nombre)+'" style="width:100%;margin-bottom:6px">';
+  if (x.es_staff) {
+    const { data: mons } = await client.from("montadores").select("id, nombre").eq("activo", true).eq("especial", false).order("nombre");
+    f += cb("ed_admin","Superusuario",x.es_admin,"Entra en este panel y puede crear cuentas y cambiar permisos. Ve todo.")+
+         cb("ed_montador","Es montador",x.es_montador,"Aparece como montador y se le pueden asignar montajes.")+
+         '<div style="margin-left:22px"><select id="ed_montador_id"><option value="">— ¿Qué montador? —</option>'+(mons||[]).map(m => '<option value="'+m.id+'" '+(m.id===x.montador_id?'selected':'')+'>'+esc(m.nombre)+'</option>').join("")+'</select></div>'+
+         cb("ed_solo_mont","Solo ve sus montajes",x.solo_montajes,"Restringido: no ve órdenes, tiendas ni facturas, solo lo suyo.")+
+         cb("ed_solo_deca","Solo DeCA",x.solo_deca,"Restringido: solo la pantalla de DeCA.")+
+         '<div class="muted">Sin ninguna marca = personal de oficina/almacén con acceso normal.</div>';
+  }
+  if (x.es_dependiente) {
+    f += cb("ed_admin_tienda","Administrador de tienda",x.es_admin_tienda,"Ve todas las órdenes y facturas de su tienda y gestiona a sus dependientes. Sin marcar, solo ve sus propios pedidos.")+
+      '<div style="margin:10px 0"><span class="muted">Tienda actual: <b>'+esc(x.tienda||"—")+'</b></span><br>'+
+      '<span style="position:relative;display:inline-block"><input id="ed_tienda_buscar" placeholder="Cambiar de tienda: escribe para buscar..." oninput="filtrarTiendasEd()" onfocus="filtrarTiendasEd()" autocomplete="off" style="width:330px"><input type="hidden" id="ed_tienda">'+
+      '<div id="ed_tienda_res" style="display:none;position:absolute;top:100%;left:0;z-index:50;background:#fff;border:1px solid #93c5fd;border-radius:6px;max-height:240px;overflow:auto;width:360px"></div></span></div>';
+  }
+  f += '<button style="margin-top:10px" onclick="guardarEdicion(\''+id+'\')">Guardar cambios</button>';
+  document.getElementById("ed_cuerpo").innerHTML = f;
+}
+async function filtrarTiendasEd(){
+  if (!tiendasCache) { const { data } = await client.from("tiendas").select("id, nombre").order("nombre"); tiendasCache = data || []; }
+  const inp = document.getElementById("ed_tienda_buscar"), res = document.getElementById("ed_tienda_res");
+  document.getElementById("ed_tienda").value = ""; inp.style.borderColor = "";
+  const q = norm(inp.value).split(" ").filter(Boolean), l = tiendasCache.filter(x => q.every(p => norm(x.nombre).includes(p)));
+  res.innerHTML = l.slice(0,40).map(x => '<div class="opt" data-id="'+x.id+'" style="padding:8px 10px;cursor:pointer;border-bottom:1px solid #eaf2ff">'+esc(x.nombre)+'</div>').join("") + (!l.length ? '<div class="muted" style="padding:8px">Ninguna coincide.</div>' : "");
+  res.style.display = "block";
+  res.querySelectorAll(".opt").forEach(d => d.onmousedown = () => { document.getElementById("ed_tienda").value = d.dataset.id; inp.value = d.textContent; inp.style.borderColor = "#16a34a"; res.style.display = "none"; });
+}
+async function guardarEdicion(id){
+  const x = (window._lista || []).find(u => u.user_id === id), g = i => document.getElementById(i), cuerpo = { accion:"editar", user_id:id, nombre:g("ed_nombre").value };
+  if (x.es_staff) {
+    cuerpo.es_admin = g("ed_admin").checked; cuerpo.es_montador = g("ed_montador").checked; cuerpo.solo_montajes = g("ed_solo_mont").checked; cuerpo.solo_deca = g("ed_solo_deca").checked;
+    if (cuerpo.es_montador && !g("ed_montador_id").value && !x.montador_id) { alert("Elige a qué montador corresponde."); return; }
+    cuerpo.montador_id = cuerpo.es_montador ? (g("ed_montador_id").value || x.montador_id) : null;
+    if (cuerpo.es_admin !== x.es_admin && !confirm(cuerpo.es_admin ? "¿Dar acceso de SUPERUSUARIO a esta cuenta?" : "¿Quitar el acceso de superusuario?")) return;
+  }
+  if (x.es_dependiente) { cuerpo.es_admin_tienda = g("ed_admin_tienda").checked; if (g("ed_tienda").value) cuerpo.tienda_id = g("ed_tienda").value; }
+  const r = await llamar(cuerpo);
+  if (r.error) { alert(r.error); return; }
+  cerrarEditor(); cargarUsuarios();
+}
+
 /* ---------- Control del sistema ---------- */
 function cargarControl(){
   const hoy = iso(new Date());
