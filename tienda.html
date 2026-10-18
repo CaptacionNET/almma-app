@@ -44,6 +44,7 @@ tr.bloq td:first-child{border-left:5px solid #d97706;}
   <button class="tab" data-t="ordenes">Órdenes de la tienda</button>
   <button class="tab" data-t="facturas">Facturas</button>
   <button class="tab" data-t="equipo">Mi equipo</button>
+  <button class="tab" onclick="location.href='montajes_tienda.html'" style="margin-left:auto">Montajes &rarr;</button>
 </div>
 
 <div class="panel activa" id="p_resumen">
@@ -87,8 +88,8 @@ const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;
 const eur = n => Number(n||0).toLocaleString("es-ES",{style:"currency",currency:"EUR"});
 const iso = d => d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 async function logout(){ await client.auth.signOut(); location.href = "login.html"; }
-document.querySelectorAll(".tab").forEach(b => b.onclick = () => {
-  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("activa", x === b));
+document.querySelectorAll(".tab[data-t]").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".tab[data-t]").forEach(x => x.classList.toggle("activa", x === b));
   document.querySelectorAll(".panel").forEach(p => p.classList.toggle("activa", p.id === "p_" + b.dataset.t));
 });
 

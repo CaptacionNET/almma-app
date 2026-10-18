@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - Montajes</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+button{background:#dbeafe;color:#1e3a8a;border:1px solid #93c5fd;font-weight:600;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;}
+button.on{background:#1e40af;color:#fff;border-color:#1e3a8a;}
+input{padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;}
+#toolbar{display:flex;gap:8px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--border);align-items:center;flex-wrap:wrap;}
+.wrap{max-width:1100px;margin:0 auto;padding:18px 16px;}
+.barra{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid #bfdbfe;font-size:13px;}
+th{background:#dbeafe;color:#1e3a8a;text-align:left;padding:9px 8px;} td{padding:8px;border-top:1px solid #dbeafe;}
+tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
+.muted{color:var(--muted);font-size:13px;}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.2);z-index:30;}
+#det{display:none;position:fixed;top:0;right:0;bottom:0;width:min(640px,100vw);background:var(--card);border-left:1px solid var(--border);z-index:31;padding:20px;overflow-y:auto;}
+.k{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;} .v{font-size:14px;margin:2px 0 10px;}
+.fotos{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;}
+.fotos img,.firma img{width:100%;border:1px solid var(--border);border-radius:6px;background:#fafbfe;}
+.ok{color:#15803d;font-weight:700;}
+</style>
+</head>
+<body>
+<div id="toolbar"><button onclick="location.href=destino">&larr; Volver</button><b style="color:#1e3a8a">Montajes</b></div>
+<div class="wrap">
+  <div class="barra">
+    <button id="b_prox" class="on" onclick="modo('prox')">Próximos montajes</button>
+    <button id="b_pas" onclick="modo('pas')">Montajes realizados</button>
+    <input id="buscar" placeholder="Buscar cliente, referencia, localidad..." oninput="pintar()" style="width:300px">
+    <label class="muted" id="l_ant" style="display:none"><input type="checkbox" id="ant" onchange="cargar()"> Incluir años anteriores</label>
+  </div>
+  <div id="tabla"><span class="muted">Cargando...</span></div>
+</div>
+<div id="overlay" onclick="cerrar()"></div>
+<div id="det"><div class="barra"><b id="det_t" style="font-size:16px"></b><span style="flex:1"></span><button onclick="cerrar()">Cerrar</button></div><div id="det_c"></div></div>
+<script>
+const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fd = d => d ? new Date(d).toLocaleDateString("es-ES") : "—";
+let destino = "mis-pedidos.html", vista = "prox", datos = [], multi = false;
+function modo(m){ vista = m; document.getElementById("b_prox").classList.toggle("on", m==="prox"); document.getElementById("b_pas").classList.toggle("on", m==="pas"); document.getElementById("l_ant").style.display = m==="pas" ? "" : "none"; cargar(); }
+async function cargar(){
+  const cont = document.getElementById("tabla"); cont.innerHTML = '<span class="muted">Cargando...</span>';
+  let q = client.from("ordenes").select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, num_pedido, estado, fecha_prev_montaje, horamont, fecha_montaje, tiendas(nombre)").limit(500);
+  const hoy = new Date().toISOString().slice(0,10);
+  if (vista === "prox") q = q.gte("fecha_prev_montaje", hoy).neq("estado", "completado").order("fecha_prev_montaje");
+  else {
+    q = q.not("fecha_montaje", "is", null).order("fecha_montaje", { ascending:false });
+    if (!document.getElementById("ant").checked) q = q.gte("anyo", new Date().getFullYear() - 3);
+  }
+  const { data, error } = await q;
+  if (error) { cont.innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
+  datos = data; pintar();
+}
+function pintar(){
+  const b = document.getElementById("buscar").value.trim().toLowerCase();
+  const l = datos.filter(o => !b || [o.nombre_cli,o.num_pedido,o.localidad_cli,o.anyo+"/"+o.orden].join(" ").toLowerCase().includes(b));
+  const fecha = vista === "prox" ? "Montaje previsto" : "Montaje realizado";
+  document.getElementById("tabla").innerHTML = l.length ? '<table><tr><th>'+fecha+'</th><th>Orden</th>'+(multi?'<th>Tienda</th>':'')+'<th>Cliente</th><th>Localidad</th><th>Referencia</th><th>Estado</th></tr>'+
+    l.map((o,i) => '<tr class="fila" onclick="abrir('+datos.indexOf(o)+')"><td><b>'+(vista==="prox" ? fd(o.fecha_prev_montaje) + (o.horamont ? " · "+esc(o.horamont) : "") : new Date(o.fecha_montaje).toLocaleString("es-ES"))+'</b></td><td>'+o.anyo+'/'+o.orden+'</td>'+(multi?'<td>'+esc(o.tiendas?.nombre)+'</td>':'')+'<td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.localidad_cli)+'</td><td>'+esc(o.num_pedido)+'</td><td>'+esc((o.estado||"").replace(/_/g," "))+'</td></tr>').join("")+'</table>'
+    : '<span class="muted">'+(vista==="prox" ? "No hay montajes próximos." : "Todavía no hay montajes realizados.")+'</span>';
+}
+function cerrar(){ document.getElementById("det").style.display = "none"; document.getElementById("overlay").style.display = "none"; }
+async function url(path){ const { data } = await client.storage.from("ordenes-adjuntos").createSignedUrl(path, 600); return data?.signedUrl || ""; }
+async function abrir(i){
+  const o = datos[i]; document.getElementById("det").style.display = "block"; document.getElementById("overlay").style.display = "block";
+  document.getElementById("det_t").textContent = "Orden " + o.anyo + "/" + o.orden;
+  const c = document.getElementById("det_c"); c.innerHTML = '<span class="muted">Cargando...</span>';
+  const [en, fo, li] = await Promise.all([
+    client.from("entregas").select("firmante_nombre, firmado_at, firma_storage_path, observaciones").eq("anyo", o.anyo).eq("orden", o.orden).order("firmado_at", { ascending:false }),
+    client.from("fotos_orden").select("storage_path, categoria, comentario, created_at").eq("anyo", o.anyo).eq("orden", o.orden).order("created_at"),
+    client.from("linorden").select("linea, tipolinea, descripcion, cantidad").neq("tipolinea", 4).eq("anyo", o.anyo).eq("orden", o.orden).order("linea")
+  ]);
+  const ents = await Promise.all((en.data || []).map(async e => ({ ...e, u: await url(e.firma_storage_path) })));
+  const fots = await Promise.all((fo.data || []).map(async f => ({ ...f, u: await url(f.storage_path) })));
+  const k = (a,b) => '<div class="k">'+a+'</div><div class="v">'+(b || "—")+'</div>';
+  c.innerHTML = k("Cliente", esc(o.nombre_cli)) + k("Dirección", esc([o.domicilio_cli,o.localidad_cli].filter(Boolean).join(" - "))) +
+    k("Montaje previsto", fd(o.fecha_prev_montaje) + (o.horamont ? " · " + esc(o.horamont) : "")) +
+    k("Montaje realizado", o.fecha_montaje ? '<span class="ok">'+new Date(o.fecha_montaje).toLocaleString("es-ES")+'</span>' : "Aún no realizado") +
+    '<div class="k">Artículos</div><div class="v">'+((li.data||[]).filter(l => l.tipolinea !== 4).map(l => (l.cantidad ?? "")+" × "+esc(l.descripcion)).join("<br>") || "—")+'</div>' +
+    '<div class="k">Firma del cliente</div>' + (ents.length ? ents.map(e => '<div class="firma v">'+(e.u ? '<img src="'+e.u+'" alt="Firma" style="max-width:360px">' : '')+'<div class="muted">'+esc(e.firmante_nombre || "")+' · '+new Date(e.firmado_at).toLocaleString("es-ES")+(e.observaciones ? '<br>'+esc(e.observaciones) : '')+'</div></div>').join("") : '<div class="v muted">Sin firma todavía.</div>') +
+    '<div class="k">Fotos</div>' + (fots.length ? '<div class="fotos">'+fots.map(f => '<a href="'+f.u+'" target="_blank"><img src="'+f.u+'" alt="'+esc(f.categoria||"foto")+'"><div class="muted">'+esc(f.categoria||"")+' '+esc(f.comentario||"")+'</div></a>').join("")+'</div>' : '<div class="v muted">Sin fotos.</div>');
+}
+(async () => {
+  const { data:{ user } } = await client.auth.getUser();
+  if (!user) { location.href = "login.html"; return; }
+  const { data: dep } = await client.from("dependientes").select("es_admin_tienda").eq("user_id", user.id).maybeSingle();
+  if (!dep) { location.href = "login.html"; return; }
+  if (dep.es_admin_tienda) destino = "tienda.html";
+  const { count } = await client.from("tiendas").select("id", { count:"exact", head:true }); multi = count > 1;
+  cargar();
+})();
+</script>
+</body>
+</html>
