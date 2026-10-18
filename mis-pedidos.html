@@ -184,7 +184,15 @@ async function logout() {
   window.location.href = "login.html";
 }
 
+
+let conMensaje = new Set();
+async function cargarConMensaje() {
+  const { data } = await client.rpc("ordenes_con_chat_sin_leer");
+  conMensaje = new Set((data || []).map(r => r.anyo + "/" + r.orden));
+}
+const globo = (a, o) => conMensaje.has(a + "/" + o) ? ' <span title="Mensaje sin leer en el chat" style="background:#dc2626;color:#fff;border-radius:10px;padding:0 6px;font-size:11px">💬</span>' : "";
 async function cargarPedidos() {
+  await cargarConMensaje();
   const { data, error } = await client.from("ordenes")
     .select("anyo, orden, nombre_cli, num_pedido, estado, fecha_creacion")
     .eq("tienda_id", dependiente.tienda_id)
@@ -195,7 +203,7 @@ async function cargarPedidos() {
 
   const columnas = [
     { title: "Año", field: "anyo", width: 70 },
-    { title: "Orden", field: "orden", width: 90, formatter: (c) => { const d = c.getData(); return `<a href="orden_tienda.html?anyo=${d.anyo}&orden=${d.orden}">${d.orden}</a>`; } },
+    { title: "Orden", field: "orden", width: 110, formatter: (c) => { const d = c.getData(); return `<a href="orden_tienda.html?anyo=${d.anyo}&orden=${d.orden}">${d.orden}</a>${globo(d.anyo, d.orden)}`; } },
     { title: "Cliente", field: "nombre_cli" },
     { title: "Referencia de pedido", field: "num_pedido", minWidth: 170 },
     { title: "Estado", field: "estado", minWidth: 170, formatter: (cell) => {

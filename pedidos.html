@@ -145,7 +145,14 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .leyenda-listado .sw-leyenda i{display:inline-block;width:16px;height:12px;border:1px solid #cbd5e1;border-radius:2px;}
 .item-pendiente{border-left:5px solid #d97706 !important;background:#fffbeb !important;}
 .linea-recibida{border-left:5px solid #16a34a !important;background:#f6fef9 !important;}
-</style>
+
+.chat{max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:4px 2px;margin-bottom:10px}
+.msg{max-width:78%;padding:8px 12px;border-radius:10px;font-size:13px;line-height:1.4;white-space:pre-wrap;word-break:break-word}
+.msg .quien{font-size:11px;font-weight:600;opacity:.75;margin-bottom:2px}
+.msg.mio{align-self:flex-end;background:#dbeafe;color:#1e3a8a}
+.msg.otro{align-self:flex-start;background:#f1f5f9;color:#1f2430;border:1px solid #e2e4eb}
+.chat-form{display:flex;gap:8px}.chat-form textarea{flex:1;padding:8px;border:1px solid #93c5fd;border-radius:6px;font:inherit;font-size:13px;resize:vertical;min-height:40px}
+.muted{color:#6b7280}</style>
 </head>
 <body>
 
@@ -344,6 +351,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
     <button class="tab-btn" data-tab="tab_incidencias" onclick="cambiarTab('tab_incidencias')">Incidencias</button>
     <button class="tab-btn" data-tab="tab_historial" onclick="cambiarTab('tab_historial')">Historial</button>
     <button class="tab-btn" data-tab="tab_llamadas" onclick="cambiarTab('tab_llamadas')">Llamadas</button>
+    <button class="tab-btn" data-tab="tab_chat" onclick="cambiarTab('tab_chat'); cargarChat(pedidoActivo.anyo, pedidoActivo.orden, 'almma')">Chat tienda <span id="chat_aviso" style="display:none;background:#dc2626;color:#fff;border-radius:10px;padding:0 7px;font-size:11px"></span></button>
   </div>
 
   <!-- CABECERA -->
@@ -520,6 +528,12 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
   <!-- HISTORIAL -->
   <div class="tab-panel" id="tab_historial">
     <div id="lista_historial" class="mini-list"></div>
+  </div>
+
+  <!-- CHAT CON LA TIENDA -->
+  <div class="tab-panel" id="tab_chat">
+    <div class="chat" id="chat_lista"></div>
+    <div class="chat-form"><textarea id="chat_texto" maxlength="2000" placeholder="Responder a la tienda..."></textarea><button onclick="enviarChat(pedidoActivo.anyo, pedidoActivo.orden, 'almma')">Enviar</button></div>
   </div>
 
   <!-- LLAMADAS -->
@@ -906,7 +920,7 @@ async function cargarPedidos() {
   if (prevHasta) query = query.lte("fecha_prev_montaje", prevHasta + "T23:59:59");
   if (!isNaN(importe)) query = query.eq("importe_total", importe);
 
-  const { data, error } = await query;
+  const [{ data, error }] = await Promise.all([query, cargarConMensaje()]);
   if (error) { console.error(error); return; }
 
   const avisoAnios = incluirAnteriores ? "" : ` (últimos 4 años, desde ${anyoMinimo})`;
@@ -918,7 +932,7 @@ async function cargarPedidos() {
 
   const columnas = [
     { title: "Año", field: "anyo", width: 70 },
-    { title: "Orden", field: "orden", width: 90 },
+    { title: "Orden", field: "orden", width: 110, formatter: (c) => { const d = c.getData(); return d.orden + globo(d.anyo, d.orden); } },
     { title: "Cliente", field: "nombre_cli" },
     { title: "Tienda", field: "tiendas.nombre" },
     { title: "Referencia de pedido", field: "num_pedido", minWidth: 170 },
@@ -1030,6 +1044,7 @@ async function abrirPanel(orden) {
   await cargarIncidencias();
   await cargarHistorial(o);
   await cargarLlamadas();
+  avisoChat();
 
   document.getElementById("panel_detalle").style.display = "flex";
   document.getElementById("overlay").style.display = "block";
@@ -1499,6 +1514,37 @@ async function cargarHistorial(o) {
 async function irAOrden(anyo, orden) {
   const { data } = await client.from("ordenes").select("*").eq("anyo", anyo).eq("orden", orden).maybeSingle();
   if (data) abrirPanel(data);
+}
+
+
+// --- chat de la orden (migracion/60_chat_de_la_orden.sql) ---
+async function cargarChat(anyo, orden, soy) {
+  const { data } = await client.from("mensajes_orden").select("id, autor_tipo, autor_nombre, texto, creado_en").eq("anyo", anyo).eq("orden", orden).order("creado_en");
+  const cont = document.getElementById("chat_lista");
+  cont.innerHTML = (data || []).map(m => '<div class="msg ' + (m.autor_tipo === soy ? "mio" : "otro") + '"><div class="quien">' +
+    escMont(m.autor_tipo === "almma" ? "ALMMA" + (m.autor_nombre ? " · " + m.autor_nombre : "") : (m.autor_nombre || "Tienda")) + " · " + new Date(m.creado_en).toLocaleString("es-ES") +
+    '</div>' + escMont(m.texto) + '</div>').join("") || '<div class="muted">Aún no hay mensajes. Escribe el primero.</div>';
+  cont.scrollTop = cont.scrollHeight;
+  await client.rpc("marcar_chat_leido", { p_anyo: anyo, p_orden: orden });
+}
+async function enviarChat(anyo, orden, soy) {
+  const ta = document.getElementById("chat_texto"), texto = ta.value.trim();
+  if (!texto) return;
+  const { error } = await client.from("mensajes_orden").insert({ anyo, orden, texto });
+  if (error) { alert("No se pudo enviar: " + error.message); return; }
+  ta.value = ""; await cargarChat(anyo, orden, soy);
+}
+
+let conMensaje = new Set();
+async function cargarConMensaje() {
+  const { data } = await client.rpc("ordenes_con_chat_sin_leer");
+  conMensaje = new Set((data || []).map(r => r.anyo + "/" + r.orden));
+}
+const globo = (a, o) => conMensaje.has(a + "/" + o) ? ' <span title="Mensaje sin leer en el chat" style="background:#dc2626;color:#fff;border-radius:10px;padding:0 6px;font-size:11px">💬</span>' : "";
+async function avisoChat() {
+  const { data } = await client.rpc("chat_sin_leer", { p_anyo: pedidoActivo.anyo, p_orden: pedidoActivo.orden });
+  const b = document.getElementById("chat_aviso");
+  b.textContent = data || ""; b.style.display = data ? "inline" : "none";
 }
 
 // --- llamadas ---

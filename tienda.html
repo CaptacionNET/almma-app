@@ -139,12 +139,19 @@ async function cargarResumen(){
 }
 
 /* Órdenes */
+let conMensaje = new Set();
+async function cargarConMensaje() {
+  const { data } = await client.rpc("ordenes_con_chat_sin_leer");
+  conMensaje = new Set((data || []).map(r => r.anyo + "/" + r.orden));
+}
+const globo = (a, o) => conMensaje.has(a + "/" + o) ? ' <span title="Mensaje sin leer en el chat" style="background:#dc2626;color:#fff;border-radius:10px;padding:0 6px;font-size:11px">💬</span>' : "";
+
 async function cargarOrdenes(){
   let q = client.from("ordenes").select("anyo, orden, nombre_cli, num_pedido, estado, fecha_creacion, tiendas(nombre)")
     .order("anyo",{ascending:false}).order("orden",{ascending:false}).limit(1000);
   if (tiendaSel) q = q.eq("tienda_id", tiendaSel);
   if (!document.getElementById("o_antiguas").checked) q = q.gte("anyo", new Date().getFullYear()-3);
-  const { data, error } = await q;
+  const [{ data, error }] = await Promise.all([q, cargarConMensaje()]);
   if (error) { document.getElementById("o_tabla").innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
   ordenes = data; pintarOrdenes();
 }
@@ -152,7 +159,7 @@ function pintarOrdenes(){
   const b = document.getElementById("o_buscar").value.trim().toLowerCase();
   const f = ordenes.filter(o => !b || [o.nombre_cli,o.num_pedido,o.anyo+"/"+o.orden].join(" ").toLowerCase().includes(b)).slice(0,500);
   document.getElementById("o_tabla").innerHTML = '<table><tr><th>Orden</th>'+(multi()?'<th>Tienda</th>':'')+'<th>Cliente</th><th>Referencia</th><th>Estado</th><th>Creada</th></tr>'+
-    f.map(o => '<tr><td><a href="orden_tienda.html?anyo='+o.anyo+'&orden='+o.orden+'">'+o.anyo+'/'+o.orden+'</a></td>'+(multi()?'<td>'+esc(o.tiendas?.nombre)+'</td>':'')+'<td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.num_pedido)+'</td><td>'+esc((o.estado||"").replace(/_/g," "))+'</td><td>'+(o.fecha_creacion?new Date(o.fecha_creacion).toLocaleDateString("es-ES"):"")+'</td></tr>').join("")+'</table>'+
+    f.map(o => '<tr><td><a href="orden_tienda.html?anyo='+o.anyo+'&orden='+o.orden+'">'+o.anyo+'/'+o.orden+'</a>'+globo(o.anyo,o.orden)+'</td>'+(multi()?'<td>'+esc(o.tiendas?.nombre)+'</td>':'')+'<td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.num_pedido)+'</td><td>'+esc((o.estado||"").replace(/_/g," "))+'</td><td>'+(o.fecha_creacion?new Date(o.fecha_creacion).toLocaleDateString("es-ES"):"")+'</td></tr>').join("")+'</table>'+
     '<div class="muted" style="margin-top:6px">'+f.length+' órdenes'+(ordenes.length>500?' (se muestran las 500 primeras; afina con el buscador)':'')+'</div>';
 }
 

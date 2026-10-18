@@ -18,6 +18,13 @@ button{background:#dbeafe;color:#1e3a8a;border:1px solid #93c5fd;font-weight:600
 table{width:100%;border-collapse:collapse;font-size:13px;} th{background:#dbeafe;color:#1e3a8a;text-align:left;padding:8px;} td{padding:8px;border-top:1px solid #dbeafe;}
 .muted{color:var(--muted);font-size:13px;}
 .est{display:inline-block;padding:3px 10px;border-radius:12px;background:#dbeafe;color:#1e3a8a;font-weight:600;font-size:12px;}
+
+.chat{max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:4px 2px;margin-bottom:10px}
+.msg{max-width:78%;padding:8px 12px;border-radius:10px;font-size:13px;line-height:1.4;white-space:pre-wrap;word-break:break-word}
+.msg .quien{font-size:11px;font-weight:600;opacity:.75;margin-bottom:2px}
+.msg.mio{align-self:flex-end;background:#dbeafe;color:#1e3a8a}
+.msg.otro{align-self:flex-start;background:#f1f5f9;color:#1f2430;border:1px solid #e2e4eb}
+.chat-form{display:flex;gap:8px}.chat-form textarea{flex:1;padding:8px;border:1px solid #93c5fd;border-radius:6px;font:inherit;font-size:13px;resize:vertical;min-height:40px}
 </style>
 </head>
 <body>
@@ -27,6 +34,24 @@ table{width:100%;border-collapse:collapse;font-size:13px;} th{background:#dbeafe
 const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
 const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const f = d => d ? new Date(d).toLocaleDateString("es-ES") : "—";
+
+// --- chat de la orden (migracion/60_chat_de_la_orden.sql) ---
+async function cargarChat(anyo, orden, soy) {
+  const { data } = await client.from("mensajes_orden").select("id, autor_tipo, autor_nombre, texto, creado_en").eq("anyo", anyo).eq("orden", orden).order("creado_en");
+  const cont = document.getElementById("chat_lista");
+  cont.innerHTML = (data || []).map(m => '<div class="msg ' + (m.autor_tipo === soy ? "mio" : "otro") + '"><div class="quien">' +
+    esc(m.autor_tipo === "almma" ? "ALMMA" + (m.autor_nombre ? " · " + m.autor_nombre : "") : (m.autor_nombre || "Tienda")) + " · " + new Date(m.creado_en).toLocaleString("es-ES") +
+    '</div>' + esc(m.texto) + '</div>').join("") || '<div class="muted">Aún no hay mensajes. Escribe el primero.</div>';
+  cont.scrollTop = cont.scrollHeight;
+  await client.rpc("marcar_chat_leido", { p_anyo: anyo, p_orden: orden });
+}
+async function enviarChat(anyo, orden, soy) {
+  const ta = document.getElementById("chat_texto"), texto = ta.value.trim();
+  if (!texto) return;
+  const { error } = await client.from("mensajes_orden").insert({ anyo, orden, texto });
+  if (error) { alert("No se pudo enviar: " + error.message); return; }
+  ta.value = ""; await cargarChat(anyo, orden, soy);
+}
 let destino = "mis-pedidos.html";
 function volver(){ location.href = destino; }
 (async () => {
@@ -54,7 +79,11 @@ function volver(){ location.href = destino; }
     '</div></div>'+
     '<div class="card"><b>Artículos</b><table style="margin-top:8px"><tr><th>Artículo</th><th>Descripción</th><th>Cant.</th><th>Recibido</th></tr>'+
       (lineas.map(l => '<tr><td>'+esc(l.articulo)+'</td><td>'+esc(l.descripcion)+'</td><td>'+(l.cantidad ?? "")+'</td><td>'+(l.recibido === "S" ? "Sí" : "No")+'</td></tr>').join("") || '<tr><td colspan="4" class="muted">Sin líneas.</td></tr>')+'</table></div>'+
-    ((ci.data || []).length ? '<div class="card"><b>Citas de montaje</b><table style="margin-top:8px"><tr><th>Fecha y hora</th><th>Estado</th></tr>'+ci.data.map(c => '<tr><td>'+new Date(c.fecha_hora).toLocaleString("es-ES")+'</td><td>'+esc(c.estado)+'</td></tr>').join("")+'</table></div>' : "");
+    ((ci.data || []).length ? '<div class="card"><b>Citas de montaje</b><table style="margin-top:8px"><tr><th>Fecha y hora</th><th>Estado</th></tr>'+ci.data.map(c => '<tr><td>'+new Date(c.fecha_hora).toLocaleString("es-ES")+'</td><td>'+esc(c.estado)+'</td></tr>').join("")+'</table></div>' : "") +
+    '<div class="card"><b>Chat con ALMMA</b><div class="muted" style="margin:4px 0 10px">Escribe aquí comentarios sobre esta orden; el personal de ALMMA te responderá.</div><div class="chat" id="chat_lista"></div>'+
+    '<div class="chat-form"><textarea id="chat_texto" maxlength="2000" placeholder="Escribe un mensaje..."></textarea><button id="chat_enviar">Enviar</button></div></div>';
+  document.getElementById("chat_enviar").onclick = () => enviarChat(anyo, orden, "tienda");
+  await cargarChat(anyo, orden, "tienda");
 })();
 </script>
 </body>
