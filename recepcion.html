@@ -189,6 +189,7 @@ let pedidoActivo = null;
 let fabricanteSeleccionado = null;
 let staffUserId = null;
 let fabricantesPorNombre = {};
+let fabricantesPorCodigo = {};
 
 document.querySelectorAll(".menu-item").forEach(item => {
   item.querySelector("span").addEventListener("click", (e) => {
@@ -219,7 +220,7 @@ async function comprobarSesion() {
 
   const { data: fabricantes } = await client.from("fabricantes").select("codigo, nombre").order("nombre");
   document.getElementById("dl_fabricantes").innerHTML = (fabricantes || []).map(f => `<option value="${(f.nombre || "").replace(/"/g, "&quot;")}">`).join("");
-  (fabricantes || []).forEach(f => { if (f.nombre) fabricantesPorNombre[f.nombre.toLowerCase()] = f.codigo; });
+  (fabricantes || []).forEach(f => { if (f.nombre) { fabricantesPorNombre[f.nombre.toLowerCase()] = f.codigo; fabricantesPorCodigo[f.codigo] = f.nombre; } });
 }
 
 function cambiarPestana(p) {
@@ -465,27 +466,74 @@ async function anyadirLineaEntrada() {
   document.getElementById("ent_fabricante_buscar").focus();
 }
 
+// Una entrada de almacén no guarda a qué orden pertenece: solo el nº de pedido de la tienda y la tienda.
+// En el programa antiguo ese nº de pedido se guardaba CORTADO a 10 letras ("3877 Rober" en vez de
+// "3877 Roberto Zambelli"). Aquí se busca la orden cuyo nº de pedido EMPIEZA por ese texto y es de la
+// misma tienda, y se enseña su nº de pedido completo y su cliente.
+async function enlazarOrdenesConMovimientos(movs) {
+  // (se saltan los textos con comillas, % o _ : son raros y romperían el filtro)
+  const patrones = [...new Set(movs.map(m => (m.num_pedido || "").trim()).filter(p => p && !/["%_\\]/.test(p)))];
+  const ordenes = [];
+  for (let i = 0; i < patrones.length; i += 30) {
+    const grupo = patrones.slice(i, i + 30);
+    const filtro = grupo.map(p => `num_pedido.ilike."${p}%"`).join(",");
+    const { data } = await client.from("ordenes").select("anyo, orden, num_pedido, nombre_cli, tienda_id")
+      .or(filtro).order("anyo", { ascending: false }).order("orden", { ascending: false }).limit(1000);
+    (data || []).forEach(o => ordenes.push(o));
+  }
+  movs.forEach(m => {
+    const np = (m.num_pedido || "").trim().toLowerCase();
+    if (!np) return;
+    const candidatas = ordenes.filter(o => (o.num_pedido || "").toLowerCase().startsWith(np) && (!m.tienda_id || o.tienda_id === m.tienda_id));
+    if (!candidatas.length) return;
+    const o = candidatas[0];   // la más reciente
+    m.orden_txt = `${o.anyo}/${o.orden}`;
+    m.orden_url = `pedidos.html?anyo=${o.anyo}&orden=${o.orden}`;
+    m.pedido_completo = o.num_pedido || "";
+    m.cliente = o.nombre_cli || "";
+    m.mas_ordenes = candidatas.length - 1;
+  });
+}
+
 async function cargarMovimientos() {
   const { data, error } = await client.from("alm_movimientos")
-    .select("almacen, anyo, nummov, articulo, descripcion, fechmov, cantidade, ubicacion, num_pedido, bultos, albaran")
+    .select("almacen, anyo, nummov, articulo, descripcion, fechmov, cantidade, ubicacion, num_pedido, bultos, albaran, fabricante, tienda_id, tiendas ( nombre )")
     .order("fechmov", { ascending: false })
     .limit(100);
   if (error) { console.error(error); return; }
+  data.forEach(m => {
+    // en el programa antiguo la columna "almacén" de las entradas es en realidad el código del fabricante
+    const cod = m.fabricante ?? m.almacen;
+    m.fabricante_txt = fabricantesPorCodigo[cod] || (cod !== null && cod !== undefined ? `Código ${cod}` : "");
+    m.tienda_txt = m.tiendas?.nombre || "";
+  });
+  try { await enlazarOrdenesConMovimientos(data); } catch (e) { console.warn("no se pudieron enlazar las órdenes:", e); }
 
   const columnas = [
-    { title: "Fecha", field: "fechmov", formatter: (c) => c.getValue() ? new Date(c.getValue()).toLocaleString("es-ES") : "" },
-    { title: "Almacén", field: "almacen", width: 90 },
-    { title: "Descripción", field: "descripcion" },
-    { title: "Cantidad", field: "cantidade", width: 100 },
+    { title: "Fecha", field: "fechmov", width: 110, formatter: (c) => {
+        const v = c.getValue(); if (!v) return "";
+        const f = new Date(v); return (f.getHours() === 0 && f.getMinutes() === 0) ? f.toLocaleDateString("es-ES") : f.toLocaleString("es-ES");
+      } },
+    { title: "Fabricante", field: "fabricante_txt", minWidth: 150 },
+    { title: "Tienda", field: "tienda_txt", minWidth: 150 },
+    { title: "Nº pedido (como se guardó)", field: "num_pedido", minWidth: 150, tooltip: "En el programa antiguo este campo se cortaba a 10 letras" },
+    { title: "Orden", field: "orden_txt", width: 110, formatter: (c) => {
+        const d = c.getRow().getData();
+        return d.orden_txt ? `<a href="${d.orden_url}" style="color:var(--primary);font-weight:600;">${d.orden_txt}</a>${d.mas_ordenes ? ` <span class="meta" title="Hay ${d.mas_ordenes} orden(es) más con ese nº de pedido">+${d.mas_ordenes}</span>` : ""}` : "";
+      } },
+    { title: "Nº pedido completo (de la orden)", field: "pedido_completo", minWidth: 220 },
+    { title: "Cliente", field: "cliente", minWidth: 170 },
+    { title: "Descripción", field: "descripcion", minWidth: 220 },
+    { title: "Cant.", field: "cantidade", width: 70 },
     { title: "Ubicación", field: "ubicacion", width: 110 },
-    { title: "Bultos", field: "bultos", width: 90 },
+    { title: "Bultos", field: "bultos", width: 80 },
     { title: "Albarán", field: "albaran" },
-    { title: "Nº pedido", field: "num_pedido" },
   ];
 
   if (!tabla) {
-    tabla = new Tabulator("#tabla_movimientos", { data, columns: columnas, layout: "fitColumns", height: "400px" });
+    tabla = new Tabulator("#tabla_movimientos", { data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 260px)" });
   } else {
+    tabla.setColumns(columnas);
     tabla.setData(data);
   }
 }
