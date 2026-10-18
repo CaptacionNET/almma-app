@@ -41,6 +41,9 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .sugerencias{display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 10px 20px -10px rgba(0,0,0,.2);max-height:220px;overflow-y:auto;z-index:5;}
 .sugerencias div{padding:8px 10px;cursor:pointer;font-size:13px;}
 .sugerencias div:hover{background:#f5f6fa;}
+.filtros-entradas{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;}
+.filtros-entradas label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;}
+.filtros-entradas input{min-width:170px;}
 .pestanas{display:flex;gap:2px;padding:0 24px;margin-top:14px;border-bottom:1px solid var(--border);}
 .pestanas button{background:transparent;color:var(--muted);border:none;border-bottom:3px solid transparent;border-radius:0;padding:10px 16px;font-size:14px;}
 .pestanas button.activa{color:var(--primary);border-bottom-color:var(--primary);font-weight:600;}
@@ -174,6 +177,14 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 <div id="pestana_movimientos" style="display:none;">
   <div class="tabla-scroll" style="margin-top:20px;">
     <h4 style="margin:0 0 8px;">Últimas entradas registradas</h4>
+    <div class="filtros-entradas">
+      <div><label>Desde</label><input id="fm_desde" type="date" onchange="cargarMovimientos()"></div>
+      <div><label>Hasta</label><input id="fm_hasta" type="date" onchange="cargarMovimientos()"></div>
+      <div><label>Nº de pedido</label><input id="fm_pedido" placeholder="Parte del nº de pedido" oninput="buscarMovimientosDebounce()" autocomplete="off"></div>
+      <div><label>Fabricante</label><input id="fm_fabricante" list="dl_fabricantes" placeholder="Nombre del fabricante" oninput="buscarMovimientosDebounce()" autocomplete="off"></div>
+      <button class="secondary btn-mini" style="padding:8px 12px;" onclick="limpiarFiltrosMovimientos()">Últimos 2 meses</button>
+      <span id="aviso_movimientos" class="meta" style="align-self:center;"></span>
+    </div>
     <div id="tabla_movimientos"></div>
   </div>
 </div>
@@ -312,7 +323,7 @@ function activarPedido(orden, numPedido) {
 
 async function cargarLineasPedido() {
   const { data: lineas, error } = await client.from("linorden")
-    .select("linea, tipolinea, articulo, descripcion, cantidad, ubicacion, bultos, albaran, proveedor, recibido_at, fabricantes ( nombre )")
+    .select("linea, tipolinea, articulo, descripcion, cantidad, ubicacion, bultos, albaran, proveedor, recibido, recibido_at, frecepcion, fabricantes ( nombre )")
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden)
     .order("linea");
 
@@ -328,18 +339,15 @@ async function cargarLineasPedido() {
   }
 
   const esc = (v) => (v ?? "").toString().replace(/"/g, "&quot;");
+  // una línea está recibida si se marcó aquí (recibido_at) o ya venía recibida del programa antiguo (recibido = 'S')
+  const estaRecibida = (l) => !!l.recibido_at || l.recibido === "S";
+  const pendientes = lineasMercancia.filter(l => !estaRecibida(l));
+  const recibidas = lineasMercancia.filter(estaRecibida);
 
-  cont.innerHTML = lineasMercancia.map(l => {
+  const htmlPendiente = (l) => {
     const nombreLinea = l.descripcion || l.articulo || `línea ${l.linea}`;
-    if (l.recibido_at) {
-      return `<div class="item">
-        <span class="linea-nombre">${nombreLinea}</span> — ${l.cantidad ?? ""} ud.
-        <div class="meta">Recibida el ${new Date(l.recibido_at).toLocaleString("es-ES")}${l.fabricantes?.nombre ? " · " + l.fabricantes.nombre : ""}${l.ubicacion ? " · " + l.ubicacion : ""}${l.bultos ? " · " + l.bultos + " bultos" : ""}${l.albaran ? " · albarán " + l.albaran : ""}</div>
-        <button class="secondary btn-mini" style="margin-top:6px;" onclick="deshacerRecepcionLinea(${l.linea})">Deshacer recepción</button>
-      </div>`;
-    }
     return `<div class="item">
-      <span class="linea-nombre">${nombreLinea}</span> — ${l.cantidad ?? ""} ud. pedida(s)
+      <span class="linea-nombre">${esc(nombreLinea)}</span> — ${l.cantidad ?? ""} ud. pedida(s)
       <div class="form-grid" style="margin-top:8px;">
         <div class="campo"><label>Fabricante</label><input id="rl_fab_${l.linea}" list="dl_fabricantes" value="${esc(l.fabricantes?.nombre)}"></div>
         <div class="campo"><label>Cantidad recibida</label><input id="rl_cant_${l.linea}" type="number" step="any" value="${esc(l.cantidad)}"></div>
@@ -349,7 +357,41 @@ async function cargarLineasPedido() {
       </div>
       <button class="btn-mini" style="margin-top:8px;" onclick="marcarLineaRecibida(${l.linea})">Marcar recibida</button>
     </div>`;
-  }).join("");
+  };
+
+  // recibidas: solo texto, con un lápiz para modificar algo
+  const htmlRecibida = (l) => {
+    const nombreLinea = l.descripcion || l.articulo || `línea ${l.linea}`;
+    const fecha = l.recibido_at ? new Date(l.recibido_at).toLocaleDateString("es-ES")
+                : (l.frecepcion && !String(l.frecepcion).startsWith("1900") ? new Date(l.frecepcion).toLocaleDateString("es-ES") : "");
+    const datos = [l.fabricantes?.nombre, l.ubicacion ? "ubicación " + l.ubicacion : "", l.bultos ? l.bultos + " bultos" : "", l.albaran ? "albarán " + l.albaran : "", fecha ? "recibida el " + fecha : "recibida"]
+      .filter(Boolean).join(" · ");
+    return `<div class="item linea-recibida">
+      <div style="display:flex;gap:8px;align-items:baseline;">
+        <span style="color:#15803d;font-weight:700;">✓</span>
+        <div style="flex:1;"><strong>${esc(nombreLinea)}</strong> — ${l.cantidad ?? ""} ud.<div class="meta">${esc(datos)}</div></div>
+        <button class="secondary btn-mini" title="Modificar esta línea" onclick="editarLineaRecibida(${l.linea})">✎</button>
+      </div>
+      <div id="edit_${l.linea}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);">
+        <div class="form-grid">
+          <div class="campo"><label>Fabricante</label><input id="re_fab_${l.linea}" list="dl_fabricantes" value="${esc(l.fabricantes?.nombre)}"></div>
+          <div class="campo"><label>Cantidad</label><input id="re_cant_${l.linea}" type="number" step="any" value="${esc(l.cantidad)}"></div>
+          <div class="campo"><label>Ubicación</label><input id="re_ubi_${l.linea}" value="${esc(l.ubicacion)}"></div>
+          <div class="campo"><label>Bultos</label><input id="re_bul_${l.linea}" type="number" value="${esc(l.bultos)}"></div>
+          <div class="campo"><label>Albarán</label><input id="re_alb_${l.linea}" value="${esc(l.albaran)}"></div>
+        </div>
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn-mini" onclick="guardarEdicionLineaRecibida(${l.linea})">Guardar cambios</button>
+          <button class="secondary btn-mini" onclick="editarLineaRecibida(${l.linea})">Cancelar</button>
+          <button class="secondary btn-mini" style="color:#dc2626;" onclick="deshacerRecepcionLinea(${l.linea})">Deshacer recepción</button>
+        </div>
+      </div>
+    </div>`;
+  };
+
+  cont.innerHTML =
+    (pendientes.length ? pendientes.map(htmlPendiente).join("") : '<div class="meta" style="margin-bottom:8px;">No queda nada pendiente de recibir en este pedido.</div>') +
+    (recibidas.length ? `<h5 style="margin:16px 0 6px;color:var(--muted);">Ya recibidas (${recibidas.length})</h5>` + recibidas.map(htmlRecibida).join("") : "");
 }
 
 async function marcarLineaRecibida(linea) {
@@ -361,7 +403,7 @@ async function marcarLineaRecibida(linea) {
 
   if (!ubicacion && !confirm("¡Atención! Esta línea no tiene ubicación (está en blanco).\n\n¿Marcarla como recibida de todos modos?")) return;
 
-  const valores = { ubicacion, bultos, albaran, recibido_at: new Date().toISOString(), recibido_por: staffUserId };
+  const valores = { ubicacion, bultos, albaran, recibido: "S", recibido_at: new Date().toISOString(), recibido_por: staffUserId };
   if (!isNaN(cantidad)) valores.cantidad = cantidad;
   if (fabTexto) {
     const codigo = fabricantesPorNombre[fabTexto.toLowerCase()];
@@ -374,8 +416,30 @@ async function marcarLineaRecibida(linea) {
   await cargarLineasPedido();
 }
 
+function editarLineaRecibida(linea) {
+  const caja = document.getElementById(`edit_${linea}`);
+  caja.style.display = caja.style.display === "none" ? "block" : "none";
+}
+
+async function guardarEdicionLineaRecibida(linea) {
+  const fabTexto = document.getElementById(`re_fab_${linea}`).value.trim();
+  const cantidad = parseFloat(document.getElementById(`re_cant_${linea}`).value);
+  const valores = {
+    ubicacion: document.getElementById(`re_ubi_${linea}`).value.trim() || null,
+    bultos: document.getElementById(`re_bul_${linea}`).value ? parseInt(document.getElementById(`re_bul_${linea}`).value, 10) : null,
+    albaran: document.getElementById(`re_alb_${linea}`).value.trim() || null,
+  };
+  if (!isNaN(cantidad)) valores.cantidad = cantidad;
+  if (fabTexto) { const codigo = fabricantesPorNombre[fabTexto.toLowerCase()]; if (codigo) valores.proveedor = codigo; }
+  if (!valores.ubicacion && !confirm("¡Atención! Esta línea se queda sin ubicación (en blanco).\n\n¿Guardar de todos modos?")) return;
+  const { error } = await client.from("linorden").update(valores)
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).eq("linea", linea);
+  if (error) { alert("No se pudo guardar: " + error.message); return; }
+  await cargarLineasPedido();
+}
+
 async function deshacerRecepcionLinea(linea) {
-  const { error } = await client.from("linorden").update({ recibido_at: null, recibido_por: null })
+  const { error } = await client.from("linorden").update({ recibido: "N", recibido_at: null, recibido_por: null })
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).eq("linea", linea);
   if (error) { alert("No se pudo deshacer: " + error.message); return; }
   await cargarLineasPedido();
@@ -472,13 +536,16 @@ async function anyadirLineaEntrada() {
 // misma tienda, y se enseña su nº de pedido completo y su cliente.
 async function enlazarOrdenesConMovimientos(movs) {
   // (se saltan los textos con comillas, % o _ : son raros y romperían el filtro)
+  const anios = movs.map(m => m.fechmov ? new Date(m.fechmov).getFullYear() : null).filter(Boolean);
+  const anyoMinimo = (anios.length ? Math.min(...anios) : new Date().getFullYear()) - 1;
   const patrones = [...new Set(movs.map(m => (m.num_pedido || "").trim()).filter(p => p && !/["%_\\]/.test(p)))];
   const ordenes = [];
   for (let i = 0; i < patrones.length; i += 30) {
     const grupo = patrones.slice(i, i + 30);
     const filtro = grupo.map(p => `num_pedido.ilike."${p}%"`).join(",");
-    const { data } = await client.from("ordenes").select("anyo, orden, num_pedido, nombre_cli, tienda_id")
-      .or(filtro).order("anyo", { ascending: false }).order("orden", { ascending: false }).limit(1000);
+    // solo órdenes de los años de las entradas (y el anterior): así no se recorren las 70.000 órdenes
+    const { data } = await client.from("ordenes").select("anyo, orden, num_pedido, nombre_cli, tienda_id, fecha_creacion")
+      .gte("anyo", anyoMinimo).or(filtro).order("anyo", { ascending: false }).order("orden", { ascending: false }).limit(1000);
     (data || []).forEach(o => ordenes.push(o));
   }
   movs.forEach(m => {
@@ -486,7 +553,21 @@ async function enlazarOrdenesConMovimientos(movs) {
     if (!np) return;
     const candidatas = ordenes.filter(o => (o.num_pedido || "").toLowerCase().startsWith(np) && (!m.tienda_id || o.tienda_id === m.tienda_id));
     if (!candidatas.length) return;
-    const o = candidatas[0];   // la más reciente
+    // si varias órdenes de la tienda empiezan igual (el texto está cortado a 10 letras), se elige la última
+    // orden CREADA antes de que llegara la mercancía (con 3 días de margen, por si se creó después); si no
+    // hay ninguna, la primera creada después. Las demás se listan en el "+N".
+    const fm = m.fechmov ? new Date(m.fechmov).getTime() : null;
+    const margen = 3 * 24 * 3600 * 1000;
+    const creada = (o) => o.fecha_creacion ? new Date(o.fecha_creacion).getTime() : null;
+    candidatas.sort((a, b) => {
+      const ca = creada(a), cb = creada(b);
+      if (fm === null || ca === null || cb === null) return 0;
+      const antesA = ca <= fm + margen, antesB = cb <= fm + margen;
+      if (antesA !== antesB) return antesA ? -1 : 1;     // las creadas antes, primero
+      return antesA ? cb - ca : ca - cb;                 // antes: la más reciente; después: la más cercana
+    });
+    const o = candidatas[0];
+    m.otras_ordenes = candidatas.slice(1).map(x => `${x.anyo}/${x.orden} — ${x.nombre_cli || x.num_pedido || ""}`).join("\n");
     m.orden_txt = `${o.anyo}/${o.orden}`;
     m.orden_url = `pedidos.html?anyo=${o.anyo}&orden=${o.orden}`;
     m.pedido_completo = o.num_pedido || "";
@@ -495,12 +576,39 @@ async function enlazarOrdenesConMovimientos(movs) {
   });
 }
 
+let debounceMovimientos = null;
+function buscarMovimientosDebounce() { clearTimeout(debounceMovimientos); debounceMovimientos = setTimeout(cargarMovimientos, 350); }
+function limpiarFiltrosMovimientos() {
+  ["fm_desde", "fm_hasta", "fm_pedido", "fm_fabricante"].forEach(id => { document.getElementById(id).value = ""; });
+  cargarMovimientos();
+}
+
+// Por defecto solo las entradas de los últimos 2 meses (cargar todas tardaba mucho). Para ver más atrás
+// se usa el buscador de arriba: fechas, nº de pedido o fabricante.
 async function cargarMovimientos() {
-  const { data, error } = await client.from("alm_movimientos")
+  const desde = document.getElementById("fm_desde").value;
+  const hasta = document.getElementById("fm_hasta").value;
+  const pedido = document.getElementById("fm_pedido").value.trim();
+  const fabTexto = document.getElementById("fm_fabricante").value.trim();
+  const codigoFab = fabTexto ? fabricantesPorNombre[fabTexto.toLowerCase()] : null;
+  const hayFiltros = !!(desde || hasta || pedido || codigoFab);
+  const hace2Meses = new Date(); hace2Meses.setMonth(hace2Meses.getMonth() - 2);
+  const aviso = document.getElementById("aviso_movimientos");
+  aviso.textContent = "Cargando...";
+
+  let consulta = client.from("alm_movimientos")
     .select("almacen, anyo, nummov, articulo, descripcion, fechmov, cantidade, ubicacion, num_pedido, bultos, albaran, fabricante, tienda_id, tiendas ( nombre )")
     .order("fechmov", { ascending: false })
-    .limit(100);
-  if (error) { console.error(error); return; }
+    .limit(300);
+  if (desde) consulta = consulta.gte("fechmov", desde);
+  else if (!hayFiltros) consulta = consulta.gte("fechmov", hace2Meses.toISOString().slice(0, 10));
+  if (hasta) consulta = consulta.lte("fechmov", hasta + "T23:59:59");
+  if (pedido) consulta = consulta.ilike("num_pedido", `%${pedido}%`);
+  if (codigoFab) consulta = consulta.eq("fabricante", codigoFab);
+  const { data, error } = await consulta;
+  if (error) { console.error(error); aviso.textContent = "Error: " + error.message; return; }
+  aviso.textContent = `${data.length} entradas` + (hayFiltros ? "." : " de los últimos 2 meses. Para ver más atrás, usa el buscador.") +
+    (data.length >= 300 ? " Se muestran las 300 más recientes: acota las fechas." : "");
   data.forEach(m => {
     // en el programa antiguo la columna "almacén" de las entradas es en realidad el código del fabricante
     const cod = m.fabricante ?? m.almacen;
@@ -519,7 +627,7 @@ async function cargarMovimientos() {
     { title: "Nº pedido (como se guardó)", field: "num_pedido", minWidth: 150, tooltip: "En el programa antiguo este campo se cortaba a 10 letras" },
     { title: "Orden", field: "orden_txt", width: 110, formatter: (c) => {
         const d = c.getRow().getData();
-        return d.orden_txt ? `<a href="${d.orden_url}" style="color:var(--primary);font-weight:600;">${d.orden_txt}</a>${d.mas_ordenes ? ` <span class="meta" title="Hay ${d.mas_ordenes} orden(es) más con ese nº de pedido">+${d.mas_ordenes}</span>` : ""}` : "";
+        return d.orden_txt ? `<a href="${d.orden_url}" style="color:var(--primary);font-weight:600;">${d.orden_txt}</a>${d.mas_ordenes ? ` <span class="meta" style="cursor:help;" title="El nº de pedido está cortado y coincide también con estas órdenes de la misma tienda (se ha elegido la última creada antes de que llegara la mercancía):&#10;${(d.otras_ordenes || "").replace(/"/g, "&quot;")}">+${d.mas_ordenes}</span>` : ""}` : "";
       } },
     { title: "Nº pedido completo (de la orden)", field: "pedido_completo", minWidth: 220 },
     { title: "Cliente", field: "cliente", minWidth: 170 },

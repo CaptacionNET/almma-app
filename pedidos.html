@@ -61,8 +61,18 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .error{display:none;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:16px;}
 .fecha-vacia{display:inline-block;color:var(--muted);font-size:12px;margin-top:2px;}
 .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px 16px;}
-.lineas-table{width:100%;font-size:13px;border-collapse:collapse;margin-top:8px;}
-.lineas-table th,.lineas-table td{border-bottom:1px solid var(--border);padding:6px 4px;text-align:left;}
+.lineas-table{width:100%;font-size:13px;border-collapse:separate;border-spacing:0;margin-top:8px;border:1px solid #bfdbfe;border-radius:8px;overflow:hidden;}
+.lineas-table th{background:#dbeafe;color:#1e3a8a;font-weight:700;padding:8px 8px;text-align:left;border-bottom:2px solid #93c5fd;}
+.lineas-table td{border-bottom:1px solid #dbeafe;padding:9px 8px;text-align:left;vertical-align:middle;}
+.lineas-table tr:last-child td{border-bottom:none;}
+.lineas-table tbody tr:nth-child(even) td{background:#f5f9ff;}
+.lineas-table td:first-child{border-left:5px solid #94a3b8;font-weight:600;}
+.lineas-table tr.lin-t1 td:first-child{border-left-color:#2563eb;}   /* mercancía */
+.lineas-table tr.lin-t4 td:first-child{border-left-color:#d97706;}   /* servicio */
+.lineas-table tr.lin-t3 td:first-child{border-left-color:#7c3aed;}   /* texto libre */
+.lineas-table tr.lin-t2 td:first-child{border-left-color:#dc2626;}   /* devolución */
+.lineas-table tr.lin-pendiente td:first-child{background:#fffbeb;}
+.lineas-table tr:hover td{background:#e0efff;}
 .btn-mini{padding:4px 8px;font-size:12px;border-radius:5px;}
 .mini-list{font-size:13px;}
 .mini-list .item{border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px;}
@@ -336,9 +346,20 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 
   <!-- LINEAS -->
   <div class="tab-panel" id="tab_lineas">
+    <div class="meta" style="font-size:11px;margin-bottom:2px;">
+      <span style="border-left:5px solid #2563eb;padding-left:5px;margin-right:12px;">Mercancía</span>
+      <span style="border-left:5px solid #d97706;padding-left:5px;margin-right:12px;">Servicio</span>
+      <span style="border-left:5px solid #7c3aed;padding-left:5px;margin-right:12px;">Texto</span>
+      <span style="border-left:5px solid #dc2626;padding-left:5px;margin-right:12px;">Devolución</span>
+      <span style="background:#fffbeb;padding:0 5px;">Pendiente de recibir</span>
+    </div>
     <table class="lineas-table" id="tabla_lineas"></table>
 
-    <h4>Añadir línea</h4>
+    <div style="margin-top:14px;">
+      <button id="btn_nueva_linea" onclick="mostrarNuevaLinea(true)">+ Nueva línea</button>
+    </div>
+    <div id="caja_nueva_linea" style="display:none;margin-top:10px;padding:14px;border:1px solid #93c5fd;border-radius:10px;background:#f5f9ff;">
+    <h4 style="margin-top:0;">Nueva línea</h4>
     <div class="linea-form">
       <div class="campo lf-4">
         <label>Tipo de línea</label>
@@ -368,6 +389,8 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
       <div class="campo lf-2" style="align-self:end;"><label style="display:flex;gap:6px;align-items:center;margin:0 0 8px;"><input id="ln_control_stock" type="checkbox" style="width:auto;"> Control de stock</label></div>
     </div>
     <button class="btn-mini" style="font-size:14px;padding:8px 16px;" onclick="anyadirLineaOrden()">+ Añadir línea</button>
+    <button class="secondary btn-mini" style="font-size:14px;padding:8px 16px;" onclick="mostrarNuevaLinea(false)">Cancelar</button>
+    </div>
 
     <div style="margin-top:16px;">
       <button class="secondary" onclick="traspasarAIncidencia()">Traspasar a Incidencias</button>
@@ -896,6 +919,7 @@ async function abrirPanel(orden) {
   document.getElementById("ch_horamont").value = o.horamont || "";
   await llenarSelectEstado("ch_estado", o.estado || "en_proceso");
   await llenarSelectTipoLinea();
+  mostrarNuevaLinea(false);
   document.getElementById("ch_importe_total").value = o.importe_total ?? "";
   document.getElementById("ch_entrega_a_cuenta").value = o.entrega_a_cuenta ?? "";
   document.getElementById("ch_importe_pendiente").value = o.importe_pendiente ?? "";
@@ -1075,7 +1099,7 @@ async function verFotoMontaje(path) {
 
 async function cargarLineas() {
   const { data: lineas } = await client.from("linorden")
-    .select("linea, articulo, descripcion, cantidad, importe, porcentaje, importe_cobrar, ubicacion, albaran, bultos, control_stock, recibido_at")
+    .select("linea, tipolinea, articulo, descripcion, cantidad, importe, porcentaje, importe_cobrar, ubicacion, albaran, bultos, control_stock, recibido, recibido_at")
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).order("linea");
 
   const tbody = document.getElementById("tabla_lineas");
@@ -1085,7 +1109,9 @@ async function cargarLineas() {
       const boton = recibida
         ? `<span class="pill-recibida">${new Date(l.recibido_at).toLocaleDateString("es-ES")}</span> <button class="secondary btn-mini" onclick="marcarRecibida(${l.linea}, false)">Deshacer</button>`
         : `<button class="btn-mini" onclick="marcarRecibida(${l.linea}, true)">Marcar recibida</button>`;
-      return `<tr>
+      const claseTipo = [1, 2, 3, 4].includes(l.tipolinea) ? `lin-t${l.tipolinea}` : "";
+      const pendiente = l.tipolinea !== 4 && !l.recibido_at && l.recibido !== "S";
+      return `<tr class="${claseTipo} ${pendiente ? "lin-pendiente" : ""}">
         <td>${l.descripcion || l.articulo || ""}${l.control_stock === 'S' ? ' <span class="meta" style="color:var(--muted);font-size:11px;">(stock)</span>' : ''}</td>
         <td>${l.cantidad ?? ""}</td>
         <td>${l.importe ?? ""}</td>
@@ -1180,6 +1206,12 @@ document.getElementById("ln_fabricante_sugerencias").addEventListener("click", (
   document.getElementById("ln_fabricante_sugerencias").style.display = "none";
 });
 
+function mostrarNuevaLinea(mostrar) {
+  document.getElementById("caja_nueva_linea").style.display = mostrar ? "block" : "none";
+  document.getElementById("btn_nueva_linea").style.display = mostrar ? "none" : "inline-block";
+  if (mostrar) document.getElementById("ln_articulo_buscar").focus();
+}
+
 function recalcularACobrar() {
   const imp = parseFloat(document.getElementById("ln_importe").value);
   const por = parseFloat(document.getElementById("ln_porcentaje").value);
@@ -1227,6 +1259,7 @@ async function anyadirLineaOrden() {
   document.getElementById("ln_control_stock").checked = false;
   fabricanteSeleccionado = null;
   articuloSeleccionado = null;
+  mostrarNuevaLinea(false);
   await cargarLineas();
 }
 
