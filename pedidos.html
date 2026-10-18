@@ -191,6 +191,22 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 
 <div class="tabla-scroll"><div id="tabla_pedidos"></div></div>
 
+<div id="modal_traspaso" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto;z-index:60;">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;width:100%;max-width:680px;padding:20px;">
+    <button class="secondary" onclick="cerrarTraspaso()" style="float:right;">✕</button>
+    <h3 style="margin-top:0;">Traspasar a incidencia</h3>
+    <p class="meta" style="font-size:13px;">Elige las líneas de la orden <strong id="tr_orden"></strong> que pasan a la nueva orden de incidencia.
+      Las líneas elegidas se <strong>mueven</strong>: dejan de estar en la orden original. La orden original pasa a "terminado con incidencia" y queda pendiente de facturar.</p>
+    <label style="display:flex;gap:6px;align-items:center;font-weight:600;margin:10px 0 6px;"><input type="checkbox" id="tr_todas" style="width:auto;" onchange="marcarTodasTraspaso(this.checked)"> Seleccionar todas</label>
+    <div id="tr_lista" class="mini-list"></div>
+    <p id="tr_error" class="error"></p>
+    <div style="display:flex;gap:8px;margin-top:14px;">
+      <button onclick="confirmarTraspaso()">Traspasar las líneas elegidas</button>
+      <button class="secondary" onclick="cerrarTraspaso()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <div id="modal_nueva_orden">
   <div class="card">
     <button class="secondary" onclick="cerrarModalNuevaOrden()" style="float:right;">✕</button>
@@ -996,6 +1012,13 @@ async function guardarCabecera() {
   if (error) { alert("No se pudo guardar: " + error.message); return; }
   const errMontadores = await guardarMontadores();
   if (errMontadores) { alert("La cabecera se guardó, pero no el equipo de montadores: " + errMontadores.message); return; }
+  // las fechas cambian el estado solas (prevista -> agendado, montaje -> completado): se refleja en pantalla
+  const { data: ordNueva } = await client.from("ordenes").select("estado, pendiente_facturar")
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).maybeSingle();
+  if (ordNueva) {
+    document.getElementById("ch_estado").value = ordNueva.estado;
+    document.getElementById("ch_pendiente_facturar").checked = !!ordNueva.pendiente_facturar;
+  }
   cargarPedidos();
   alert("Cabecera guardada.");
 }
@@ -1265,12 +1288,43 @@ async function anyadirLineaOrden() {
 
 async function traspasarAIncidencia() {
   if (!pedidoActivo) return;
-  if (!confirm(`¿Crear una nueva orden vinculada a ${pedidoActivo.anyo}/${pedidoActivo.orden} (sin líneas, para gestionar aparte)?`)) return;
-  const { data, error } = await client.rpc("traspasar_a_incidencia", { p_anyo: pedidoActivo.anyo, p_orden: pedidoActivo.orden });
-  if (error) { alert("No se pudo traspasar: " + error.message); return; }
+  const { data: lineas, error } = await client.from("linorden")
+    .select("linea, tipolinea, articulo, descripcion, cantidad, importe, recibido, recibido_at")
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).order("linea");
+  if (error) { alert("No se pudieron cargar las líneas: " + error.message); return; }
+  document.getElementById("tr_orden").textContent = `${pedidoActivo.anyo}/${pedidoActivo.orden}`;
+  document.getElementById("tr_error").style.display = "none";
+  document.getElementById("tr_todas").checked = false;
+  const tipos = { 1: "Mercancía", 2: "Devolución", 3: "Texto", 4: "Servicio" };
+  document.getElementById("tr_lista").innerHTML = (lineas || []).length ? lineas.map(l => `
+    <label class="item" style="display:flex;gap:10px;align-items:center;cursor:pointer;">
+      <input type="checkbox" class="tr_check" value="${l.linea}" style="width:auto;">
+      <span style="flex:1;"><strong>${escMont(l.descripcion || l.articulo || "línea " + l.linea)}</strong> — ${l.cantidad ?? ""} ud.
+        <span class="meta">· ${tipos[l.tipolinea] || "Línea"}${l.importe ? " · " + l.importe + " €" : ""}${(l.recibido_at || l.recibido === "S") ? " · recibida" : ""}</span></span>
+    </label>`).join("") : '<div class="meta">Esta orden no tiene líneas: se creará una incidencia vacía.</div>';
+  document.getElementById("modal_traspaso").style.display = "flex";
+}
+
+function marcarTodasTraspaso(marcar) { document.querySelectorAll(".tr_check").forEach(c => { c.checked = marcar; }); }
+function cerrarTraspaso() { document.getElementById("modal_traspaso").style.display = "none"; }
+
+async function confirmarTraspaso() {
+  if (!pedidoActivo) return;
+  const lineas = [...document.querySelectorAll(".tr_check:checked")].map(c => parseInt(c.value, 10));
+  if (!lineas.length && !confirm("No has elegido ninguna línea: se creará una orden de incidencia VACÍA vinculada a esta.\n\n¿Continuar?")) return;
+  const { data, error } = await client.rpc("traspasar_a_incidencia", { p_anyo: pedidoActivo.anyo, p_orden: pedidoActivo.orden, p_lineas: lineas.length ? lineas : null });
+  if (error) {
+    const caja = document.getElementById("tr_error");
+    caja.textContent = "No se pudo traspasar: " + error.message; caja.style.display = "block";
+    return;
+  }
   const nueva = data[0];
-  alert(`Creada la orden ${nueva.anyo}/${nueva.orden}, enlazada en el Historial.`);
+  cerrarTraspaso();
+  alert(`Creada la orden de incidencia ${nueva.anyo}/${nueva.orden}` + (lineas.length ? ` con ${lineas.length} línea(s) movidas desde la ${pedidoActivo.anyo}/${pedidoActivo.orden}.` : " (vacía).") + "\nQueda enlazada en el Historial.");
+  const { data: ord } = await client.from("ordenes").select("estado, pendiente_facturar").eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).maybeSingle();
+  if (ord) { document.getElementById("ch_estado").value = ord.estado; document.getElementById("ch_pendiente_facturar").checked = !!ord.pendiente_facturar; }
   cargarPedidos();
+  await cargarLineas();
   await cargarHistorial({ anyo: pedidoActivo.anyo, orden: pedidoActivo.orden });
 }
 

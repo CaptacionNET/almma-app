@@ -201,6 +201,9 @@ let fabricanteSeleccionado = null;
 let staffUserId = null;
 let fabricantesPorNombre = {};
 let fabricantesPorCodigo = {};
+let lineasActuales = {};   // líneas del pedido abierto, por número de línea
+
+function ahoraLocal() { const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000); return d.toISOString().slice(0, 19); }
 
 document.querySelectorAll(".menu-item").forEach(item => {
   item.querySelector("span").addEventListener("click", (e) => {
@@ -330,6 +333,8 @@ async function cargarLineasPedido() {
   const cont = document.getElementById("lista_lineas_pedido");
   if (error) { cont.innerHTML = `<div class="meta">Error al cargar líneas: ${error.message}</div>`; return; }
   // las líneas de importes/servicios (tipo 4, "Valor del Servicio"...) no son mercancía: no se reciben
+  lineasActuales = {};
+  (lineas || []).forEach(l => { lineasActuales[l.linea] = l; });
   const lineasMercancia = (lineas || []).filter(l => l.tipolinea !== 4);
   if (!lineasMercancia.length) {
     cont.innerHTML = lineas && lineas.length
@@ -413,6 +418,18 @@ async function marcarLineaRecibida(linea) {
   const { error } = await client.from("linorden").update(valores)
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).eq("linea", linea);
   if (error) { alert("No se pudo marcar como recibida: " + error.message); return; }
+
+  // la entrada de almacén queda enlazada con la orden y la línea (ya no hay que adivinar a qué orden pertenece)
+  const l = lineasActuales[linea] || {};
+  const codFab = valores.proveedor ?? l.proveedor ?? null;
+  const { error: errEntrada } = await client.rpc("registrar_entrada_almacen", {
+    p_orden_anyo: pedidoActivo.anyo, p_orden_num: pedidoActivo.orden, p_orden_linea: linea,
+    p_almacen: codFab ?? 0, p_articulo: l.articulo || null, p_descripcion: l.descripcion || null,
+    p_cantidad: !isNaN(cantidad) ? cantidad : (l.cantidad ?? 1), p_ubicacion: ubicacion, p_bultos: bultos, p_albaran: albaran,
+    p_num_pedido: pedidoActivo.num_pedido || null, p_tienda_id: pedidoActivo.tienda_id || null,
+    p_fabricante: codFab, p_fecha: ahoraLocal(),
+  });
+  if (errEntrada) alert("La línea se marcó como recibida, pero no se pudo registrar la entrada de almacén: " + errEntrada.message);
   await cargarLineasPedido();
 }
 
@@ -435,10 +452,19 @@ async function guardarEdicionLineaRecibida(linea) {
   const { error } = await client.from("linorden").update(valores)
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).eq("linea", linea);
   if (error) { alert("No se pudo guardar: " + error.message); return; }
+  // si la entrada de almacén se creó desde la web, se corrige también
+  const cambiosEntrada = { ubicacion: valores.ubicacion, bultos: valores.bultos, albaran: valores.albaran };
+  if (valores.cantidad !== undefined) cambiosEntrada.cantidade = valores.cantidad;
+  if (valores.proveedor !== undefined) cambiosEntrada.fabricante = valores.proveedor;
+  await client.from("alm_movimientos").update(cambiosEntrada)
+    .eq("orden_anyo", pedidoActivo.anyo).eq("orden_num", pedidoActivo.orden).eq("orden_linea", linea).eq("observacion", "Entrada desde la web");
   await cargarLineasPedido();
 }
 
 async function deshacerRecepcionLinea(linea) {
+  // se anula también la entrada de almacén que se creó al recibirla (las antiguas del programa viejo no se tocan)
+  await client.from("alm_movimientos").delete()
+    .eq("orden_anyo", pedidoActivo.anyo).eq("orden_num", pedidoActivo.orden).eq("orden_linea", linea).eq("observacion", "Entrada desde la web");
   const { error } = await client.from("linorden").update({ recibido: "N", recibido_at: null, recibido_por: null })
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).eq("linea", linea);
   if (error) { alert("No se pudo deshacer: " + error.message); return; }
@@ -498,18 +524,13 @@ async function anyadirLineaEntrada() {
   if (isNaN(cantidad)) { errorBox.textContent = "Falta la cantidad."; errorBox.style.display = "block"; return; }
   if (!ubicacion && !confirm("¡Atención! Esta línea no tiene ubicación (está en blanco).\n\n¿Añadirla de todos modos?")) return;
 
-  const anyo = new Date().getFullYear();
-  const { data: ultimo } = await client.from("alm_movimientos")
-    .select("nummov").eq("almacen", almacen).eq("anyo", anyo)
-    .order("nummov", { ascending: false }).limit(1).maybeSingle();
-  const nummov = (ultimo?.nummov || 0) + 1;
-
-  const { error } = await client.from("alm_movimientos").insert({
-    almacen, anyo, nummov, descripcion,
-    fechmov: fecha ? new Date(fecha).toISOString() : new Date().toISOString(),
-    cantidade: cantidad, ubicacion, bultos, albaran,
-    num_pedido: pedidoActivo.num_pedido, tienda_id: pedidoActivo.tienda_id,
-    fabricante: fabricanteSeleccionado ? parseInt(fabricanteSeleccionado.codigo, 10) : null,
+  const codFab = fabricanteSeleccionado ? parseInt(fabricanteSeleccionado.codigo, 10) : null;
+  const { error } = await client.rpc("registrar_entrada_almacen", {
+    p_orden_anyo: pedidoActivo.anyo, p_orden_num: pedidoActivo.orden, p_orden_linea: null,
+    p_almacen: isNaN(almacen) ? (codFab ?? 0) : almacen, p_articulo: null, p_descripcion: descripcion,
+    p_cantidad: cantidad, p_ubicacion: ubicacion, p_bultos: bultos, p_albaran: albaran,
+    p_num_pedido: pedidoActivo.num_pedido || null, p_tienda_id: pedidoActivo.tienda_id || null,
+    p_fabricante: codFab, p_fecha: fecha ? fecha + "T" + ahoraLocal().slice(11) : ahoraLocal(),
   });
 
   if (error) { errorBox.textContent = "No se pudo registrar: " + error.message; errorBox.style.display = "block"; return; }
@@ -535,6 +556,28 @@ async function anyadirLineaEntrada() {
 // "3877 Roberto Zambelli"). Aquí se busca la orden cuyo nº de pedido EMPIEZA por ese texto y es de la
 // misma tienda, y se enseña su nº de pedido completo y su cliente.
 async function enlazarOrdenesConMovimientos(movs) {
+  // 1) entradas con enlace exacto a su orden (las creadas desde esta web)
+  const enlazadas = movs.filter(m => m.orden_anyo && m.orden_num);
+  if (enlazadas.length) {
+    const claves = [...new Set(enlazadas.map(m => `${m.orden_anyo}/${m.orden_num}`))];
+    const porClave = {};
+    for (let i = 0; i < claves.length; i += 30) {
+      const filtro = claves.slice(i, i + 30).map(c => { const [a, o] = c.split("/"); return `and(anyo.eq.${a},orden.eq.${o})`; }).join(",");
+      const { data } = await client.from("ordenes").select("anyo, orden, num_pedido, nombre_cli").or(filtro);
+      (data || []).forEach(o => { porClave[`${o.anyo}/${o.orden}`] = o; });
+    }
+    enlazadas.forEach(m => {
+      const o = porClave[`${m.orden_anyo}/${m.orden_num}`];
+      m.exacta = true;
+      m.orden_txt = `${m.orden_anyo}/${m.orden_num}`;
+      m.orden_url = `pedidos.html?anyo=${m.orden_anyo}&orden=${m.orden_num}`;
+      m.pedido_completo = o?.num_pedido || "";
+      m.cliente = o?.nombre_cli || "";
+      m.mas_ordenes = 0;
+    });
+  }
+  // 2) las antiguas (sin enlace) se deducen por el nº de pedido, como antes
+  movs = movs.filter(m => !m.exacta);
   // (se saltan los textos con comillas, % o _ : son raros y romperían el filtro)
   const anios = movs.map(m => m.fechmov ? new Date(m.fechmov).getFullYear() : null).filter(Boolean);
   const anyoMinimo = (anios.length ? Math.min(...anios) : new Date().getFullYear()) - 1;
@@ -597,7 +640,7 @@ async function cargarMovimientos() {
   aviso.textContent = "Cargando...";
 
   let consulta = client.from("alm_movimientos")
-    .select("almacen, anyo, nummov, articulo, descripcion, fechmov, cantidade, ubicacion, num_pedido, bultos, albaran, fabricante, tienda_id, tiendas ( nombre )")
+    .select("almacen, anyo, nummov, articulo, descripcion, fechmov, cantidade, ubicacion, num_pedido, bultos, albaran, fabricante, tienda_id, orden_anyo, orden_num, orden_linea, tiendas ( nombre )")
     .order("fechmov", { ascending: false })
     .limit(300);
   if (desde) consulta = consulta.gte("fechmov", desde);
@@ -627,7 +670,7 @@ async function cargarMovimientos() {
     { title: "Nº pedido (como se guardó)", field: "num_pedido", minWidth: 150, tooltip: "En el programa antiguo este campo se cortaba a 10 letras" },
     { title: "Orden", field: "orden_txt", width: 110, formatter: (c) => {
         const d = c.getRow().getData();
-        return d.orden_txt ? `<a href="${d.orden_url}" style="color:var(--primary);font-weight:600;">${d.orden_txt}</a>${d.mas_ordenes ? ` <span class="meta" style="cursor:help;" title="El nº de pedido está cortado y coincide también con estas órdenes de la misma tienda (se ha elegido la última creada antes de que llegara la mercancía):&#10;${(d.otras_ordenes || "").replace(/"/g, "&quot;")}">+${d.mas_ordenes}</span>` : ""}` : "";
+        return d.orden_txt ? `<a href="${d.orden_url}" style="color:var(--primary);font-weight:600;">${d.orden_txt}</a>${d.exacta ? ' <span title="Enlazada con la orden al registrar la entrada" style="color:#15803d;">✓</span>' : ' <span class="meta" title="Deducida por el nº de pedido (entrada antigua, sin enlace)">≈</span>'}${d.mas_ordenes ? ` <span class="meta" style="cursor:help;" title="El nº de pedido está cortado y coincide también con estas órdenes de la misma tienda (se ha elegido la última creada antes de que llegara la mercancía):&#10;${(d.otras_ordenes || "").replace(/"/g, "&quot;")}">+${d.mas_ordenes}</span>` : ""}` : "";
       } },
     { title: "Nº pedido completo (de la orden)", field: "pedido_completo", minWidth: 220 },
     { title: "Cliente", field: "cliente", minWidth: 170 },
