@@ -162,13 +162,20 @@ async function comprobarSesion() {
   const { data: { user } } = await client.auth.getUser();
   if (!user) { window.location.href = "login.html"; return; }
 
-  const { data: depRow } = await client.from("dependientes")
-    .select("id, nombre, tienda_id, tiendas!tienda_id(nombre)").eq("user_id", user.id).maybeSingle();
+  const { data: depRow, error: errDep } = await client.from("dependientes")
+    .select("id, nombre, tienda_id").eq("user_id", user.id).maybeSingle();
 
-  if (!depRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
+  if (!depRow) {
+    // antes se cerraba la sesión en silencio; ahora se dice por qué (para poder diagnosticarlo)
+    document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;font-family:sans-serif"><h3>No se pudo abrir tu cuenta</h3><p>' +
+      (errDep ? 'Error: ' + String(errDep.message).replace(/[<>&]/g, "") : 'Esta cuenta no está asociada a ningún dependiente de tienda.') +
+      '</p><button onclick="logout()">Volver al inicio de sesión</button></div>';
+    return;
+  }
 
   dependiente = depRow;
-  document.getElementById("tienda_nombre").textContent = depRow.tiendas?.nombre || "";
+  const { data: tRow } = await client.from("tiendas").select("nombre").eq("id", depRow.tienda_id).maybeSingle();
+  document.getElementById("tienda_nombre").textContent = tRow?.nombre || "";
   cargarPedidos();
 }
 

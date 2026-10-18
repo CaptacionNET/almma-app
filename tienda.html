@@ -96,11 +96,12 @@ document.querySelectorAll(".tab[data-t]").forEach(b => b.onclick = () => {
 async function iniciar(){
   const { data:{ user } } = await client.auth.getUser();
   if (!user) { location.href = "login.html"; return; }
-  const { data: d } = await client.from("dependientes").select("nombre, es_admin_tienda, tiendas!tienda_id(nombre)").eq("user_id", user.id).maybeSingle();
+  const { data: d, error: errD } = await client.from("dependientes").select("nombre, es_admin_tienda, tienda_id").eq("user_id", user.id).maybeSingle();
+  if (errD) { document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;font-family:sans-serif"><h3>No se pudo abrir tu cuenta</h3><p>Error: ' + String(errD.message).replace(/[<>&]/g, "") + '</p><button onclick="logout()">Volver al inicio de sesión</button></div>'; return; }
   if (!d || !d.es_admin_tienda) { location.href = "mis-pedidos.html"; return; }
-  document.getElementById("tienda_nombre").textContent = d.tiendas?.nombre || "Mi tienda";
   const { data: ts } = await client.from("tiendas").select("id, nombre").order("nombre");
   misTiendas = ts || [];
+  document.getElementById("tienda_nombre").textContent = (misTiendas.find(x => x.id === d.tienda_id) || {}).nombre || "Mi tienda";
   if (misTiendas.length > 1) {
     document.getElementById("tienda_nombre").textContent = "Mis tiendas";
     const sel = document.getElementById("t_sel"); sel.style.display = "";
