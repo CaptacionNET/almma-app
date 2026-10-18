@@ -48,6 +48,8 @@ td.num,th.num{text-align:right;white-space:nowrap;}
   .hoja{margin:0;box-shadow:none;width:auto;min-height:0;height:auto;page-break-after:always;break-after:page;}
   .hoja:last-child{page-break-after:auto;break-after:auto;}
 }
+body.previa .hoja{position:relative;}
+body.previa .hoja::after{content:"VISTA PREVIA";position:absolute;top:45%;left:12%;font-size:90px;font-weight:800;color:rgba(220,38,38,.13);transform:rotate(-25deg);pointer-events:none;}
 </style>
 </head>
 <body>
@@ -60,6 +62,7 @@ const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").
 const fechaES = (v) => v ? String(v).slice(8, 10) + "/" + String(v).slice(5, 7) + "/" + String(v).slice(0, 4) : "";
 const TITULOS = { ordinaria: "FACTURA", rectificativa: "FACTURA RECTIFICATIVA", adicional: "FACTURA ADICIONAL", proforma: "PROFORMA" };
 function numeroFactura(c, ss) {
+  if (c.previa) return "(sin número: VISTA PREVIA)";
   return `${c.serie}-${c.anyo}/${c.factura}`;   // la serie manda: 1-2026/118, 5-2026/32 (proforma)
 }
 
@@ -67,6 +70,17 @@ async function iniciar() {
   const { data: { user } } = await client.auth.getUser();
   if (!user) { window.location.href = "login.html"; return; }
   const params = new URLSearchParams(location.search);
+  if (params.get("previa") === "1") {   // vista previa de facturas aún sin emitir: los datos los deja preparados la pantalla de facturación
+    let p; try { p = JSON.parse(localStorage.getItem("almma_factura_previa")); } catch (e) {}
+    if (!p || !p.cabs || !p.cabs.length) { document.getElementById("estado").textContent = "No hay datos de vista previa: vuelve a pulsar «Ver PDF» en Facturación."; return; }
+    const ss = Object.fromEntries(p.series.map(s => [s.codigo, s]));
+    const tpid = Object.fromEntries(p.cabs.map(c => [c.tienda_id, c.receptor]));
+    document.getElementById("hojas").innerHTML = p.cabs.map(c => hoja(c, p.lins.filter(l => l.serie === c.serie && l.factura === c.factura), ss, [], tpid, {})).join("");
+    document.getElementById("estado").innerHTML = `<strong style="color:#dc2626;">VISTA PREVIA — todavía NO se ha emitido nada.</strong> ${p.cabs.length} hoja(s). Puedes imprimir o guardar como PDF para revisarlas.`;
+    document.title = "Vista previa de facturas";
+    document.body.classList.add("previa");
+    return;
+  }
   const ids = (params.get("ids") || "").split(",").filter(Boolean).map(x => x.split("-").map(Number)).filter(a => a.length === 3 && a.every(n => !isNaN(n)));
   if (!ids.length) { document.getElementById("estado").textContent = "No se ha indicado ninguna factura."; return; }
   document.getElementById("estado").textContent = "Cargando…";
