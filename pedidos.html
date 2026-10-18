@@ -79,6 +79,11 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .chip input{width:auto;margin:0;}
 .chip.especial{font-style:italic;}
 .chip.inactivo{opacity:.6;}
+.linea-form{display:grid;grid-template-columns:repeat(12,1fr);gap:12px 14px;margin-bottom:12px;}
+.linea-form .campo{margin:0;}
+.linea-form .campo input,.linea-form .campo select{width:100%;}
+.lf-2{grid-column:span 2;}.lf-3{grid-column:span 3;}.lf-4{grid-column:span 4;}.lf-6{grid-column:span 6;}.lf-8{grid-column:span 8;}.lf-12{grid-column:span 12;}
+@media (max-width:720px){.linea-form > *{grid-column:1/-1;}}
 #no_tienda_filtro.tienda-elegida{border:2px solid #1e40af;background:#eff6ff;color:#1e3a8a;font-weight:700;}
 #toolbar button:not([onclick="logout()"]){background:#dbeafe;color:#1e3a8a;border:1px solid #93c5fd;font-weight:600;}
 #toolbar button:not([onclick="logout()"]):hover{background:#bfdbfe;opacity:1;}
@@ -334,30 +339,35 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
     <table class="lineas-table" id="tabla_lineas"></table>
 
     <h4>Añadir línea</h4>
-    <div class="form-grid">
-      <div class="campo">
+    <div class="linea-form">
+      <div class="campo lf-4">
         <label>Tipo de línea</label>
         <select id="ln_tipo" onchange="cambioTipoLinea()"></select>
       </div>
-      <div class="campo buscador-articulo" id="campo_fabricante">
-        <label>Fabricante (líneas de mercancía)</label>
+      <div class="campo lf-8 buscador-articulo">
+        <label id="label_articulo">Artículo</label>
+        <input id="ln_articulo_buscar" placeholder="Buscar por código o descripción...">
+        <div id="ln_articulo_sugerencias" class="sugerencias"></div>
+      </div>
+      <div class="campo lf-12">
+        <label>Descripción <span style="font-weight:normal;">(se rellena con el artículo; se puede cambiar, o escribir a mano en líneas de texto o ajuste)</span></label>
+        <input id="ln_descripcion">
+      </div>
+      <div class="campo lf-4 buscador-articulo" id="campo_fabricante">
+        <label>Fabricante</label>
         <input id="ln_fabricante_buscar" placeholder="Buscar fabricante...">
         <div id="ln_fabricante_sugerencias" class="sugerencias"></div>
       </div>
-      <div class="campo buscador-articulo">
-        <label id="label_articulo">Artículo</label>
-        <input id="ln_articulo_buscar" placeholder="Buscar código o descripción...">
-        <div id="ln_articulo_sugerencias" class="sugerencias"></div>
-      </div>
-      <div class="campo"><label>Descripción (si es línea de texto/ajuste)</label><input id="ln_descripcion"></div>
-      <div class="campo"><label>Cantidad</label><input id="ln_cantidad" type="number" value="1"></div>
-      <div class="campo"><label>Importe</label><input id="ln_importe" type="number" step="0.01"></div>
-      <div class="campo"><label>Nº Albarán proveedor</label><input id="ln_albaran"></div>
-      <div class="campo"><label>Ubicación</label><input id="ln_ubicacion"></div>
-      <div class="campo"><label>Bultos</label><input id="ln_bultos" type="number" value="0"></div>
-      <div class="campo"><label><input id="ln_control_stock" type="checkbox" style="width:auto;"> Controlamos Stock</label></div>
+      <div class="campo lf-2"><label>Cantidad</label><input id="ln_cantidad" type="number" value="1"></div>
+      <div class="campo lf-2"><label>Importe</label><input id="ln_importe" type="number" step="0.01" oninput="recalcularACobrar()"></div>
+      <div class="campo lf-2"><label title="Porcentaje del importe que se cobra a la tienda. Viene del artículo y se puede cambiar.">% a cobrar a la tienda</label><input id="ln_porcentaje" type="number" step="0.01" value="100" oninput="recalcularACobrar()"></div>
+      <div class="campo lf-2"><label>Importe a cobrar</label><input id="ln_importe_cobrar" type="number" step="0.01" readonly style="background:#f3f4f6;"></div>
+      <div class="campo lf-4"><label>Nº Albarán proveedor</label><input id="ln_albaran"></div>
+      <div class="campo lf-4"><label>Ubicación</label><input id="ln_ubicacion"></div>
+      <div class="campo lf-2"><label>Bultos</label><input id="ln_bultos" type="number" value="0"></div>
+      <div class="campo lf-2" style="align-self:end;"><label style="display:flex;gap:6px;align-items:center;margin:0 0 8px;"><input id="ln_control_stock" type="checkbox" style="width:auto;"> Control de stock</label></div>
     </div>
-    <button class="secondary btn-mini" onclick="anyadirLineaOrden()">+ Añadir línea</button>
+    <button class="btn-mini" style="font-size:14px;padding:8px 16px;" onclick="anyadirLineaOrden()">+ Añadir línea</button>
 
     <div style="margin-top:16px;">
       <button class="secondary" onclick="traspasarAIncidencia()">Traspasar a Incidencias</button>
@@ -504,7 +514,7 @@ async function cargarTiposLinea() {
 let todasTiendasCache = null;
 async function cargarTodasTiendas() {
   if (todasTiendasCache && todasTiendasCache.length) return todasTiendasCache;
-  const { data, error } = await client.from("tiendas").select("id, nombre, codigo_legado").order("nombre");
+  const { data, error } = await client.from("tiendas").select("id, nombre, codigo_legado, codigo").order("nombre");
   if (error) console.error("cargarTodasTiendas:", error);
   todasTiendasCache = data || [];
   return todasTiendasCache;
@@ -681,6 +691,22 @@ async function llenarSelectTipoLinea() {
 function cambioTiendaCabecera() {
   const tiendaId = document.getElementById("ch_tienda").value;
   llenarSelectDependiente(tiendaId, null);
+  articuloSeleccionado = null;
+  document.getElementById("ln_articulo_buscar").value = "";
+  actualizarEtiquetaArticulo();
+}
+
+// los artículos que se ofrecen al añadir una línea son solo los de la tienda de la orden
+function tiendaDeLaOrden() {
+  const id = document.getElementById("ch_tienda").value;
+  return id ? (todasTiendasCache || []).find(t => t.id === id) || null : null;
+}
+function etiquetaArticulo() {
+  const t = tiendaDeLaOrden();
+  return t ? `Artículo (solo los de ${t.nombre})` : "Artículo (la orden no tiene tienda: se buscan en todas)";
+}
+function actualizarEtiquetaArticulo() {
+  if (document.getElementById("ln_tipo").value !== "4") document.getElementById("label_articulo").textContent = etiquetaArticulo();
 }
 
 function codigoLegadoTienda(tiendaId) {
@@ -692,7 +718,10 @@ async function cambioTipoLinea() {
   const tipo = document.getElementById("ln_tipo").value;
   const esServicio = tipo === "4";
   document.getElementById("campo_fabricante").style.display = esServicio ? "none" : "";
-  document.getElementById("label_articulo").textContent = esServicio ? "Código de servicio de esta tienda" : "Artículo";
+  document.getElementById("label_articulo").textContent = esServicio ? "Código de servicio de esta tienda" : etiquetaArticulo();
+  const desc = document.getElementById("ln_descripcion");
+  if (esServicio) { if (!desc.value.trim()) desc.value = "Valor del Servicio"; }
+  else if (desc.value === "Valor del Servicio") desc.value = "";
   if (esServicio) {
     const tiendaId = document.getElementById("ch_tienda").value;
     const codigo = codigoLegadoTienda(tiendaId);
@@ -847,6 +876,7 @@ async function abrirPanel(orden) {
   } else auditoriaBox.textContent = "";
 
   await llenarSelectTiendaCabecera(o.tienda_id);
+  actualizarEtiquetaArticulo();
   await llenarSelectDependiente(o.tienda_id, o.dependiente_id);
   document.getElementById("ch_tipo_orden").value = o.tipo_orden ?? 1;
   document.getElementById("ch_num_pedido").value = o.num_pedido || "";
@@ -1045,11 +1075,11 @@ async function verFotoMontaje(path) {
 
 async function cargarLineas() {
   const { data: lineas } = await client.from("linorden")
-    .select("linea, articulo, descripcion, cantidad, importe, ubicacion, albaran, bultos, control_stock, recibido_at")
+    .select("linea, articulo, descripcion, cantidad, importe, porcentaje, importe_cobrar, ubicacion, albaran, bultos, control_stock, recibido_at")
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).order("linea");
 
   const tbody = document.getElementById("tabla_lineas");
-  tbody.innerHTML = "<tr><th>Artículo</th><th>Cant.</th><th>Ubicación</th><th>Albarán prov.</th><th>Recibido</th><th></th></tr>" +
+  tbody.innerHTML = "<tr><th>Artículo</th><th>Cant.</th><th>Importe</th><th>%</th><th>A cobrar</th><th>Ubicación</th><th>Albarán prov.</th><th>Recibido</th><th></th></tr>" +
     (lineas || []).map(l => {
       const recibida = !!l.recibido_at;
       const boton = recibida
@@ -1058,6 +1088,9 @@ async function cargarLineas() {
       return `<tr>
         <td>${l.descripcion || l.articulo || ""}${l.control_stock === 'S' ? ' <span class="meta" style="color:var(--muted);font-size:11px;">(stock)</span>' : ''}</td>
         <td>${l.cantidad ?? ""}</td>
+        <td>${l.importe ?? ""}</td>
+        <td>${l.porcentaje !== null && l.porcentaje !== undefined ? Math.round(l.porcentaje * 100) / 100 : ""}</td>
+        <td>${l.importe_cobrar ?? ""}</td>
         <td>${l.ubicacion || ""} <button class="secondary btn-mini" onclick="editarUbicacion(${l.linea}, '${(l.ubicacion || '').replace(/'/g, "\\'")}')">✎</button></td>
         <td>${l.albaran || ""}</td>
         <td>${boton}</td>
@@ -1099,12 +1132,15 @@ document.getElementById("ln_articulo_buscar").addEventListener("input", (e) => {
   const caja = document.getElementById("ln_articulo_sugerencias");
   if (texto.length < 2) { caja.style.display = "none"; return; }
   debounceArt = setTimeout(async () => {
-    const { data } = await client.from("articulos").select("articulo, descripcion")
-      .or(`articulo.ilike.%${texto}%,descripcion.ilike.%${texto}%`).limit(15);
+    const tienda = tiendaDeLaOrden();
+    let consulta = client.from("articulos").select("articulo, descripcion, importe, porcentaje")
+      .or(`articulo.ilike.%${texto}%,descripcion.ilike.%${texto}%`).order("articulo").limit(15);
+    if (tienda && tienda.codigo !== null && tienda.codigo !== undefined) consulta = consulta.eq("proveedor", tienda.codigo);
+    const { data } = await consulta;
     caja.innerHTML = (data || []).map(a =>
-      `<div data-art="${a.articulo}" data-desc="${(a.descripcion || "").replace(/"/g, "&quot;")}">${a.articulo} — ${a.descripcion || ""}</div>`
-    ).join("");
-    caja.style.display = data && data.length ? "block" : "none";
+      `<div data-art="${a.articulo}" data-desc="${(a.descripcion || "").replace(/"/g, "&quot;")}" data-imp="${a.importe ?? ""}" data-por="${a.porcentaje ?? ""}">${a.articulo} — ${a.descripcion || ""}${a.importe ? " — " + a.importe + " €" : ""}${a.porcentaje !== null && a.porcentaje !== undefined ? " · " + (Math.round(a.porcentaje * 100) / 100) + " %" : ""}</div>`
+    ).join("") || (tienda ? `<div style="padding:8px 10px;color:#6b7280;font-size:12px;">${tienda.nombre} no tiene artículos con ese texto. Se pueden dar de alta en Sistema → Artículos.</div>` : "");
+    caja.style.display = caja.innerHTML ? "block" : "none";
   }, 250);
 });
 document.getElementById("ln_articulo_sugerencias").addEventListener("click", (e) => {
@@ -1112,6 +1148,12 @@ document.getElementById("ln_articulo_sugerencias").addEventListener("click", (e)
   if (!fila) return;
   articuloSeleccionado = { articulo: fila.dataset.art, descripcion: fila.dataset.desc };
   document.getElementById("ln_articulo_buscar").value = `${fila.dataset.art} — ${fila.dataset.desc}`;
+  // se rellenan la descripción y el importe del artículo (se pueden cambiar)
+  document.getElementById("ln_descripcion").value = fila.dataset.desc || "";
+  if (fila.dataset.imp !== "" && !document.getElementById("ln_importe").value) document.getElementById("ln_importe").value = fila.dataset.imp;
+  // % que se cobra a la tienda por este artículo (se puede cambiar a mano)
+  document.getElementById("ln_porcentaje").value = fila.dataset.por !== "" ? Math.round(parseFloat(fila.dataset.por) * 100) / 100 : 100;
+  recalcularACobrar();
   document.getElementById("ln_articulo_sugerencias").style.display = "none";
 });
 
@@ -1138,6 +1180,12 @@ document.getElementById("ln_fabricante_sugerencias").addEventListener("click", (
   document.getElementById("ln_fabricante_sugerencias").style.display = "none";
 });
 
+function recalcularACobrar() {
+  const imp = parseFloat(document.getElementById("ln_importe").value);
+  const por = parseFloat(document.getElementById("ln_porcentaje").value);
+  document.getElementById("ln_importe_cobrar").value = (isNaN(imp) || isNaN(por)) ? "" : (Math.round(imp * por) / 100).toFixed(2);
+}
+
 async function anyadirLineaOrden() {
   if (!pedidoActivo) return;
   const tipolinea = parseInt(document.getElementById("ln_tipo").value, 10);
@@ -1147,6 +1195,7 @@ async function anyadirLineaOrden() {
   const ubicacion = document.getElementById("ln_ubicacion").value.trim() || null;
   const bultos = document.getElementById("ln_bultos").value ? parseInt(document.getElementById("ln_bultos").value, 10) : null;
   const control_stock = document.getElementById("ln_control_stock").checked ? "S" : "N";
+  const porcentaje = parseFloat(document.getElementById("ln_porcentaje").value);
   const descripcionManual = document.getElementById("ln_descripcion").value.trim();
 
   if (tipolinea === 1 && !articuloSeleccionado) { alert("Busca y selecciona un artículo para una línea normal."); return; }
@@ -1161,6 +1210,8 @@ async function anyadirLineaOrden() {
     articulo: articuloSeleccionado?.articulo || null,
     descripcion: descripcionManual || articuloSeleccionado?.descripcion || null,
     cantidad, importe, albaran, ubicacion, bultos, control_stock,
+    porcentaje: isNaN(porcentaje) ? null : porcentaje,
+    importe_cobrar: (importe === null || isNaN(porcentaje)) ? null : Math.round(importe * porcentaje) / 100,
   });
   if (error) { alert("No se pudo añadir la línea: " + error.message); return; }
 
@@ -1168,6 +1219,8 @@ async function anyadirLineaOrden() {
   document.getElementById("ln_articulo_buscar").value = "";
   document.getElementById("ln_descripcion").value = "";
   document.getElementById("ln_importe").value = "";
+  document.getElementById("ln_porcentaje").value = "100";
+  document.getElementById("ln_importe_cobrar").value = "";
   document.getElementById("ln_albaran").value = "";
   document.getElementById("ln_ubicacion").value = "";
   document.getElementById("ln_bultos").value = "0";

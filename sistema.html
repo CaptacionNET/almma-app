@@ -179,19 +179,30 @@ const CATALOGOS = {
   tiendas: {
     tabla: "tiendas", pk: "id", pkGenerado: true, titulo: "Tienda",
     autoCodigo: { principal: "codigo", espejo: "codigo_legado" },   // código correlativo automático
-    columnasLista: ["codigo_legado", "nombre", "localidad", "telefono", "listado_albaranes"],
-    cabeceras: { codigo_legado: "Cód.", nombre: "Nombre", localidad: "Localidad", telefono: "Teléfono", listado_albaranes: "Albarán c/ tienda" },
+    columnasLista: ["codigo_legado", "nombre", "cif", "localidad", "telefono", "listado_albaranes"],
+    cabeceras: { codigo_legado: "Cód.", nombre: "Nombre", cif: "CIF", localidad: "Localidad", telefono: "Teléfono", listado_albaranes: "Albarán c/ tienda" },
     campos: [
-      { id: "codigo_legado", label: "Código legado", soloLectura: true },
-      { id: "nombre", label: "Nombre", requerido: true },
-      { id: "cif", label: "CIF" },
-      { id: "direccion", label: "Dirección" },
+      { tipo: "titulo", id: "_t1", label: "Datos de la tienda" },
+      { id: "codigo_legado", label: "Código", soloLectura: true },
+      { id: "nombre", label: "Razón social / nombre", requerido: true },
+      { id: "nombre_comercial", label: "Nombre comercial" },
+      { id: "persona_contacto", label: "Persona de contacto" },
+      { id: "telefono", label: "Teléfono" },
+      { id: "telefono2", label: "Teléfono 2" },
+      { id: "email", label: "Email" },
+      { tipo: "titulo", id: "_t2", label: "Datos fiscales y de facturación" },
+      { id: "cif", label: "CIF / NIF" },
+      { id: "direccion", label: "Dirección fiscal" },
+      { id: "cp", label: "Código postal" },
       { id: "localidad", label: "Localidad" },
       { id: "provincia", label: "Provincia" },
-      { id: "cp", label: "Código Postal" },
-      { id: "telefono", label: "Teléfono" },
-      { id: "email", label: "Email" },
+      { id: "email_facturacion", label: "Email para enviar las facturas" },
+      { id: "forma_pago", label: "Forma de pago (ej.: contado, transferencia, recibo a 30 días)" },
+      { id: "iban", label: "IBAN" },
+      { id: "cuenta_contable", label: "Cuenta contable" },
+      { tipo: "titulo", id: "_t3", label: "Albaranes" },
       { id: "listado_albaranes", label: "Listado Albaranes (mostrar datos de la tienda en el albarán)", tipo: "checkbox" },
+      { tipo: "copiar-articulos", id: "_copiar", label: "Copiar los artículos de otra tienda (solo al crear la tienda; después solo hay que modificar los importes)" },
     ],
     buscarCampos: ["nombre", "localidad", "telefono"],
     orden: "nombre",
@@ -444,7 +455,14 @@ async function renderFormulario(cfg, registro) {
   let html = "";
   for (const campo of cfg.campos) {
     const valor = registro[campo.id] ?? "";
-    if (campo.tipo === "checkbox") {
+    if (campo.tipo === "titulo") {
+      html += `<h4 style="margin:20px 0 8px;padding-top:12px;border-top:1px solid var(--border);">${campo.label}</h4>`;
+    } else if (campo.tipo === "copiar-articulos") {
+      if (registroActivo) continue;   // solo se ofrece al crear una tienda nueva
+      await prepararFiltrosArticulos();
+      html += `<div class="campo" style="margin-top:14px;padding:12px;background:#eff6ff;border-radius:8px;"><label>${campo.label}</label>
+        <input id="f_${campo.id}" list="dl_tiendas_art" placeholder="Escribe el código o el nombre de la tienda de la que copiar (opcional)" autocomplete="off"></div>`;
+    } else if (campo.tipo === "checkbox") {
       html += `<div class="campo"><label><input type="checkbox" id="f_${campo.id}" ${valor ? "checked" : ""} style="width:auto;"> ${campo.label}</label></div>`;
     } else if (campo.tipo === "select-tienda") {
       const tiendas = await cargarTiendas();
@@ -480,6 +498,7 @@ async function guardarRegistro() {
   const cfg = CATALOGOS[catalogoActivo];
   const valores = {};
   for (const campo of cfg.campos) {
+    if (campo.tipo === "titulo" || campo.tipo === "copiar-articulos") continue;
     if (!registroActivo && esCodigoAutomatico(cfg, campo.id)) continue;   // lo pone siguienteCodigo()
     if (campo.tipo === "checkbox") {
       valores[campo.id] = document.getElementById(`f_${campo.id}`).checked;
@@ -496,6 +515,12 @@ async function guardarRegistro() {
 
   let error;
   let codigoAsignado = null;
+  const campoCopia = document.getElementById("f__copiar");
+  const origenCopia = (!registroActivo && campoCopia) ? ((campoCopia.value.trim().match(/^(\d+)/) || [])[1] || null) : null;
+  if (!registroActivo && campoCopia && campoCopia.value.trim() && !origenCopia) {
+    alert("Para copiar artículos, elige una tienda de la lista (empieza por su código) o deja el campo vacío.");
+    return;
+  }
   if (registroActivo) {
     ({ error } = await client.from(cfg.tabla).update(valores).eq(cfg.pk, registroActivo[cfg.pk]));
   } else if (cfg.autoCodigo) {
@@ -515,7 +540,14 @@ async function guardarRegistro() {
   }
   if (error) { alert("No se pudo guardar: " + error.message); return; }
   cerrarPanel();
-  if (codigoAsignado !== null) alert(`${cfg.titulo}: creado con el código ${codigoAsignado}.`);
+  let textoFinal = codigoAsignado !== null ? `${cfg.titulo}: creado con el código ${codigoAsignado}.` : "";
+  if (origenCopia && codigoAsignado !== null) {
+    const { data: copiados, error: errCopia } = await client.rpc("copiar_articulos_tienda", { p_origen: parseInt(origenCopia, 10), p_destino: codigoAsignado });
+    textoFinal += errCopia
+      ? `\n\nLa tienda se creó, pero NO se pudieron copiar los artículos: ${errCopia.message}`
+      : `\n\nSe copiaron ${copiados} artículos de la tienda ${origenCopia}. Ahora solo hay que modificar los importes (Artículos → filtra por la tienda ${codigoAsignado}).`;
+  }
+  if (textoFinal) alert(textoFinal);
   if (catalogoActivo === "articulos") buscarArticulos(); else cargarCatalogo();
 }
 
