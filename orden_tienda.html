@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - Detalle de la orden</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+button{background:#dbeafe;color:#1e3a8a;border:1px solid #93c5fd;font-weight:600;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;}
+#toolbar{display:flex;gap:8px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--border);align-items:center;}
+.wrap{max-width:1000px;margin:0 auto;padding:20px 16px;}
+.card{background:var(--card);border:1px solid #bfdbfe;border-radius:8px;padding:16px;margin-bottom:16px;}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;}
+.k{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;} .v{font-size:14px;margin-top:2px;}
+table{width:100%;border-collapse:collapse;font-size:13px;} th{background:#dbeafe;color:#1e3a8a;text-align:left;padding:8px;} td{padding:8px;border-top:1px solid #dbeafe;}
+.muted{color:var(--muted);font-size:13px;}
+.est{display:inline-block;padding:3px 10px;border-radius:12px;background:#dbeafe;color:#1e3a8a;font-weight:600;font-size:12px;}
+</style>
+</head>
+<body>
+<div id="toolbar"><button onclick="volver()">&larr; Volver</button><b id="titulo" style="color:#1e3a8a">Orden</b><span style="flex:1"></span><span class="muted">Solo consulta</span></div>
+<div class="wrap" id="cont"><span class="muted">Cargando...</span></div>
+<script>
+const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const f = d => d ? new Date(d).toLocaleDateString("es-ES") : "—";
+let destino = "mis-pedidos.html";
+function volver(){ location.href = destino; }
+(async () => {
+  const p = new URLSearchParams(location.search), anyo = +p.get("anyo"), orden = +p.get("orden");
+  const { data:{ user } } = await client.auth.getUser();
+  if (!user) { location.href = "login.html"; return; }
+  const { data: dep } = await client.from("dependientes").select("es_admin_tienda").eq("user_id", user.id).maybeSingle();
+  if (!dep) { location.href = "login.html"; return; }
+  if (dep.es_admin_tienda) destino = "tienda.html";
+  const { data: o, error } = await client.from("ordenes").select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, telefono2_cli, num_pedido, estado, fecha_creacion, fecha_prev_recepcion, fecha_recepcion, fecha_prev_montaje, horamont, fecha_montaje, tiendas(nombre)").eq("anyo", anyo).eq("orden", orden).maybeSingle();
+  if (error || !o) { document.getElementById("cont").innerHTML = '<span class="muted">No se encuentra esa orden o no tienes acceso a ella.</span>'; return; }
+  document.getElementById("titulo").textContent = "Orden " + o.anyo + "/" + o.orden;
+  const [li, ci] = await Promise.all([
+    client.from("linorden").select("linea, tipolinea, articulo, descripcion, cantidad, recibido, ubicacion").neq("tipolinea", 4).eq("anyo", anyo).eq("orden", orden).order("linea"),
+    client.from("citas_montaje").select("fecha_hora, estado").eq("anyo", anyo).eq("orden", orden).neq("estado", "cancelada").order("fecha_hora")
+  ]);
+  const k = (a,b) => '<div><div class="k">'+a+'</div><div class="v">'+(b || "—")+'</div></div>';
+  const lineas = (li.data || []).filter(l => l.tipolinea !== 4);
+  document.getElementById("cont").innerHTML =
+    '<div class="card"><div style="margin-bottom:10px"><span class="est">'+esc((o.estado||"").replace(/_/g," "))+'</span></div><div class="grid">'+
+      k("Cliente", esc(o.nombre_cli))+k("Dirección", esc([o.domicilio_cli, o.localidad_cli].filter(Boolean).join(" - ")))+
+      k("Teléfono", esc([o.telefono_cli, o.telefono2_cli].filter(Boolean).join(" / ")))+k("Referencia de pedido", esc(o.num_pedido))+
+      k("Creada", f(o.fecha_creacion))+k("Recepción prevista", f(o.fecha_prev_recepcion))+k("Recibida en almacén", f(o.fecha_recepcion))+
+      k("Montaje previsto", f(o.fecha_prev_montaje) + (o.horamont ? " · " + esc(o.horamont) : ""))+k("Montaje realizado", f(o.fecha_montaje))+
+    '</div></div>'+
+    '<div class="card"><b>Artículos</b><table style="margin-top:8px"><tr><th>Artículo</th><th>Descripción</th><th>Cant.</th><th>Recibido</th></tr>'+
+      (lineas.map(l => '<tr><td>'+esc(l.articulo)+'</td><td>'+esc(l.descripcion)+'</td><td>'+(l.cantidad ?? "")+'</td><td>'+(l.recibido === "S" ? "Sí" : "No")+'</td></tr>').join("") || '<tr><td colspan="4" class="muted">Sin líneas.</td></tr>')+'</table></div>'+
+    ((ci.data || []).length ? '<div class="card"><b>Citas de montaje</b><table style="margin-top:8px"><tr><th>Fecha y hora</th><th>Estado</th></tr>'+ci.data.map(c => '<tr><td>'+new Date(c.fecha_hora).toLocaleString("es-ES")+'</td><td>'+esc(c.estado)+'</td></tr>').join("")+'</table></div>' : "");
+})();
+</script>
+</body>
+</html>

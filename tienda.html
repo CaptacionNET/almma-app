@@ -128,7 +128,7 @@ async function cargarResumen(){
 
 /* Órdenes */
 async function cargarOrdenes(){
-  let q = client.from("ordenes").select("anyo, orden, nombre_cli, num_pedido, estado, fecha_creacion, importe_total")
+  let q = client.from("ordenes").select("anyo, orden, nombre_cli, num_pedido, estado, fecha_creacion")
     .order("anyo",{ascending:false}).order("orden",{ascending:false}).limit(1000);
   if (!document.getElementById("o_antiguas").checked) q = q.gte("anyo", new Date().getFullYear()-3);
   const { data, error } = await q;
@@ -138,8 +138,8 @@ async function cargarOrdenes(){
 function pintarOrdenes(){
   const b = document.getElementById("o_buscar").value.trim().toLowerCase();
   const f = ordenes.filter(o => !b || [o.nombre_cli,o.num_pedido,o.anyo+"/"+o.orden].join(" ").toLowerCase().includes(b)).slice(0,500);
-  document.getElementById("o_tabla").innerHTML = '<table><tr><th>Orden</th><th>Cliente</th><th>Referencia</th><th>Estado</th><th>Creada</th><th>Importe</th></tr>'+
-    f.map(o => '<tr><td>'+o.anyo+'/'+o.orden+'</td><td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.num_pedido)+'</td><td>'+esc((o.estado||"").replace(/_/g," "))+'</td><td>'+(o.fecha_creacion?new Date(o.fecha_creacion).toLocaleDateString("es-ES"):"")+'</td><td>'+eur(o.importe_total)+'</td></tr>').join("")+'</table>'+
+  document.getElementById("o_tabla").innerHTML = '<table><tr><th>Orden</th><th>Cliente</th><th>Referencia</th><th>Estado</th><th>Creada</th></tr>'+
+    f.map(o => '<tr><td><a href="orden_tienda.html?anyo='+o.anyo+'&orden='+o.orden+'">'+o.anyo+'/'+o.orden+'</a></td><td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.num_pedido)+'</td><td>'+esc((o.estado||"").replace(/_/g," "))+'</td><td>'+(o.fecha_creacion?new Date(o.fecha_creacion).toLocaleDateString("es-ES"):"")+'</td></tr>').join("")+'</table>'+
     '<div class="muted" style="margin-top:6px">'+f.length+' órdenes'+(ordenes.length>500?' (se muestran las 500 primeras; afina con el buscador)':'')+'</div>';
 }
 

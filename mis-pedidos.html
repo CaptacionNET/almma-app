@@ -178,7 +178,7 @@ async function logout() {
 
 async function cargarPedidos() {
   const { data, error } = await client.from("ordenes")
-    .select("anyo, orden, nombre_cli, num_pedido, estado, fecha_creacion, importe_total")
+    .select("anyo, orden, nombre_cli, num_pedido, estado, fecha_creacion")
     .eq("tienda_id", dependiente.tienda_id)
     .order("anyo", { ascending: false })
     .order("orden", { ascending: false })
@@ -187,14 +187,13 @@ async function cargarPedidos() {
 
   const columnas = [
     { title: "Año", field: "anyo", width: 70 },
-    { title: "Orden", field: "orden", width: 90 },
+    { title: "Orden", field: "orden", width: 90, formatter: (c) => { const d = c.getData(); return `<a href="orden_tienda.html?anyo=${d.anyo}&orden=${d.orden}">${d.orden}</a>`; } },
     { title: "Cliente", field: "nombre_cli" },
     { title: "Referencia de pedido", field: "num_pedido", minWidth: 170 },
     { title: "Estado", field: "estado", minWidth: 170, formatter: (cell) => {
         const v = (cell.getValue() || "en_proceso").replace(/_/g, " ");
         return v.charAt(0).toUpperCase() + v.slice(1);   // solo texto, sin "globo"
       } },
-    { title: "Importe", field: "importe_total", formatter: "money", formatterParams: { symbol: "€", precision: 2 } },
   ];
 
   if (!tabla) {
