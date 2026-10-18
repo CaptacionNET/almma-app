@@ -270,6 +270,19 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
     <button class="secondary" onclick="cerrarModalNuevaOrden()" style="float:right;">✕</button>
     <h3 style="margin-top:0;">Nueva Orden</h3>
     <p id="no_error" class="error"></p>
+
+    <!-- lectura de PDF: rellena los datos y las líneas; el PDF queda como soporte (migracion/63 y 64) -->
+    <div style="border:1px dashed var(--border);border-radius:8px;padding:10px 12px;margin-bottom:14px;">
+      <label for="no_pdf" style="font-weight:600;">Rellenar desde un PDF (factura o albarán de la tienda)</label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
+        <input type="file" id="no_pdf" accept="application/pdf,.pdf">
+        <button type="button" class="secondary" id="btn_no_leer_pdf" onclick="leerPdfNuevaOrden()">Leer PDF</button>
+        <span id="no_estado_pdf" style="color:var(--muted);font-size:13px;"></span>
+      </div>
+      <ul id="no_avisos_pdf" style="display:none;margin:8px 0 0 18px;padding:0;color:#92400e;font-size:13px;"></ul>
+      <div id="no_lineas_pdf" style="margin-top:8px;font-size:13px;"></div>
+    </div>
+
     <div class="form-grid">
       <div class="campo" style="grid-column:span 2;">
         <label for="no_tienda_filtro">Tienda <span id="no_tienda_contador" style="font-weight:normal;"></span></label>
@@ -763,6 +776,11 @@ async function abrirModalNuevaOrden() {
   await cargarListaTiendasNuevaOrden();
   document.getElementById("no_dependiente").innerHTML = '<option value="">-- sin asignar --</option>';
   document.getElementById("no_tipo_orden").value = 1;
+  document.getElementById("no_pdf").value = "";
+  pdfNuevaOrden = null; lineasPdfNuevaOrden = [];
+  document.getElementById("no_estado_pdf").textContent = "";
+  document.getElementById("no_avisos_pdf").style.display = "none";
+  document.getElementById("no_lineas_pdf").innerHTML = "";
   ["no_num_pedido", "no_nombre_cli", "no_domicilio_cli", "no_localidad_cli", "no_provincia_cli", "no_telefono_cli", "no_telefono2_cli", "no_dni_cli"]
     .forEach(id => document.getElementById(id).value = "");
   document.getElementById("modal_nueva_orden").style.display = "flex";
@@ -775,6 +793,100 @@ function cerrarModalNuevaOrden() {
 function cambioTiendaNuevaOrden() {
   const tiendaId = document.getElementById("no_tienda").value;
   llenarSelectDependiente(tiendaId, null, "no_dependiente");
+}
+
+// --- Nueva orden desde un PDF (misma función que usan las tiendas: leer-pdf-pedido) ---
+// Artículo genérico "18206 VARIOS": cada línea del PDF va con su texto en la descripción.
+const ARTICULO_GENERICO_PDF = "18206";
+let pdfNuevaOrden = null;       // el PDF leído: se guarda como soporte al crear la orden
+let lineasPdfNuevaOrden = [];   // las líneas que saldrán del PDF
+
+function pdfABase64(file) {
+  return new Promise((ok, ko) => {
+    const lector = new FileReader();
+    lector.onload = () => ok(String(lector.result).split(",")[1] || "");
+    lector.onerror = () => ko(lector.error);
+    lector.readAsDataURL(file);
+  });
+}
+
+function pintarLineasPdfNuevaOrden() {
+  document.getElementById("no_lineas_pdf").innerHTML = lineasPdfNuevaOrden.length
+    ? "<strong>Líneas que se crearán:</strong><ul style='margin:4px 0 0 18px;padding:0;'>" +
+      lineasPdfNuevaOrden.map((l, i) => `<li>${escMont(l.cantidad)} × ${escMont(l.descripcion)}
+        <a href="#" onclick="lineasPdfNuevaOrden.splice(${i},1);pintarLineasPdfNuevaOrden();return false;">quitar</a></li>`).join("") + "</ul>"
+    : "";
+}
+
+async function leerPdfNuevaOrden() {
+  const estado = document.getElementById("no_estado_pdf");
+  const avisos = document.getElementById("no_avisos_pdf");
+  const boton = document.getElementById("btn_no_leer_pdf");
+  const errorBox = document.getElementById("no_error");
+  errorBox.style.display = "none";
+  avisos.style.display = "none"; avisos.innerHTML = "";
+
+  const file = document.getElementById("no_pdf").files[0];
+  if (!file) { estado.textContent = "Elige primero un PDF."; return; }
+  if (file.size > 5 * 1024 * 1024) { estado.textContent = "El PDF pesa más de 5 MB."; return; }
+
+  boton.disabled = true; pdfNuevaOrden = null;
+  estado.textContent = "Leyendo el PDF…";
+  try {
+    const pdf_base64 = await pdfABase64(file);
+    const { data, error } = await client.functions.invoke("leer-pdf-pedido", { body: { pdf_base64 } });
+    if (error) {
+      let mensaje = "No se pudo leer el PDF.";
+      try { const cuerpo = await error.context.json(); if (cuerpo?.error) mensaje = cuerpo.error; } catch (_) {}
+      throw new Error(mensaje);
+    }
+    // solo se rellena lo que el PDF trae; la tienda y el resto se eligen a mano
+    const poner = (id, v) => { if (v) document.getElementById(id).value = v; };
+    poner("no_nombre_cli", data.nombre_cli);
+    poner("no_telefono_cli", data.telefono_cli);
+    poner("no_domicilio_cli", data.domicilio_cli);
+    poner("no_localidad_cli", data.localidad_cli);
+    poner("no_num_pedido", data.num_pedido);
+    lineasPdfNuevaOrden = (data.lineas || []).map(l => ({ descripcion: l.descripcion, cantidad: l.cantidad || 1 }));
+    pintarLineasPdfNuevaOrden();
+    pdfNuevaOrden = file;
+    estado.textContent = "Listo. Revisa los datos y elige la tienda antes de crear. El PDF se guardará con la orden.";
+    if (data.avisos && data.avisos.length) {
+      avisos.innerHTML = data.avisos.map(a => `<li>${escMont(a)}</li>`).join("");
+      avisos.style.display = "block";
+    }
+  } catch (e) {
+    estado.textContent = "";
+    errorBox.textContent = e.message; errorBox.style.display = "block";
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+// guarda las líneas del PDF y el propio PDF en la orden recién creada; devuelve un texto con los fallos, o ""
+async function guardarPdfEnOrdenNueva(anyo, orden) {
+  const fallos = [];
+  if (lineasPdfNuevaOrden.length) {
+    const filas = lineasPdfNuevaOrden.map((l, i) => ({
+      anyo, orden, linea: i + 1, tipolinea: 1, articulo: ARTICULO_GENERICO_PDF,
+      descripcion: l.descripcion, cantidad: l.cantidad || 1, porcentaje: 100,
+    }));
+    const { error } = await client.from("linorden").insert(filas);
+    if (error) fallos.push("las líneas (" + error.message + ")");
+  }
+  if (pdfNuevaOrden) {
+    const base = pdfNuevaOrden.name.replace(/\.pdf$/i, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 60) || "documento";
+    const ruta = `${anyo}/${orden}/documentos/${Date.now()}_${base}.pdf`;
+    const { error: e1 } = await client.storage.from("ordenes-adjuntos").upload(ruta, pdfNuevaOrden, { contentType: "application/pdf" });
+    if (e1) fallos.push("el PDF (" + e1.message + ")");
+    else {
+      const { error: e2 } = await client.from("documentos_orden").insert({ anyo, orden, storage_path: ruta, nombre: pdfNuevaOrden.name });
+      if (e2) fallos.push("el registro del PDF (" + e2.message + ")");
+    }
+  }
+  pdfNuevaOrden = null; lineasPdfNuevaOrden = [];
+  return fallos.join("; ");
 }
 
 async function crearNuevaOrden() {
@@ -800,6 +912,10 @@ async function crearNuevaOrden() {
   if (error) { errorBox.textContent = "No se pudo crear: " + error.message; errorBox.style.display = "block"; return; }
 
   const nueva = data[0];
+  if (pdfNuevaOrden || lineasPdfNuevaOrden.length) {
+    const fallos = await guardarPdfEnOrdenNueva(nueva.anyo, nueva.orden);
+    if (fallos) alert(`La orden ${nueva.anyo}/${nueva.orden} se creó, pero no se pudo guardar: ${fallos}. Añádelo a mano desde la orden.`);
+  }
   cerrarModalNuevaOrden();
   await cargarPedidos();
   await abrirPanel({ anyo: nueva.anyo, orden: nueva.orden });
