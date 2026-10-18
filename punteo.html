@@ -117,7 +117,7 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
     <input id="anyo_hasta" type="number">
   </div>
   <div class="campo-mini" id="buscador">
-    <label>Buscar (mercancía, fabricante, tienda, dependiente, nº pedido)</label>
+    <label>Buscar (mercancía, fabricante, tienda, dependiente, referencia de pedido)</label>
     <input id="texto_busqueda" type="text" placeholder="Escribe para filtrar...">
   </div>
   <div class="campo-mini" style="max-width:140px;">
@@ -250,7 +250,7 @@ function aplicarFiltroTexto() {
     { title: "Mercancía", field: "mercancia", headerFilter: "input" },
     { title: "Tienda", field: "tienda", headerFilter: "input" },
     { title: "Dependiente", field: "dependiente", headerFilter: "input" },
-    { title: "Pedido", field: "pedido", headerFilter: "input" },
+    { title: "Referencia de pedido", field: "pedido", headerFilter: "input" },
     { title: "F.Prevista", field: "f_prevista", headerFilter: "input", formatter: c => c.getValue() ? new Date(c.getValue()).toLocaleDateString("es-ES") : "" },
     { title: "F.Montaje", field: "f_montaje", headerFilter: "input", formatter: c => c.getValue() ? new Date(c.getValue()).toLocaleDateString("es-ES") : "" },
     { title: "Recibido", field: "recibido", width: 100, headerFilter: "tickCross", headerFilterParams: { tristate: true }, formatter: "tickCross" },
@@ -286,7 +286,7 @@ comprobarSesion();
   const pon = (id, items) => { const el = document.getElementById(id); if (el) el.innerHTML = items.map(([c, t]) => `<span style="--c:${c}">${t}</span>`).join(""); };
   pon("leyenda_estados", estados.map(([k, t, c]) => [c, t]));
   pon("leyenda_recibido", [["#16a34a", "Recibido"], ["#d97706", "Pendiente de recibir"]]);
-  pon("leyenda_entradas", [["#16a34a", "Enlazada con su orden (exacta)"], ["#94a3b8", "Deducida por el nº de pedido (entrada antigua)"]]);
+  pon("leyenda_entradas", [["#16a34a", "Enlazada con su orden (exacta)"], ["#94a3b8", "Deducida por la referencia de pedido (entrada antigua)"]]);
 })();
 // marca en azul en qué pantalla y en qué menú estás
 (function () {

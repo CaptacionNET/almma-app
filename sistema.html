@@ -647,7 +647,7 @@ comprobarSesion();
   const pon = (id, items) => { const el = document.getElementById(id); if (el) el.innerHTML = items.map(([c, t]) => `<span style="--c:${c}">${t}</span>`).join(""); };
   pon("leyenda_estados", estados.map(([k, t, c]) => [c, t]));
   pon("leyenda_recibido", [["#16a34a", "Recibido"], ["#d97706", "Pendiente de recibir"]]);
-  pon("leyenda_entradas", [["#16a34a", "Enlazada con su orden (exacta)"], ["#94a3b8", "Deducida por el nº de pedido (entrada antigua)"]]);
+  pon("leyenda_entradas", [["#16a34a", "Enlazada con su orden (exacta)"], ["#94a3b8", "Deducida por la referencia de pedido (entrada antigua)"]]);
 })();
 // marca en azul en qué pantalla y en qué menú estás
 (function () {

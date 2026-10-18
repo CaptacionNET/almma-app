@@ -128,12 +128,12 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 
 <div id="pestana_recepcion">
 <div class="card">
-  <h3 style="margin-top:0;">Buscar pedido</h3>
+  <h3 style="margin-top:0;">Buscar por referencia de pedido</h3>
   <p id="error_busqueda" class="error"></p>
   <div class="form-grid">
     <div class="campo">
-      <label for="buscar_num_pedido">Número de Pedido</label>
-      <input id="buscar_num_pedido" placeholder="Nº pedido de la tienda" onkeydown="if(event.key==='Enter')buscarPedido()">
+      <label for="buscar_num_pedido">Referencia de pedido</label>
+      <input id="buscar_num_pedido" placeholder="Referencia de pedido de la tienda" onkeydown="if(event.key==='Enter')buscarPedido()">
     </div>
     <div class="campo" style="align-self:end;">
       <label style="display:flex;gap:6px;align-items:center;font-weight:normal;"><input type="checkbox" id="incluir_anteriores" style="width:auto;"> Incluir años anteriores</label>
@@ -148,14 +148,14 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 </div>
 
 <div class="card" id="card_entrada" style="display:none;">
-  <button onclick="reiniciarBusqueda()" style="float:right;">Buscar otro pedido</button>
-  <h3 style="margin-top:0;">Entrada para el pedido <span id="entrada_titulo"></span></h3>
+  <button onclick="reiniciarBusqueda()" style="float:right;">Buscar otra orden</button>
+  <h3 style="margin-top:0;">Entrada para la orden <span id="entrada_titulo"></span></h3>
 
-  <h4>Líneas de este pedido</h4>
+  <h4>Líneas de esta orden</h4>
   <datalist id="dl_fabricantes"></datalist>
   <div id="lista_lineas_pedido" class="mini-list"></div>
 
-  <h4 style="margin-top:24px;">Añadir línea que no estaba en el pedido</h4>
+  <h4 style="margin-top:24px;">Añadir línea que no estaba en la orden</h4>
   <div class="form-grid">
     <div class="campo">
       <label for="ent_almacen">Almacén</label>
@@ -206,7 +206,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
     <div class="filtros-entradas">
       <div><label>Desde</label><input id="fm_desde" type="date" onchange="cargarMovimientos()"></div>
       <div><label>Hasta</label><input id="fm_hasta" type="date" onchange="cargarMovimientos()"></div>
-      <div><label>Nº de pedido</label><input id="fm_pedido" placeholder="Parte del nº de pedido" oninput="buscarMovimientosDebounce()" autocomplete="off"></div>
+      <div><label>Referencia de pedido</label><input id="fm_pedido" placeholder="Parte de la referencia" oninput="buscarMovimientosDebounce()" autocomplete="off"></div>
       <div><label>Fabricante</label><input id="fm_fabricante" list="dl_fabricantes" placeholder="Nombre del fabricante" oninput="buscarMovimientosDebounce()" autocomplete="off"></div>
       <button class="secondary btn-mini" style="padding:8px 12px;" onclick="limpiarFiltrosMovimientos()">Últimos 2 meses</button>
       <span id="aviso_movimientos" class="meta" style="align-self:center;"></span>
@@ -291,7 +291,7 @@ async function buscarPedido() {
   document.getElementById("card_entrada").style.display = "none";
 
   const numPedido = document.getElementById("buscar_num_pedido").value.trim();
-  if (!numPedido) { errorBox.textContent = "Escribe un número de pedido."; errorBox.style.display = "block"; return; }
+  if (!numPedido) { errorBox.textContent = "Escribe la referencia de pedido."; errorBox.style.display = "block"; return; }
 
   // por defecto solo los últimos 4 años (este y los 3 anteriores); la casilla amplía a todo el histórico
   const incluirAnteriores = document.getElementById("incluir_anteriores").checked;
@@ -307,7 +307,7 @@ async function buscarPedido() {
   if (error) { errorBox.textContent = "Error al buscar: " + error.message; errorBox.style.display = "block"; return; }
 
   if (!data || !data.length) {
-    resultadoBox.textContent = `No se encontró ningún pedido con número "${numPedido}"` +
+    resultadoBox.textContent = `No se encontró ninguna orden con la referencia "${numPedido}"` +
       (incluirAnteriores ? "." : ` en los últimos 4 años (desde ${anyoMinimo}). Marca "Incluir años anteriores" para buscar más atrás.`);
     btnCrear.style.display = "inline-block";
     return;
@@ -316,17 +316,17 @@ async function buscarPedido() {
   if (data.length === 1) { activarPedido(data[0], numPedido); return; }
 
   resultadosPedidoActuales = data;
-  resultadoBox.textContent = `${data.length} pedidos coinciden — elige el correcto:`;
+  resultadoBox.textContent = `${data.length} órdenes coinciden — elige la correcta:`;
   listaBox.innerHTML = data.map((o, i) => `
     <div class="item" style="cursor:pointer;" onclick="activarPedido(resultadosPedidoActuales[${i}], '${numPedido.replace(/'/g, "\\'")}')">
-      <strong>${o.anyo}/${o.orden}</strong> — Nº pedido "${o.num_pedido || ""}"${o.nombre_cli ? " — " + o.nombre_cli : ""}${o.tiendas?.nombre ? " (" + o.tiendas.nombre + ")" : ""}
+      <strong>${o.anyo}/${o.orden}</strong> — Referencia "${o.num_pedido || ""}"${o.nombre_cli ? " — " + o.nombre_cli : ""}${o.tiendas?.nombre ? " (" + o.tiendas.nombre + ")" : ""}
     </div>`).join("");
 }
 
 async function crearOrdenDesdeRecepcion() {
   const numPedido = document.getElementById("buscar_num_pedido").value.trim();
   if (!numPedido) return;
-  if (!confirm(`No existe ningún pedido "${numPedido}". ¿Crear una orden nueva para poder recibir esta mercancía? La tienda se podrá asignar después desde Ordenes.`)) return;
+  if (!confirm(`No existe ninguna orden con la referencia "${numPedido}". ¿Crear una orden nueva para poder recibir esta mercancía? La tienda se podrá asignar después desde Ordenes.`)) return;
 
   const { data, error } = await client.rpc("crear_orden_staff", {
     p_tienda_id: null, p_dependiente_id: null, p_tipo_orden: 1, p_num_pedido: numPedido,
@@ -345,7 +345,7 @@ function activarPedido(orden, numPedido) {
   document.getElementById("lista_resultados_pedido").innerHTML = "";
   document.getElementById("btn_crear_orden").style.display = "none";
   document.getElementById("entrada_titulo").textContent =
-    `${orden.anyo}/${orden.orden} — Nº pedido "${orden.num_pedido || numPedido}"${orden.nombre_cli ? " — " + orden.nombre_cli : ""}${orden.tiendas?.nombre ? " (" + orden.tiendas.nombre + ")" : ""}`;
+    `${orden.anyo}/${orden.orden} — Referencia "${orden.num_pedido || numPedido}"${orden.nombre_cli ? " — " + orden.nombre_cli : ""}${orden.tiendas?.nombre ? " (" + orden.tiendas.nombre + ")" : ""}`;
   document.getElementById("card_entrada").style.display = "block";
   document.getElementById("lista_lineas_entrada").innerHTML = '<div class="meta">Todavía no has añadido ninguna línea.</div>';
   cargarLineasPedido();
@@ -365,8 +365,8 @@ async function cargarLineasPedido() {
   const lineasMercancia = (lineas || []).filter(l => l.tipolinea !== 4);
   if (!lineasMercancia.length) {
     cont.innerHTML = lineas && lineas.length
-      ? '<div class="meta">Este pedido solo tiene líneas de importes (servicios): no hay mercancía que recibir.</div>'
-      : '<div class="meta">Este pedido todavía no tiene líneas.</div>';
+      ? '<div class="meta">Esta orden solo tiene líneas de importes (servicios): no hay mercancía que recibir.</div>'
+      : '<div class="meta">Esta orden todavía no tiene líneas.</div>';
     return;
   }
 
@@ -422,7 +422,7 @@ async function cargarLineasPedido() {
   };
 
   cont.innerHTML =
-    (pendientes.length ? pendientes.map(htmlPendiente).join("") : '<div class="meta" style="margin-bottom:8px;">No queda nada pendiente de recibir en este pedido.</div>') +
+    (pendientes.length ? pendientes.map(htmlPendiente).join("") : '<div class="meta" style="margin-bottom:8px;">No queda nada pendiente de recibir en esta orden.</div>') +
     (recibidas.length ? `<h5 style="margin:16px 0 6px;color:var(--muted);">Ya recibidas (${recibidas.length})</h5>` + recibidas.map(htmlRecibida).join("") : "");
 }
 
@@ -694,12 +694,12 @@ async function cargarMovimientos() {
       } },
     { title: "Fabricante", field: "fabricante_txt", minWidth: 150 },
     { title: "Tienda", field: "tienda_txt", minWidth: 150 },
-    { title: "Nº pedido (como se guardó)", field: "num_pedido", minWidth: 150, tooltip: "En el programa antiguo este campo se cortaba a 10 letras" },
+    { title: "Referencia de pedido (como se guardó)", field: "num_pedido", minWidth: 150, tooltip: "En el programa antiguo esta referencia se cortaba a 10 letras" },
     { title: "Orden", field: "orden_txt", width: 110, formatter: (c) => {
         const d = c.getRow().getData();
-        return d.orden_txt ? `<a href="${d.orden_url}" style="color:var(--primary);font-weight:600;">${d.orden_txt}</a>${d.exacta ? ' <span title="Enlazada con la orden al registrar la entrada" style="color:#15803d;">✓</span>' : ' <span class="meta" title="Deducida por el nº de pedido (entrada antigua, sin enlace)">≈</span>'}${d.mas_ordenes ? ` <span class="meta" style="cursor:help;" title="El nº de pedido está cortado y coincide también con estas órdenes de la misma tienda (se ha elegido la última creada antes de que llegara la mercancía):&#10;${(d.otras_ordenes || "").replace(/"/g, "&quot;")}">+${d.mas_ordenes}</span>` : ""}` : "";
+        return d.orden_txt ? `<a href="${d.orden_url}" style="color:var(--primary);font-weight:600;">${d.orden_txt}</a>${d.exacta ? ' <span title="Enlazada con la orden al registrar la entrada" style="color:#15803d;">✓</span>' : ' <span class="meta" title="Deducida por la referencia de pedido (entrada antigua, sin enlace)">≈</span>'}${d.mas_ordenes ? ` <span class="meta" style="cursor:help;" title="El nº de pedido está cortado y coincide también con estas órdenes de la misma tienda (se ha elegido la última creada antes de que llegara la mercancía):&#10;${(d.otras_ordenes || "").replace(/"/g, "&quot;")}">+${d.mas_ordenes}</span>` : ""}` : "";
       } },
-    { title: "Nº pedido completo (de la orden)", field: "pedido_completo", minWidth: 220 },
+    { title: "Referencia completa (de la orden)", field: "pedido_completo", minWidth: 220 },
     { title: "Cliente", field: "cliente", minWidth: 170 },
     { title: "Descripción", field: "descripcion", minWidth: 220 },
     { title: "Cant.", field: "cantidade", width: 70 },
@@ -724,7 +724,7 @@ comprobarSesion();
   const pon = (id, items) => { const el = document.getElementById(id); if (el) el.innerHTML = items.map(([c, t]) => `<span style="--c:${c}">${t}</span>`).join(""); };
   pon("leyenda_estados", estados.map(([k, t, c]) => [c, t]));
   pon("leyenda_recibido", [["#16a34a", "Recibido"], ["#d97706", "Pendiente de recibir"]]);
-  pon("leyenda_entradas", [["#16a34a", "Enlazada con su orden (exacta)"], ["#94a3b8", "Deducida por el nº de pedido (entrada antigua)"]]);
+  pon("leyenda_entradas", [["#16a34a", "Enlazada con su orden (exacta)"], ["#94a3b8", "Deducida por la referencia de pedido (entrada antigua)"]]);
 })();
 // marca en azul en qué pantalla y en qué menú estás
 (function () {

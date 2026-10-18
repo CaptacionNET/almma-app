@@ -66,6 +66,14 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .leyenda-listado span{border-left:5px solid var(--c,#94a3b8);padding-left:6px;}
 .mini-list .item{border-left:5px solid #2563eb;background:#f9fbff;border-color:#bfdbfe;border-left-color:#2563eb;}
 .estado-terminado_incidencia{background:#fff7ed;color:#9a3412;}
+/* color de toda la fila según el estado: rojo suave = montada y finalizada, naranja suave = completa sin montar, blanco = en proceso */
+#tabla_pedidos .tabulator-row.tabulator-row-even,#tabla_montajes .tabulator-row.tabulator-row-even{background:#fff;}
+.tabulator .tabulator-row.fila-finalizada,.tabulator .tabulator-row.tabulator-row-even.fila-finalizada{background:#fde8e8 !important;}
+.tabulator .tabulator-row.fila-finalizada:hover{background:#fbd5d5 !important;}
+.tabulator .tabulator-row.fila-completa,.tabulator .tabulator-row.tabulator-row-even.fila-completa{background:#ffeedd !important;}
+.tabulator .tabulator-row.fila-completa:hover{background:#ffe0c2 !important;}
+.leyenda-listado .sw-leyenda{display:inline-flex;align-items:center;gap:6px;border-left:none;padding-left:0;}
+.leyenda-listado .sw-leyenda i{display:inline-block;width:16px;height:12px;border:1px solid #cbd5e1;border-radius:2px;}
 .item-pendiente{border-left:5px solid #d97706 !important;background:#fffbeb !important;}
 .linea-recibida{border-left:5px solid #16a34a !important;background:#f6fef9 !important;}
 </style>
@@ -177,18 +185,18 @@ async function cargarPedidos() {
 
   const columnas = [
     { title: "Año", field: "anyo", width: 70 },
-    { title: "Pedido", field: "orden", width: 90 },
+    { title: "Orden", field: "orden", width: 90 },
     { title: "Cliente", field: "nombre_cli" },
-    { title: "Nº pedido", field: "num_pedido" },
-    { title: "Estado", field: "estado", formatter: (cell) => {
-        const v = cell.getValue() || "en_proceso";
-        return `<span class="estado-pill estado-${v}">${v.replace(/_/g, " ")}</span>`;
+    { title: "Referencia de pedido", field: "num_pedido", minWidth: 170 },
+    { title: "Estado", field: "estado", minWidth: 170, formatter: (cell) => {
+        const v = (cell.getValue() || "en_proceso").replace(/_/g, " ");
+        return v.charAt(0).toUpperCase() + v.slice(1);   // solo texto, sin "globo"
       } },
     { title: "Importe", field: "importe_total", formatter: "money", formatterParams: { symbol: "€", precision: 2 } },
   ];
 
   if (!tabla) {
-    tabla = new Tabulator("#tabla_pedidos", { data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 110px)", rowFormatter: (row) => { row.getElement().classList.add("est-" + (row.getData().estado || "en_proceso")); }, });
+    tabla = new Tabulator("#tabla_pedidos", { data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 110px)", rowFormatter: (row) => { const e = row.getData().estado; if (e === "completado") row.getElement().classList.add("fila-finalizada"); else if (e === "recepcionado_total") row.getElement().classList.add("fila-completa"); }, });
   } else {
     tabla.setData(data);
   }
@@ -296,9 +304,11 @@ comprobarSesion();
   const estados = [["en_proceso", "En proceso", "#6366f1"], ["recepcionado_parcial", "Recepción parcial", "#ca8a04"], ["recepcionado_total", "Recepcionado", "#0891b2"],
                    ["agendado", "Agendado", "#7c3aed"], ["completado", "Completado", "#16a34a"], ["incidencia", "Incidencia", "#dc2626"], ["terminado_incidencia", "Terminado con incidencia", "#9a3412"]];
   const pon = (id, items) => { const el = document.getElementById(id); if (el) el.innerHTML = items.map(([c, t]) => `<span style="--c:${c}">${t}</span>`).join(""); };
-  pon("leyenda_estados", estados.map(([k, t, c]) => [c, t]));
+  const ley = document.getElementById("leyenda_estados");
+  if (ley) ley.innerHTML = [["#fde8e8", "Montada y finalizada"], ["#ffeedd", "Completa (pendiente de montar)"], ["#ffffff", "En proceso"]]
+    .map(([c, t]) => `<span class="sw-leyenda"><i style="background:${c}"></i>${t}</span>`).join("");
   pon("leyenda_recibido", [["#16a34a", "Recibido"], ["#d97706", "Pendiente de recibir"]]);
-  pon("leyenda_entradas", [["#16a34a", "Enlazada con su orden (exacta)"], ["#94a3b8", "Deducida por el nº de pedido (entrada antigua)"]]);
+  pon("leyenda_entradas", [["#16a34a", "Enlazada con su orden (exacta)"], ["#94a3b8", "Deducida por la referencia de pedido (entrada antigua)"]]);
 })();
 </script>
 </body>
