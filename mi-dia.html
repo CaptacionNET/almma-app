@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1e40af">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ALMMA">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>ALMMA - Mi día</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+/* ALMMA · "Mi día": pantalla de los montadores, pensada para el móvil.
+   Letra grande, botones grandes y una sola cosa por botón. Funciona sin cobertura:
+   los montajes del día se guardan en el móvil al abrir con datos, y las fotos, firmas e
+   incidencias hechas sin cobertura se guardan también y se envían solas al volver la señal. */
+:root{--azul:#1e40af;--azul2:#dbeafe;--verde:#15803d;--naranja:#d97706;--rojo:#b91c1c;--bg:#f1f5f9;--txt:#0f172a;--gris:#64748b;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html{font-size:18px;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--txt);padding-bottom:env(safe-area-inset-bottom);}
+header{position:sticky;top:0;z-index:20;background:var(--azul);color:#fff;padding:12px 16px;padding-top:calc(12px + env(safe-area-inset-top));display:flex;align-items:center;gap:10px;}
+header .marca{font-weight:800;font-size:1.15rem;letter-spacing:.5px;}
+header .quien{font-size:.8rem;opacity:.85;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#estado{border:none;border-radius:20px;padding:7px 12px;font-size:.78rem;font-weight:700;background:#fff;color:var(--azul);}
+#estado.ok{background:#dcfce7;color:var(--verde);} #estado.pend{background:#fef3c7;color:#92400e;} #estado.sin{background:#e2e8f0;color:#334155;} #estado.mal{background:#fee2e2;color:var(--rojo);}
+.dias{display:flex;gap:8px;padding:12px 16px 4px;}
+.dias button{flex:1;border:2px solid var(--azul);background:#fff;color:var(--azul);border-radius:14px;padding:14px 6px;font-size:1.05rem;font-weight:800;}
+.dias button.on{background:var(--azul);color:#fff;}
+.dias small{display:block;font-weight:600;font-size:.72rem;opacity:.85;}
+#lista{padding:8px 16px 90px;}
+.vacio{text-align:center;color:var(--gris);padding:48px 16px;font-size:1.05rem;}
+.tarjeta{background:#fff;border-radius:18px;padding:16px;margin:12px 0;box-shadow:0 2px 8px rgba(15,23,42,.08);border-left:8px solid var(--azul);}
+.tarjeta.hecho{border-left-color:var(--verde);background:#f0fdf4;}
+.tarjeta.incid{border-left-color:var(--naranja);background:#fffbeb;}
+.fila1{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.hora{font-size:1.5rem;font-weight:800;color:var(--azul);}
+.chip{font-size:.78rem;font-weight:800;border-radius:20px;padding:5px 12px;background:var(--azul2);color:var(--azul);}
+.chip.v{background:#bbf7d0;color:var(--verde);} .chip.n{background:#fde68a;color:#92400e;}
+.cliente{font-size:1.3rem;font-weight:800;margin:8px 0 2px;}
+.dir{font-size:1rem;color:#334155;}
+.eq{font-size:.82rem;color:var(--gris);margin-top:6px;}
+.arts{margin:10px 0 0;padding:10px 12px;background:#f8fafc;border-radius:12px;font-size:.92rem;line-height:1.4;}
+.obs{margin-top:8px;padding:10px 12px;background:#fef9c3;border-radius:12px;font-size:.92rem;}
+.botones{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;}
+.btn{border:none;border-radius:14px;min-height:58px;font-size:1.02rem;font-weight:800;padding:10px;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;text-align:center;line-height:1.15;}
+.btn.az{background:var(--azul2);color:var(--azul);} .btn.na{background:#fef3c7;color:#92400e;}
+.btn.gr{background:var(--verde);color:#fff;grid-column:1/-1;min-height:68px;font-size:1.2rem;}
+.btn span{text-align:center;}
+.btn.rj{background:var(--rojo);color:#fff;} .btn.pl{background:#e2e8f0;color:#334155;}
+.btn:disabled{opacity:.5;}
+.pie{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #e2e8f0;padding:8px 16px;padding-bottom:calc(8px + env(safe-area-inset-bottom));font-size:.76rem;color:var(--gris);text-align:center;z-index:15;}
+/* pantallas completas: firma, incidencia, pendientes */
+.pantalla{display:none;position:fixed;inset:0;z-index:50;background:var(--bg);overflow-y:auto;padding:16px;padding-top:calc(16px + env(safe-area-inset-top));}
+.pantalla h2{margin:4px 0 12px;font-size:1.3rem;}
+.pantalla label{display:block;font-weight:700;margin:14px 0 6px;font-size:.95rem;}
+.pantalla input[type=text],.pantalla textarea{width:100%;font-size:1.05rem;padding:14px;border:2px solid #cbd5e1;border-radius:12px;font-family:inherit;}
+#lienzo{width:100%;height:240px;background:#fff;border:2px solid #94a3b8;border-radius:14px;touch-action:none;display:block;}
+.opciones .btn{width:100%;margin-bottom:10px;justify-content:flex-start;padding-left:18px;background:#fff;color:var(--txt);border:2px solid #cbd5e1;font-weight:700;}
+.opciones .btn.sel{border-color:var(--naranja);background:#fffbeb;}
+#toast{position:fixed;left:16px;right:16px;bottom:calc(64px + env(safe-area-inset-bottom));background:#0f172a;color:#fff;padding:16px;border-radius:14px;font-weight:700;z-index:80;display:none;text-align:center;}
+#aviso_instalar{margin:12px 16px 0;background:#e0f2fe;border-radius:14px;padding:14px;font-size:.9rem;display:none;}
+#aviso_instalar button{margin-top:8px;border:none;background:var(--azul);color:#fff;border-radius:10px;padding:10px 16px;font-weight:700;font-size:.9rem;}
+#mensaje{padding:40px 24px;text-align:center;font-size:1.1rem;display:none;}
+</style>
+</head>
+<body>
+<header>
+  <span class="marca">ALMMA</span><span class="quien" id="quien"></span>
+  <button id="estado" class="sin" onclick="abrirPendientes()">…</button>
+</header>
+<div id="aviso_instalar"></div>
+<div class="dias">
+  <button id="d0" class="on" onclick="verDia(0)">HOY<small id="n0"></small></button>
+  <button id="d1" onclick="verDia(1)">MAÑANA<small id="n1"></small></button>
+</div>
+<div id="mensaje"></div>
+<div id="lista"></div>
+<div class="pie" id="pie">…</div>
+<div id="toast"></div>
+<input type="file" id="cam" accept="image/*" capture="environment" style="display:none">
+
+<div class="pantalla" id="p_firma">
+  <h2>Firma del cliente</h2>
+  <div id="f_cliente" style="color:var(--gris);margin-bottom:6px"></div>
+  <label for="f_nombre">Nombre de quien firma</label>
+  <input type="text" id="f_nombre" autocomplete="off">
+  <label>Firma (con el dedo)</label>
+  <canvas id="lienzo"></canvas>
+  <button class="btn pl" style="margin-top:10px;width:100%" onclick="borrarLienzo()">Borrar y empezar de nuevo</button>
+  <label for="f_obs">Algo que anotar (opcional)</label>
+  <textarea id="f_obs" rows="2"></textarea>
+  <div class="botones" style="margin-top:18px">
+    <button class="btn pl" onclick="cerrarPantalla('p_firma')">Atrás</button>
+    <button class="btn gr" style="grid-column:auto" onclick="guardarFirma()">✔ GUARDAR Y TERMINAR</button>
+  </div>
+</div>
+
+<div class="pantalla" id="p_incid">
+  <h2>¿Qué ha pasado?</h2>
+  <div id="i_cliente" style="color:var(--gris);margin-bottom:10px"></div>
+  <div class="opciones" id="i_opciones"></div>
+  <label for="i_texto">Cuéntalo con tus palabras (opcional)</label>
+  <textarea id="i_texto" rows="3"></textarea>
+  <div class="botones" style="margin-top:18px">
+    <button class="btn pl" onclick="cerrarPantalla('p_incid')">Atrás</button>
+    <button class="btn rj" onclick="guardarIncidencia()">ENVIAR AVISO</button>
+  </div>
+  <p style="color:var(--gris);font-size:.88rem">Después puedes hacer fotos del problema con el botón «Foto» de ese montaje.</p>
+</div>
+
+<div class="pantalla" id="p_pend">
+  <h2>Envíos pendientes</h2>
+  <div id="pend_cuerpo"></div>
+  <div class="botones" style="margin-top:18px">
+    <button class="btn pl" onclick="cerrarPantalla('p_pend')">Cerrar</button>
+    <button class="btn az" onclick="enviarCola(true)">Enviar ahora</button>
+  </div>
+</div>
+
+<script>
+const URL_SB = "https://uamgbtbsxbrgymhqalak.supabase.co";
+const KEY_SB = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k";
+const client = supabase.createClient(URL_SB, KEY_SB, { auth: { persistSession: true, autoRefreshToken: true } });
+
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const ISO = d => d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+const diaN = n => { const d = new Date(); d.setDate(d.getDate() + n); return ISO(d); };
+
+/* ---------- Almacén en el móvil (IndexedDB): datos del día y cola de envíos ---------- */
+const idb = new Promise((ok, ko) => {
+  const r = indexedDB.open("almma-mi-dia", 1);
+  r.onupgradeneeded = () => { r.result.createObjectStore("cola", { keyPath: "id", autoIncrement: true }); r.result.createObjectStore("kv"); };
+  r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error);
+});
+const req2p = r => new Promise((ok, ko) => { r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); });
+async function st(nombre, modo){ return (await idb).transaction(nombre, modo).objectStore(nombre); }
+const kvGet = async k => req2p((await st("kv","readonly")).get(k));
+const kvSet = async (k, v) => req2p((await st("kv","readwrite")).put(v, k));
+const colaAll = async () => req2p((await st("cola","readonly")).getAll());
+const colaAdd = async it => req2p((await st("cola","readwrite")).add(it));
+const colaPut = async it => req2p((await st("cola","readwrite")).put(it));
+const colaDel = async id => req2p((await st("cola","readwrite")).delete(id));
+
+let uid = null, nombreMontador = "", paquete = null, cola = [], diaVista = 0, sincronizando = false;
+
+/* ---------- Avisos ---------- */
+let tToast;
+function toast(t, ms = 3500){ const e = document.getElementById("toast"); e.textContent = t; e.style.display = "block"; clearTimeout(tToast); tToast = setTimeout(() => e.style.display = "none", ms); }
+function cerrarPantalla(id){ document.getElementById(id).style.display = "none"; }
+function mensaje(t){ const m = document.getElementById("mensaje"); m.innerHTML = t; m.style.display = "block"; document.getElementById("lista").innerHTML = ""; }
+
+/* ---------- Arranque: la sesión se queda abierta (meses) ---------- */
+async function iniciar(){
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch(_){}
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+  const { data, error } = await client.auth.getSession();
+  if (data && data.session) { uid = data.session.user.id; await kvSet("uid", uid); }
+  else {
+    uid = await kvGet("uid");
+    // sin sesión y con cobertura: hay que entrar; sin cobertura: se sigue con lo guardado
+    if (!uid && navigator.onLine) { location.href = "login.html"; return; }
+    if (error && navigator.onLine && !/fetch|network|timeout/i.test(String(error.message))) { location.href = "login.html"; return; }
+  }
+  if (!uid) { mensaje("📵 Sin cobertura y sin haber entrado nunca en este móvil.<br>Conéctate una vez para entrar."); return; }
+  nombreMontador = (await kvGet("nombre")) || "";
+  document.getElementById("quien").textContent = nombreMontador;
+  paquete = await kvGet("paquete");
+  cola = await colaAll();
+  pintar(); estadoBarra();
+  avisoInstalar();
+  if (navigator.onLine) { await cargarPaquete(); await enviarCola(false); }
+}
+
+/* ---------- Descargar los montajes del día (se guardan en el móvil) ---------- */
+async function cargarPaquete(){
+  try {
+    const { data: yo, error: e0 } = await client.from("montadores").select("id, nombre").eq("staff_user_id", uid).maybeSingle();
+    if (e0) throw e0;
+    if (!yo) { mensaje("Tu usuario todavía no está enlazado con tu nombre de montador.<br>Avisa a la oficina."); return; }
+    nombreMontador = yo.nombre; await kvSet("nombre", yo.nombre);
+    document.getElementById("quien").textContent = yo.nombre;
+    const { data, error } = await client.from("ordenes")
+      .select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, telefono2_cli, num_pedido, estado, fecha_prev_montaje, horamont, obs_albaran, mio:ordenes_montadores!inner(montador_id), equipo:ordenes_montadores(montadores(nombre)), entregas(id), fotos:fotos_orden(id)")
+      .eq("mio.montador_id", yo.id).gte("fecha_prev_montaje", diaN(0)).lt("fecha_prev_montaje", diaN(2)).order("fecha_prev_montaje");
+    if (error) throw error;
+    const lineas = {};
+    const porAnyo = {}; (data || []).forEach(o => (porAnyo[o.anyo] ||= []).push(o.orden));
+    for (const [a, lst] of Object.entries(porAnyo)) {
+      const { data: ls, error: el } = await client.from("linorden").select("anyo, orden, linea, tipolinea, descripcion, cantidad").eq("anyo", +a).in("orden", lst).neq("tipolinea", 4).order("linea");
+      if (el) throw el;
+      (ls || []).forEach(l => (lineas[l.anyo + "/" + l.orden] ||= []).push(l));
+    }
+    const ordenes = (data || []).map(o => ({
+      anyo:o.anyo, orden:o.orden, nombre_cli:o.nombre_cli, domicilio_cli:o.domicilio_cli, localidad_cli:o.localidad_cli,
+      telefono_cli:o.telefono_cli, telefono2_cli:o.telefono2_cli, num_pedido:o.num_pedido, estado:o.estado,
+      dia:String(o.fecha_prev_montaje).slice(0,10), horamont:o.horamont, obs:o.obs_albaran,
+      equipo:(o.equipo || []).map(e => e.montadores?.nombre).filter(Boolean),
+      hecho:(o.entregas || []).length > 0, fotos:(o.fotos || []).length, lineas:lineas[o.anyo + "/" + o.orden] || []
+    }));
+    paquete = { cargado:new Date().toISOString(), ordenes };
+    await kvSet("paquete", paquete);
+    pintar(); estadoBarra();
+  } catch (e) {
+    if (!/fetch|network|timeout|load failed/i.test(String(e?.message || e))) toast("No se pudieron cargar los montajes: " + (e.message || e), 6000);
+  }
+}
+
+/* ---------- Pintar las tarjetas ---------- */
+function verDia(n){ diaVista = n; document.getElementById("d0").classList.toggle("on", n === 0); document.getElementById("d1").classList.toggle("on", n === 1); pintar(); }
+function enCola(o, tipo){ return cola.filter(c => c.tipo === tipo && c.anyo === o.anyo && c.orden === o.orden); }
+function pintar(){
+  document.getElementById("mensaje").style.display = "none";
+  const lista = document.getElementById("lista");
+  if (!paquete) { lista.innerHTML = '<div class="vacio">Cargando tus montajes…</div>'; return; }
+  const dias = [diaN(0), diaN(1)];
+  [0, 1].forEach(i => { const n = paquete.ordenes.filter(o => o.dia === dias[i]).length; document.getElementById("n" + i).textContent = n + (n === 1 ? " montaje" : " montajes"); });
+  const hoy = paquete.ordenes.filter(o => o.dia === dias[diaVista]).sort((a,b) => (a.horamont || "99").localeCompare(b.horamont || "99"));
+  document.getElementById("pie").textContent = "Montajes cargados " + new Date(paquete.cargado).toLocaleString("es-ES", { weekday:"short", hour:"2-digit", minute:"2-digit" }) + (navigator.onLine ? "" : " · sin cobertura: se usa lo guardado");
+  if (!hoy.length) { lista.innerHTML = '<div class="vacio">' + (diaVista === 0 ? "Hoy no tienes montajes 🎉" : "Mañana no tienes montajes") + '</div>'; return; }
+  lista.innerHTML = hoy.map(o => {
+    const hecho = o.hecho || enCola(o, "firma").length > 0;
+    const incid = o.estado === "incidencia" || enCola(o, "incidencia").length > 0;
+    const nFotos = o.fotos + enCola(o, "foto").length;
+    const dir = [o.domicilio_cli, o.localidad_cli].filter(Boolean).join(", ");
+    const tel = (o.telefono_cli || "").replace(/[^\d+]/g, "");
+    const mapa = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(dir);
+    const arts = o.lineas.map(l => (l.cantidad ?? 1) + " × " + esc(l.descripcion)).join("<br>");
+    const k = o.anyo + "/" + o.orden;
+    return '<div class="tarjeta ' + (hecho ? "hecho" : incid ? "incid" : "") + '">' +
+      '<div class="fila1"><span class="hora">' + esc((o.horamont && o.horamont !== "M") ? o.horamont : "Sin hora") + '</span>' +
+      (hecho ? '<span class="chip v">✔ TERMINADO</span>' : incid ? '<span class="chip n">⚠ INCIDENCIA</span>' : '<span class="chip">Pendiente</span>') + '</div>' +
+      '<div class="cliente">' + esc(o.nombre_cli) + '</div><div class="dir">' + esc(dir) + '</div>' +
+      (o.equipo.length > 1 ? '<div class="eq">Equipo: ' + esc(o.equipo.join(" + ")) + '</div>' : "") +
+      (arts ? '<div class="arts">' + arts + '</div>' : "") +
+      (o.obs ? '<div class="obs">📝 ' + esc(o.obs) + '</div>' : "") +
+      '<div class="botones">' +
+        (tel ? '<a class="btn az" href="tel:' + tel + '">📞 Llamar</a>' : '<span class="btn pl">Sin teléfono</span>') +
+        '<a class="btn az" href="' + mapa + '" target="_blank" rel="noopener">🧭 Cómo llegar</a>' +
+        '<button class="btn az" onclick="hacerFoto(\'' + k + '\')">📷 Foto' + (nFotos ? " (" + nFotos + ")" : "") + '</button>' +
+        '<button class="btn na" onclick="abrirIncidencia(\'' + k + '\')">⚠ Problema</button>' +
+        (hecho ? "" : '<button class="btn gr" onclick="abrirFirma(\'' + k + '\')"><span>✔ TERMINADO<br><small style="font-weight:600">(firma del cliente)</small></span></button>') +
+      '</div></div>';
+  }).join("");
+}
+const buscar = k => paquete.ordenes.find(o => o.anyo + "/" + o.orden === k);
+
+/* ---------- Estado arriba (enviado / pendiente / sin cobertura) ---------- */
+function estadoBarra(){
+  const b = document.getElementById("estado"), n = cola.length, malos = cola.filter(c => c.error).length;
+  if (malos) { b.className = "mal"; b.textContent = "⚠ " + malos + " con problema"; }
+  else if (!navigator.onLine) { b.className = n ? "pend" : "sin"; b.textContent = n ? "📵 " + n + " por enviar" : "📵 Sin cobertura"; }
+  else if (sincronizando) { b.className = "pend"; b.textContent = "Enviando…"; }
+  else if (n) { b.className = "pend"; b.textContent = "⏳ " + n + " por enviar"; }
+  else { b.className = "ok"; b.textContent = "✔ Todo enviado"; }
+}
+
+/* ---------- Foto (comprimida para gastar pocos datos) ---------- */
+let ordenFoto = null;
+function hacerFoto(k){ ordenFoto = buscar(k); document.getElementById("cam").value = ""; document.getElementById("cam").click(); }
+async function comprimir(file){
+  try {
+    const bmp = await createImageBitmap(file), max = 1600, esc_ = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas"); c.width = Math.round(bmp.width * esc_); c.height = Math.round(bmp.height * esc_);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    return await new Promise(r => c.toBlob(r, "image/jpeg", 0.8)) || file;
+  } catch (_) { return file; }
+}
+document.getElementById("cam").addEventListener("change", async e => {
+  const f = e.target.files[0]; if (!f || !ordenFoto) return;
+  const blob = await comprimir(f), o = ordenFoto;
+  const rnd = Math.random().toString(36).slice(2, 8);
+  await colaAdd({ tipo:"foto", anyo:o.anyo, orden:o.orden, blob, path:o.anyo + "/" + o.orden + "/fotos/" + Date.now() + "-" + rnd + ".jpg", categoria:(o.estado === "incidencia" || enCola(o, "incidencia").length) ? "incidencia" : "entrega_ok", ts:Date.now() });
+  cola = await colaAll(); pintar(); estadoBarra();
+  toast(navigator.onLine ? "✔ Foto guardada" : "✔ Foto guardada en el móvil. Se enviará cuando haya cobertura");
+  enviarCola(false);
+});
+
+/* ---------- Firma / terminar ---------- */
+let ordenFirma = null, dibujando = false, pintado = false, ult = null;
+const lienzo = document.getElementById("lienzo"), ctx = lienzo.getContext("2d");
+function prepararLienzo(){
+  const r = lienzo.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+  lienzo.width = Math.round(r.width * d); lienzo.height = Math.round(r.height * d);
+  ctx.setTransform(d, 0, 0, d, 0, 0); ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.strokeStyle = "#0f172a"; pintado = false;
+}
+function borrarLienzo(){ ctx.clearRect(0, 0, lienzo.width, lienzo.height); pintado = false; }
+function pt(e){ const r = lienzo.getBoundingClientRect(), p = e.touches ? e.touches[0] : e; return { x:p.clientX - r.left, y:p.clientY - r.top }; }
+function ini(e){ e.preventDefault(); dibujando = true; ult = pt(e); }
+function tra(e){ if (!dibujando) return; e.preventDefault(); const p = pt(e); ctx.beginPath(); ctx.moveTo(ult.x, ult.y); ctx.lineTo(p.x, p.y); ctx.stroke(); ult = p; pintado = true; }
+function fin(){ dibujando = false; }
+["touchstart","mousedown"].forEach(ev => lienzo.addEventListener(ev, ini, { passive:false }));
+["touchmove","mousemove"].forEach(ev => lienzo.addEventListener(ev, tra, { passive:false }));
+["touchend","mouseup","mouseleave"].forEach(ev => lienzo.addEventListener(ev, fin));
+function abrirFirma(k){
+  ordenFirma = buscar(k);
+  document.getElementById("f_cliente").textContent = ordenFirma.nombre_cli + " · " + ordenFirma.domicilio_cli;
+  document.getElementById("f_nombre").value = ordenFirma.nombre_cli || ""; document.getElementById("f_obs").value = "";
+  document.getElementById("p_firma").style.display = "block"; prepararLienzo();
+}
+async function guardarFirma(){
+  const nombre = document.getElementById("f_nombre").value.trim();
+  if (!nombre) { toast("Escribe el nombre de quien firma"); return; }
+  if (!pintado) { toast("Falta la firma del cliente"); return; }
+  const blob = await new Promise(r => lienzo.toBlob(r, "image/png")), o = ordenFirma;
+  await colaAdd({ tipo:"firma", anyo:o.anyo, orden:o.orden, blob, path:o.anyo + "/" + o.orden + "/firma/" + Date.now() + ".png", nombre, obs:document.getElementById("f_obs").value.trim() || null, ts:Date.now() });
+  cola = await colaAll(); cerrarPantalla("p_firma"); pintar(); estadoBarra();
+  toast(navigator.onLine ? "✔ ¡Montaje terminado!" : "✔ Terminado. Guardado en el móvil, se enviará cuando haya cobertura", 5000);
+  enviarCola(false);
+}
+
+/* ---------- Problema / incidencia ---------- */
+const MOTIVOS = ["El cliente no está en casa", "Faltan piezas o bultos", "Hay una pieza rota o dañada", "No se puede montar (no cabe, falta algo…)", "El cliente rechaza el mueble", "Otro problema"];
+let ordenInc = null, motivoSel = null;
+function abrirIncidencia(k){
+  ordenInc = buscar(k); motivoSel = null; document.getElementById("i_texto").value = "";
+  document.getElementById("i_cliente").textContent = ordenInc.nombre_cli + " · " + ordenInc.domicilio_cli;
+  document.getElementById("i_opciones").innerHTML = MOTIVOS.map((m, i) => '<button class="btn" id="m' + i + '" onclick="elegirMotivo(' + i + ')">' + esc(m) + '</button>').join("");
+  document.getElementById("p_incid").style.display = "block";
+}
+function elegirMotivo(i){ motivoSel = MOTIVOS[i]; MOTIVOS.forEach((_, j) => document.getElementById("m" + j).classList.toggle("sel", j === i)); }
+async function guardarIncidencia(){
+  if (!motivoSel) { toast("Elige qué ha pasado"); return; }
+  const o = ordenInc;
+  await colaAdd({ tipo:"incidencia", anyo:o.anyo, orden:o.orden, motivo:motivoSel, texto:document.getElementById("i_texto").value.trim() || null, ts:Date.now() });
+  cola = await colaAll(); cerrarPantalla("p_incid"); pintar(); estadoBarra();
+  toast(navigator.onLine ? "✔ Aviso enviado a la oficina" : "✔ Aviso guardado. Se enviará cuando haya cobertura", 5000);
+  enviarCola(false);
+}
+
+/* ---------- Enviar lo pendiente (sin perder nada si falla la cobertura) ---------- */
+const esRed = e => !navigator.onLine || /fetch|network|timeout|load failed|abort/i.test(String(e?.message || e)) || e?.status === 0;
+async function enviarUno(it){
+  if (it.tipo === "foto" || it.tipo === "firma") {
+    if (!it.subido) {
+      const { error } = await client.storage.from("ordenes-adjuntos").upload(it.path, it.blob, { contentType: it.tipo === "foto" ? "image/jpeg" : "image/png" });
+      if (error && !/already exists|duplicate|409/i.test(String(error.message) + String(error.statusCode))) throw error;
+      it.subido = true; await colaPut(it);
+    }
+    if (it.tipo === "foto") {
+      const { error } = await client.from("fotos_orden").insert({ anyo:it.anyo, orden:it.orden, storage_path:it.path, categoria:it.categoria, subida_por:uid });
+      if (error) throw error;
+    } else {
+      const { error } = await client.from("entregas").insert({ anyo:it.anyo, orden:it.orden, firmante_nombre:it.nombre, firma_storage_path:it.path, observaciones:it.obs, montador_id:uid });
+      if (error) throw error;
+    }
+  } else if (it.tipo === "incidencia") {
+    if (!it.registrada) {
+      const { error } = await client.from("incidencias").insert({ anyo:it.anyo, orden:it.orden, tipo:it.motivo, descripcion:it.texto, creado_por:uid });
+      if (error) throw error;
+      it.registrada = true; await colaPut(it);
+    }
+    const { error: e2 } = await client.from("ordenes").update({ estado:"incidencia" }).eq("anyo", it.anyo).eq("orden", it.orden);
+    if (e2) throw e2;
+  }
+}
+async function enviarCola(manual){
+  if (sincronizando) return;
+  cola = await colaAll();
+  if (!cola.length) { if (manual) toast("No hay nada pendiente"); return; }
+  if (!navigator.onLine) { if (manual) toast("Sin cobertura: se enviará solo cuando vuelva"); estadoBarra(); return; }
+  const { data } = await client.auth.getSession();
+  if (!data || !data.session) { estadoBarra(); if (manual) toast("No hay sesión: conéctate con cobertura y vuelve a intentarlo"); return; }
+  sincronizando = true; estadoBarra();
+  let hubo = false;
+  for (const it of cola.sort((a,b) => a.ts - b.ts)) {
+    try { await enviarUno(it); await colaDel(it.id); hubo = true; }
+    catch (e) {
+      if (esRed(e)) break;                        // sin señal: se para y se reintenta luego, sin perder nada
+      it.error = String(e.message || e); it.intentos = (it.intentos || 0) + 1; await colaPut(it);
+    }
+  }
+  sincronizando = false; cola = await colaAll(); estadoBarra(); pintar();
+  if (hubo && !cola.length) { toast("✔ Todo enviado a la oficina"); cargarPaquete(); }
+}
+function abrirPendientes(){
+  const c = document.getElementById("pend_cuerpo"), nom = { foto:"Foto", firma:"Firma de terminado", incidencia:"Aviso de problema" };
+  c.innerHTML = cola.length ? cola.map(it => '<div class="tarjeta" style="border-left-color:' + (it.error ? "var(--rojo)" : "var(--naranja)") + '"><b>' + nom[it.tipo] + '</b> · orden ' + it.anyo + '/' + it.orden +
+      (it.error ? '<br><span style="color:var(--rojo);font-size:.85rem">No se ha podido enviar: ' + esc(it.error) + '<br>Enséñaselo a la oficina.</span>' : '<br><span style="color:var(--gris);font-size:.85rem">Esperando cobertura</span>') + '</div>').join("")
+    : '<div class="vacio">✔ No hay nada pendiente. Todo está enviado.</div>';
+  document.getElementById("p_pend").style.display = "block";
+}
+window.addEventListener("online", () => { estadoBarra(); enviarCola(false); cargarPaquete(); });
+window.addEventListener("offline", () => { estadoBarra(); pintar(); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && navigator.onLine) { enviarCola(false); cargarPaquete(); } });
+setInterval(() => { if (navigator.onLine && cola.length) enviarCola(false); }, 30000);
+
+/* ---------- Ayuda para poner el icono en la pantalla de inicio ---------- */
+let eventoInstalar = null;
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); eventoInstalar = e; avisoInstalar(); });
+function avisoInstalar(){
+  try {
+    const instalada = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+    if (instalada || localStorage.getItem("ocultar_instalar")) return;
+    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent), a = document.getElementById("aviso_instalar");
+    a.style.display = "block";
+    a.innerHTML = ios ? '📲 <b>Pon ALMMA en tu pantalla de inicio:</b> pulsa el botón de compartir (el cuadrado con la flecha) y luego «Añadir a pantalla de inicio».'
+      : '📲 <b>Pon ALMMA en tu pantalla de inicio</b> para abrirla con un toque.' + (eventoInstalar ? '<br><button onclick="instalar()">Poner el icono</button>' : ' Menú ⋮ del navegador → «Instalar aplicación» o «Añadir a pantalla de inicio».');
+    a.innerHTML += '<br><button style="background:#64748b" onclick="ocultarInstalar()">Ya lo tengo / no me lo enseñes más</button>';
+  } catch(_){}
+}
+async function instalar(){ if (eventoInstalar) { eventoInstalar.prompt(); await eventoInstalar.userChoice; eventoInstalar = null; ocultarInstalar(); } }
+function ocultarInstalar(){ try { localStorage.setItem("ocultar_instalar", "1"); } catch(_){} document.getElementById("aviso_instalar").style.display = "none"; }
+
+iniciar();
+</script>
+</body>
+</html>

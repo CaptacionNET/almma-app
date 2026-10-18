@@ -83,7 +83,7 @@ button:disabled{opacity:.6;cursor:default;}
       const { data: { user } } = await client.auth.getUser();
 
       const { data: staffRow } = await client.from("staff").select("user_id, solo_deca, solo_montajes").eq("user_id", user.id).maybeSingle();
-      if (staffRow) { window.location.href = staffRow.solo_deca ? "deca.html" : staffRow.solo_montajes ? "montador.html" : "pedidos.html"; return; }
+      if (staffRow) { window.location.href = staffRow.solo_deca ? "deca.html" : staffRow.solo_montajes ? "mi-dia.html" : "pedidos.html"; return; }
 
       const { data: depRow } = await client.from("dependientes").select("id, es_admin_tienda").eq("user_id", user.id).maybeSingle();
       if (depRow) { window.location.href = depRow.es_admin_tienda ? "tienda.html" : "mis-pedidos.html"; return; }
