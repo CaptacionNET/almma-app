@@ -90,6 +90,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
   <button id="btn_nav_montador" class="secondary" onclick="window.location.href='montador.html'">Mis montajes</button>
   <button class="secondary" onclick="window.location.href='deca.html'">DeCA</button>
   <button class="secondary" onclick="window.location.href='facturas.html'">Facturación</button>
+  <button class="secondary" id="btn_admin" style="display:none" onclick="window.location.href='admin.html'">Administración</button>
   <div class="spacer"></div>
   <button class="secondary" onclick="logout()">Salir</button>
 </div>
@@ -404,6 +405,12 @@ comprobarSesion();
     if (ruta === pagina && (!consulta || (new URLSearchParams(consulta).get("cat") || "") === cat)) a.classList.add("activo-link");
   });
 })();
+</script>
+<script>
+/* Botón Administración: solo lo ven los administradores (staff.es_admin; ver migracion/54) */
+(async()=>{try{const{data:{user}}=await client.auth.getUser();if(!user)return;
+const{data}=await client.from("staff").select("es_admin").eq("user_id",user.id).maybeSingle();
+if(data&&data.es_admin)document.getElementById("btn_admin").style.display="";}catch(e){}})();
 </script>
 </body>
 </html>

@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - Administración</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+button{background:var(--primary);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;}
+button.secondary{background:#dbeafe;color:#1e3a8a;border:1px solid #93c5fd;font-weight:600;}
+input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;}
+#toolbar{display:flex;gap:8px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center;}
+#toolbar .spacer{flex:1;} #toolbar b{color:#1e3a8a;font-size:15px;margin-right:8px;}
+.tabs{display:flex;gap:2px;padding:12px 24px 0;border-bottom:1px solid var(--border);background:var(--card);flex-wrap:wrap;}
+.tab{background:none;color:var(--muted);padding:10px 16px;font-weight:600;border-radius:0;border-bottom:2px solid transparent;}
+.tab.activa{color:var(--primary);border-bottom-color:var(--primary);}
+.panel{display:none;padding:20px 24px;} .panel.activa{display:block;}
+.tarjetas{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px;}
+.tarjeta{background:var(--card);border:1px solid #bfdbfe;border-left:5px solid #2563eb;border-radius:8px;padding:14px 16px;cursor:pointer;}
+.tarjeta .n{font-size:30px;font-weight:700;color:#1e3a8a;} .tarjeta .t{font-size:13px;color:var(--muted);}
+.tarjeta.aviso{border-left-color:#d97706;background:#fffbeb;} .tarjeta.ok{border-left-color:#16a34a;}
+.barra{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid #bfdbfe;border-radius:8px;overflow:hidden;font-size:13px;}
+th{background:#dbeafe;color:#1e3a8a;text-align:left;padding:9px 8px;} td{padding:8px;border-top:1px solid #dbeafe;vertical-align:top;}
+tr.sin td:first-child{border-left:5px solid #d97706;} tr.con td:first-child{border-left:5px solid #16a34a;}
+tr.dia th{background:#eff6ff;font-size:12px;}
+.chip{display:inline-block;background:#dbeafe;color:#1e3a8a;border-radius:12px;padding:2px 4px 2px 10px;margin:0 4px 4px 0;font-size:12px;}
+.chip button{background:none;color:#1e3a8a;padding:0 6px;font-size:14px;}
+.muted{color:var(--muted);font-size:13px;}
+.caja{background:var(--card);border:1px dashed #93c5fd;border-radius:8px;padding:16px;max-width:760px;line-height:1.5;}
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <b>ALMMA · Administración</b>
+  <button class="secondary" onclick="location.href='pedidos.html'">Órdenes</button>
+  <button class="secondary" onclick="location.href='sistema.html'">Sistema</button>
+  <button class="secondary" onclick="location.href='facturas.html'">Facturación</button>
+  <div class="spacer"></div>
+  <span id="quien" class="muted"></span>
+  <button class="secondary" onclick="logout()">Salir</button>
+</div>
+<div class="tabs">
+  <button class="tab activa" data-t="resumen">Resumen</button>
+  <button class="tab" data-t="montajes">Montajes</button>
+  <button class="tab" data-t="usuarios">Usuarios y accesos</button>
+  <button class="tab" data-t="control">Control del sistema</button>
+</div>
+
+<div class="panel activa" id="p_resumen">
+  <p class="muted">Pulsa una tarjeta para ir a esos pedidos. Se cuentan los pedidos de los últimos 4 años.</p>
+  <div class="tarjetas" id="tarjetas"><span class="muted">Cargando...</span></div>
+</div>
+
+<div class="panel" id="p_montajes">
+  <div class="barra">
+    <button class="secondary" onclick="moverSemana(-1)">&larr; Semana anterior</button>
+    <b id="rango_semana"></b>
+    <button class="secondary" onclick="moverSemana(1)">Semana siguiente &rarr;</button>
+    <button class="secondary" onclick="moverSemana(0)">Hoy</button>
+    <label class="muted"><input type="checkbox" id="solo_sin" onchange="pintarMontajes()"> Solo sin montador</label>
+  </div>
+  <div id="montajes_tabla"><span class="muted">Cargando...</span></div>
+</div>
+
+<div class="panel" id="p_usuarios">
+  <div id="u_aviso" class="caja" style="display:none"></div>
+  <div class="barra"><button onclick="abrirNuevo()">+ Nueva cuenta</button><span class="muted">Bloquear no borra nada: solo impide entrar.</span></div>
+  <div id="u_nuevo" class="caja" style="display:none;margin-bottom:14px">
+    <div class="barra">
+      <select id="n_tipo" onchange="cambiaTipo()">
+        <option value="oficina">Oficina / almacén</option><option value="montador">Montador</option>
+        <option value="dependiente">Dependiente de tienda</option><option value="admin_tienda">Administrador de tienda</option><option value="admin">Administrador</option></select>
+      <select id="n_vinculo" style="display:none"></select>
+      <input id="n_nombre" placeholder="Nombre">
+      <input id="n_email" type="email" placeholder="Email">
+      <input id="n_pass" type="text" placeholder="Contraseña (mín. 10)">
+      <button onclick="crearCuenta()">Crear</button>
+    </div>
+    <span class="muted">Apunta la contraseña y entrégasela a la persona; luego podrá pedir cambiarla.</span>
+  </div>
+  <div id="u_tabla"><span class="muted">Cargando...</span></div>
+</div>
+
+<div class="panel" id="p_control">
+  <h3 style="margin-top:0">Avisos de datos <span class="muted">(últimos 4 años)</span></h3>
+  <div class="tarjetas" id="c_avisos"><span class="muted">Cargando...</span></div>
+  <h3>Accesos</h3>
+  <div id="c_accesos"><span class="muted">Cargando...</span></div>
+  <h3>Copias de seguridad</h3>
+  <div class="caja"><b>Sin copia automática todavía.</b> La base de datos de ALMMA no se copia sola: hay que montar la copia diaria
+  (necesita un repositorio privado). Mientras tanto, la copia del servidor antiguo en tu Mac es la única de los datos históricos.</div>
+</div>
+
+<script>
+const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
+let montadores = [], semanaIni = lunes(new Date()), ordenesSemana = [];
+
+function lunes(d){ d = new Date(d.getFullYear(), d.getMonth(), d.getDate()); const w = (d.getDay()+6)%7; d.setDate(d.getDate()-w); return d; }
+function iso(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function esc(t){ return String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+async function logout(){ await client.auth.signOut(); location.href = "login.html"; }
+
+document.querySelectorAll(".tab").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("activa", x === b));
+  document.querySelectorAll(".panel").forEach(p => p.classList.toggle("activa", p.id === "p_" + b.dataset.t));
+});
+
+async function iniciar(){
+  const { data:{ user } } = await client.auth.getUser();
+  if (!user) { location.href = "login.html"; return; }
+  const { data: st } = await client.from("staff").select("nombre, solo_deca, solo_montajes").eq("user_id", user.id).maybeSingle();
+  if (!st || st.solo_deca || st.solo_montajes) { location.href = "login.html"; return; }
+  document.getElementById("quien").textContent = st.nombre || user.email;
+  const r = await client.from("montadores").select("id, nombre, activo, especial").eq("activo", true).order("especial").order("nombre");
+  montadores = r.data || [];
+  cargarResumen(); cargarMontajes(); cargarUsuarios(); cargarControl();
+}
+
+/* ---------- Resumen ---------- */
+async function contar(f){ let q = client.from("ordenes").select("anyo", { count:"exact", head:true }).gte("anyo", new Date().getFullYear()-3); q = f(q); const { count, error } = await q; return error ? "?" : count; }
+async function cargarResumen(){
+  const hoy = iso(new Date()), ini = iso(semanaIni), fin = iso(new Date(+semanaIni + 7*864e5));
+  const defs = [
+    ["En proceso (esperando mercancía)", q => q.eq("estado","en_proceso"), "", "pedidos.html"],
+    ["Recepción parcial", q => q.eq("estado","recepcionado_parcial"), "", "pedidos.html"],
+    ["Listos para montar", q => q.eq("estado","recepcionado_total"), "ok", "pedidos.html"],
+    ["Agendados", q => q.eq("estado","agendado"), "", "pedidos.html"],
+    ["Con incidencia abierta", q => q.eq("estado","incidencia"), "aviso", "pedidos.html"],
+    ["Montajes esta semana", q => q.gte("fecha_prev_montaje", ini).lt("fecha_prev_montaje", fin), "", "#montajes"],
+    ["Montajes pasados sin completar", q => q.lt("fecha_prev_montaje", hoy).in("estado",["agendado","recepcionado_total","recepcionado_parcial"]), "aviso", "pedidos.html"],
+    ["Completados sin facturar", q => q.eq("estado","completado").eq("tipo_orden",1).neq("facturada","S"), "", "facturas.html?tab=pendiente"]
+  ];
+  const nums = await Promise.all(defs.map(d => contar(d[1])));
+  document.getElementById("tarjetas").innerHTML = defs.map((d,i) =>
+    '<div class="tarjeta '+d[2]+'" onclick="irTarjeta(\''+d[3]+'\')"><div class="n">'+nums[i]+'</div><div class="t">'+d[0]+'</div></div>').join("");
+}
+function irTarjeta(u){ if (u === "#montajes") document.querySelector('[data-t="montajes"]').click(); else location.href = u; }
+
+/* ---------- Montajes de la semana ---------- */
+function moverSemana(n){ semanaIni = n === 0 ? lunes(new Date()) : new Date(semanaIni.getFullYear(), semanaIni.getMonth(), semanaIni.getDate() + 7*n); cargarMontajes(); }
+async function cargarMontajes(){
+  const fin = new Date(semanaIni.getFullYear(), semanaIni.getMonth(), semanaIni.getDate()+7);
+  document.getElementById("rango_semana").textContent = semanaIni.toLocaleDateString("es-ES") + " – " + new Date(+fin-864e5).toLocaleDateString("es-ES");
+  const { data, error } = await client.from("ordenes")
+    .select("anyo, orden, nombre_cli, localidad_cli, estado, fecha_prev_montaje, ordenes_montadores(montador_id)")
+    .gte("fecha_prev_montaje", iso(semanaIni)).lt("fecha_prev_montaje", iso(fin)).order("fecha_prev_montaje");
+  if (error) { document.getElementById("montajes_tabla").innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
+  ordenesSemana = data || []; pintarMontajes();
+}
+function pintarMontajes(){
+  const soloSin = document.getElementById("solo_sin").checked, nom = Object.fromEntries(montadores.map(m => [m.id, m.nombre]));
+  const filas = ordenesSemana.filter(o => !soloSin || !o.ordenes_montadores.length);
+  if (!filas.length) { document.getElementById("montajes_tabla").innerHTML = '<span class="muted">No hay montajes con esos criterios.</span>'; return; }
+  let h = '<table><tr><th>Orden</th><th>Cliente</th><th>Localidad</th><th>Estado</th><th>Montadores</th><th>Añadir</th></tr>', dia = "";
+  for (const o of filas) {
+    const d = String(o.fecha_prev_montaje).slice(0,10);
+    if (d !== dia) { dia = d; h += '<tr class="dia"><th colspan="6">'+new Date(d+"T12:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"})+'</th></tr>'; }
+    const asig = o.ordenes_montadores.map(a => '<span class="chip">'+esc(nom[a.montador_id] || "?")+'<button title="Quitar" onclick="quitar('+o.anyo+','+o.orden+',\''+a.montador_id+'\')">×</button></span>').join("");
+    const opts = montadores.filter(m => !o.ordenes_montadores.some(a => a.montador_id === m.id)).map(m => '<option value="'+m.id+'">'+esc(m.nombre)+'</option>').join("");
+    h += '<tr class="'+(o.ordenes_montadores.length?'con':'sin')+'"><td><a href="pedidos.html?anyo='+o.anyo+'&orden='+o.orden+'">'+o.anyo+'/'+o.orden+'</a></td><td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.localidad_cli)+'</td><td>'+esc(o.estado)+'</td><td>'+(asig||'<span class="muted">Sin montador</span>')+'</td><td><select onchange="anadir('+o.anyo+','+o.orden+',this)"><option value="">Elegir...</option>'+opts+'</select></td></tr>';
+  }
+  document.getElementById("montajes_tabla").innerHTML = h + '</table>';
+}
+async function anadir(anyo, orden, sel){
+  if (!sel.value) return;
+  const { data:{ user } } = await client.auth.getUser();
+  const { error } = await client.from("ordenes_montadores").insert({ anyo, orden, montador_id: sel.value, asignado_por: user.id });
+  if (error) alert("No se pudo asignar: " + error.message); else cargarMontajes();
+}
+async function quitar(anyo, orden, mid){
+  const { error } = await client.from("ordenes_montadores").delete().eq("anyo", anyo).eq("orden", orden).eq("montador_id", mid);
+  if (error) alert("No se pudo quitar: " + error.message); else cargarMontajes();
+}
+/* ---------- Usuarios y accesos ---------- */
+async function llamar(cuerpo){
+  const { data, error } = await client.functions.invoke("admin-usuarios", { body: cuerpo });
+  if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch(_){} return { error: m }; }
+  return data;
+}
+async function cargarUsuarios(){
+  const r = await llamar({ accion:"listar" }), aviso = document.getElementById("u_aviso");
+  if (r.error) {
+    aviso.style.display = "block";
+    aviso.innerHTML = "<b>No se pudo cargar:</b> " + esc(r.error) + "<br>Si es la primera vez, falta ejecutar el SQL 54 y crear la función <code>admin-usuarios</code> en Supabase.";
+    document.getElementById("u_tabla").innerHTML = ""; return;
+  }
+  aviso.style.display = "none";
+  window._usuarios = r.usuarios; pintarAccesos();
+  const f = r.usuarios.sort((a,b) => (a.tipo+a.nombre).localeCompare(b.tipo+b.nombre));
+  let h = "<table><tr><th>Nombre</th><th>Email</th><th>Tipo</th><th>Último acceso</th><th>Estado</th><th></th></tr>";
+  for (const x of f) h += '<tr class="'+(x.bloqueado?'sin':'con')+'"><td>'+esc(x.nombre)+(x.montador?' <span class="muted">('+esc(x.montador)+')</span>':'')+'</td><td>'+esc(x.email)+'</td><td>'+esc(x.tipo)+'</td><td>'+(x.ultimo_acceso?new Date(x.ultimo_acceso).toLocaleString("es-ES"):'<span class="muted">Nunca</span>')+'</td><td>'+(x.bloqueado?'Bloqueado':'Activo')+'</td><td><button class="secondary" onclick="cambiarBloqueo(\''+x.user_id+'\','+x.bloqueado+')">'+(x.bloqueado?'Desbloquear':'Bloquear')+'</button> <button class="secondary" onclick="cambiarPass(\''+x.user_id+'\')">Contraseña</button></td></tr>';
+  document.getElementById("u_tabla").innerHTML = h + "</table>";
+}
+async function cambiarBloqueo(id, bloqueado){
+  if (!bloqueado && !confirm("¿Bloquear esta cuenta? No podrá entrar hasta que la desbloquees.")) return;
+  const r = await llamar({ accion: bloqueado ? "desbloquear" : "bloquear", user_id:id });
+  if (r.error) alert(r.error); else cargarUsuarios();
+}
+async function cambiarPass(id){
+  const p = prompt("Nueva contraseña (mínimo 10 caracteres):"); if (!p) return;
+  const r = await llamar({ accion:"password", user_id:id, password:p });
+  alert(r.error || "Contraseña cambiada.");
+}
+async function abrirNuevo(){ document.getElementById("u_nuevo").style.display = "block"; cambiaTipo(); }
+async function cambiaTipo(){
+  const t = document.getElementById("n_tipo").value, sel = document.getElementById("n_vinculo");
+  sel.style.display = (t === "montador" || t === "dependiente" || t === "admin_tienda") ? "" : "none";
+  if (t === "montador") {
+    const { data } = await client.from("montadores").select("id, nombre").eq("activo", true).eq("especial", false).is("staff_user_id", null).order("nombre");
+    sel.innerHTML = '<option value="">¿Qué montador?</option>' + (data||[]).map(m => '<option value="'+m.id+'" data-n="'+esc(m.nombre)+'">'+esc(m.nombre)+'</option>').join("");
+  } else if (t === "dependiente" || t === "admin_tienda") {
+    const { data } = await client.from("dependientes").select("id, nombre").is("user_id", null).order("nombre").limit(500);
+    sel.innerHTML = '<option value="">¿Qué dependiente?</option>' + (data||[]).map(m => '<option value="'+m.id+'" data-n="'+esc(m.nombre)+'">'+esc(m.nombre)+'</option>').join("");
+  }
+}
+async function crearCuenta(){
+  const t = document.getElementById("n_tipo").value, v = document.getElementById("n_vinculo");
+  let nombre = document.getElementById("n_nombre").value.trim();
+  if (!nombre && v.selectedOptions[0]) nombre = v.selectedOptions[0].dataset.n || "";
+  const r = await llamar({ accion:"crear", tipo:t, nombre, email:document.getElementById("n_email").value, password:document.getElementById("n_pass").value,
+    montador_id: t==="montador" ? v.value : undefined, dependiente_id: (t==="dependiente"||t==="admin_tienda") ? v.value : undefined });
+  if (r.error) { alert(r.error); return; }
+  ["n_nombre","n_email","n_pass"].forEach(i => document.getElementById(i).value = "");
+  document.getElementById("u_nuevo").style.display = "none"; cargarUsuarios();
+}
+/* ---------- Control del sistema ---------- */
+async function cargarControl(){
+  const desde = new Date().getFullYear()-3, hoy = iso(new Date());
+  const O = f => { let q = client.from("ordenes").select("anyo", { count:"exact", head:true }).gte("anyo", desde); return f(q); };
+  const defs = [
+    ["Órdenes sin tienda asignada", () => O(q => q.is("tienda_id", null)), "aviso"],
+    ["Órdenes sin nombre de cliente", () => O(q => q.or("nombre_cli.is.null,nombre_cli.eq.")), "aviso"],
+    ["Completadas sin fecha de montaje", () => O(q => q.eq("estado","completado").is("fecha_montaje", null)), "aviso"],
+    ["Montajes pasados sin completar", () => O(q => q.lt("fecha_prev_montaje", hoy).in("estado",["agendado","recepcionado_total","recepcionado_parcial"])), "aviso"],
+    ["Líneas sin fabricante", () => client.from("linorden").select("anyo", { count:"exact", head:true }).gte("anyo", desde).is("proveedor", null), "aviso"],
+    ["Órdenes con incidencia abierta", () => O(q => q.eq("estado","incidencia")), ""],
+    ["Montadores activos sin cuenta", () => client.from("montadores").select("id", { count:"exact", head:true }).eq("activo", true).eq("especial", false).is("staff_user_id", null), ""]
+  ];
+  const res = await Promise.all(defs.map(d => d[1]()));
+  document.getElementById("c_avisos").innerHTML = defs.map((d,i) => {
+    const n = res[i].error ? "?" : res[i].count, clase = n === 0 ? "ok" : (n === "?" ? "" : d[2]);
+    return '<div class="tarjeta '+clase+'" style="cursor:default"><div class="n">'+n+'</div><div class="t">'+d[0]+'</div></div>';
+  }).join("");
+}
+function pintarAccesos(){
+  const u = window._usuarios || [], lim = Date.now() - 30*864e5;
+  const inact = u.filter(x => !x.bloqueado && (!x.ultimo_acceso || new Date(x.ultimo_acceso).getTime() < lim));
+  const rec = u.filter(x => x.ultimo_acceso).sort((a,b) => b.ultimo_acceso.localeCompare(a.ultimo_acceso)).slice(0,10);
+  const li = (x,t) => '<li>'+esc(x.nombre || x.email)+' <span class="muted">· '+esc(x.tipo)+(t?' · '+t:'')+'</span></li>';
+  document.getElementById("c_accesos").innerHTML =
+    '<div class="caja" style="margin-bottom:12px"><b>Últimos accesos</b><ul>'+rec.map(x => li(x, new Date(x.ultimo_acceso).toLocaleString("es-ES"))).join("")+'</ul></div>'+
+    '<div class="caja"><b>Cuentas activas sin entrar en 30 días ('+inact.length+')</b><ul>'+inact.map(x => li(x, x.ultimo_acceso ? "último: "+new Date(x.ultimo_acceso).toLocaleDateString("es-ES") : "nunca")).join("")+'</ul></div>';
+}
+iniciar();
+</script>
+</body>
+</html>

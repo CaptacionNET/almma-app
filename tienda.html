@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - Mi tienda</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+button{background:var(--primary);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;}
+button.secondary{background:#dbeafe;color:#1e3a8a;border:1px solid #93c5fd;font-weight:600;}
+input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;}
+#toolbar{display:flex;gap:8px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center;}
+#toolbar .spacer{flex:1;} #toolbar b{color:#1e3a8a;font-size:15px;margin-right:8px;}
+.tabs{display:flex;gap:2px;padding:12px 24px 0;border-bottom:1px solid var(--border);background:var(--card);flex-wrap:wrap;}
+.tab{background:none;color:var(--muted);padding:10px 16px;font-weight:600;border-radius:0;border-bottom:2px solid transparent;}
+.tab.activa{color:var(--primary);border-bottom-color:var(--primary);}
+.panel{display:none;padding:20px 24px;} .panel.activa{display:block;}
+.tarjetas{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:18px;}
+.tarjeta{background:var(--card);border:1px solid #bfdbfe;border-left:5px solid #2563eb;border-radius:8px;padding:14px 16px;}
+.tarjeta .n{font-size:28px;font-weight:700;color:#1e3a8a;} .tarjeta .t{font-size:13px;color:var(--muted);}
+.tarjeta.aviso{border-left-color:#d97706;background:#fffbeb;}
+.barra{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid #bfdbfe;font-size:13px;}
+th{background:#dbeafe;color:#1e3a8a;text-align:left;padding:9px 8px;} td{padding:8px;border-top:1px solid #dbeafe;}
+tr.bloq td:first-child{border-left:5px solid #d97706;}
+.muted{color:var(--muted);font-size:13px;}
+.caja{background:var(--card);border:1px dashed #93c5fd;border-radius:8px;padding:14px;margin-bottom:14px;}
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <b>ALMMA · <span id="tienda_nombre">Mi tienda</span></b>
+  <button class="secondary" onclick="location.href='mis-pedidos.html'">Nuevo pedido</button>
+  <div class="spacer"></div>
+  <span id="quien" class="muted"></span>
+  <button class="secondary" onclick="logout()">Salir</button>
+</div>
+<div class="tabs">
+  <button class="tab activa" data-t="resumen">Resumen</button>
+  <button class="tab" data-t="ordenes">Órdenes de la tienda</button>
+  <button class="tab" data-t="facturas">Facturas</button>
+  <button class="tab" data-t="equipo">Mi equipo</button>
+</div>
+
+<div class="panel activa" id="p_resumen">
+  <div class="barra">
+    <select id="r_periodo" onchange="cargarResumen()">
+      <option value="sem">Esta semana</option><option value="sem_ant">Semana pasada</option>
+      <option value="tri">Este trimestre</option><option value="tri_ant">Trimestre anterior</option>
+      <option value="anyo">Este año</option><option value="otro">Fechas...</option></select>
+    <span id="r_fechas_otro" style="display:none"><input type="date" id="r_d" onchange="cargarResumen()"> – <input type="date" id="r_h" onchange="cargarResumen()"></span>
+    <b id="r_rango"></b>
+  </div>
+  <div class="tarjetas" id="r_tarjetas"><span class="muted">Cargando...</span></div>
+  <h3>Pedidos por dependiente en el periodo</h3>
+  <div id="r_dep"></div>
+</div>
+
+<div class="panel" id="p_ordenes">
+  <div class="barra"><input id="o_buscar" placeholder="Buscar cliente, referencia, nº..." oninput="pintarOrdenes()" style="width:320px">
+  <label class="muted"><input type="checkbox" id="o_antiguas" onchange="cargarOrdenes()"> Incluir años anteriores</label></div>
+  <div id="o_tabla"><span class="muted">Cargando...</span></div>
+</div>
+
+<div class="panel" id="p_facturas">
+  <div class="muted" style="margin-bottom:10px">Facturas emitidas a nombre de tu tienda.</div>
+  <div id="f_tabla"><span class="muted">Cargando...</span></div>
+</div>
+
+<div class="panel" id="p_equipo">
+  <div class="caja"><b>Nuevo dependiente</b>
+    <div class="barra" style="margin-top:8px">
+      <input id="n_nombre" placeholder="Nombre"><input id="n_email" type="email" placeholder="Email">
+      <input id="n_pass" placeholder="Contraseña (mín. 10)"><button onclick="crearDep()">Crear cuenta</button></div>
+    <span class="muted">Cada dependiente verá solo los pedidos que haga él.</span></div>
+  <div id="e_tabla"><span class="muted">Cargando...</span></div>
+</div>
+
+<script>
+const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
+let ordenes = [];
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const eur = n => Number(n||0).toLocaleString("es-ES",{style:"currency",currency:"EUR"});
+const iso = d => d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+async function logout(){ await client.auth.signOut(); location.href = "login.html"; }
+document.querySelectorAll(".tab").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("activa", x === b));
+  document.querySelectorAll(".panel").forEach(p => p.classList.toggle("activa", p.id === "p_" + b.dataset.t));
+});
+
+async function iniciar(){
+  const { data:{ user } } = await client.auth.getUser();
+  if (!user) { location.href = "login.html"; return; }
+  const { data: d } = await client.from("dependientes").select("nombre, es_admin_tienda, tiendas(nombre)").eq("user_id", user.id).maybeSingle();
+  if (!d || !d.es_admin_tienda) { location.href = "mis-pedidos.html"; return; }
+  document.getElementById("tienda_nombre").textContent = d.tiendas?.nombre || "Mi tienda";
+  document.getElementById("quien").textContent = d.nombre || user.email;
+  cargarResumen(); cargarOrdenes(); cargarFacturas(); cargarEquipo();
+}
+
+/* Resumen */
+function rango(p){
+  const h = new Date(), y = h.getFullYear(), m = h.getMonth(), w = (h.getDay()+6)%7;
+  const lun = new Date(y, m, h.getDate()-w), qi = Math.floor(m/3)*3;
+  if (p==="sem") return [lun, new Date(+lun+6*864e5)];
+  if (p==="sem_ant") return [new Date(+lun-7*864e5), new Date(+lun-864e5)];
+  if (p==="tri") return [new Date(y,qi,1), new Date(y,qi+3,0)];
+  if (p==="tri_ant") return [new Date(y,qi-3,1), new Date(y,qi,0)];
+  if (p==="anyo") return [new Date(y,0,1), new Date(y,11,31)];
+  return [new Date(document.getElementById("r_d").value||h), new Date(document.getElementById("r_h").value||h)];
+}
+async function cargarResumen(){
+  const p = document.getElementById("r_periodo").value;
+  document.getElementById("r_fechas_otro").style.display = p==="otro" ? "" : "none";
+  const [d,h] = rango(p);
+  document.getElementById("r_rango").textContent = d.toLocaleDateString("es-ES")+" – "+h.toLocaleDateString("es-ES");
+  const { data, error } = await client.rpc("resumen_tienda", { p_desde: iso(d), p_hasta: iso(h) });
+  if (error) { document.getElementById("r_tarjetas").innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
+  const t = [["Pedidos creados",data.ordenes_creadas,""],["Montajes completados",data.montadas,""],["Facturas emitidas",data.facturas,""],["Facturado (sin IVA)",eur(data.facturado),""],["Pedidos pendientes ahora",data.pendientes_ahora,""],["Con incidencia",data.con_incidencia,data.con_incidencia?"aviso":""]];
+  document.getElementById("r_tarjetas").innerHTML = t.map(x => '<div class="tarjeta '+x[2]+'"><div class="n">'+x[1]+'</div><div class="t">'+x[0]+'</div></div>').join("");
+  document.getElementById("r_dep").innerHTML = data.por_dependiente.length
+    ? '<table><tr><th>Dependiente</th><th>Pedidos</th></tr>'+data.por_dependiente.map(x => '<tr><td>'+esc(x.nombre||"(sin dependiente anotado)")+'</td><td>'+x.ordenes+'</td></tr>').join("")+'</table>'
+    : '<span class="muted">Sin pedidos en el periodo.</span>';
+}
+
+/* Órdenes */
+async function cargarOrdenes(){
+  let q = client.from("ordenes").select("anyo, orden, nombre_cli, num_pedido, estado, fecha_creacion, importe_total")
+    .order("anyo",{ascending:false}).order("orden",{ascending:false}).limit(1000);
+  if (!document.getElementById("o_antiguas").checked) q = q.gte("anyo", new Date().getFullYear()-3);
+  const { data, error } = await q;
+  if (error) { document.getElementById("o_tabla").innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
+  ordenes = data; pintarOrdenes();
+}
+function pintarOrdenes(){
+  const b = document.getElementById("o_buscar").value.trim().toLowerCase();
+  const f = ordenes.filter(o => !b || [o.nombre_cli,o.num_pedido,o.anyo+"/"+o.orden].join(" ").toLowerCase().includes(b)).slice(0,500);
+  document.getElementById("o_tabla").innerHTML = '<table><tr><th>Orden</th><th>Cliente</th><th>Referencia</th><th>Estado</th><th>Creada</th><th>Importe</th></tr>'+
+    f.map(o => '<tr><td>'+o.anyo+'/'+o.orden+'</td><td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.num_pedido)+'</td><td>'+esc((o.estado||"").replace(/_/g," "))+'</td><td>'+(o.fecha_creacion?new Date(o.fecha_creacion).toLocaleDateString("es-ES"):"")+'</td><td>'+eur(o.importe_total)+'</td></tr>').join("")+'</table>'+
+    '<div class="muted" style="margin-top:6px">'+f.length+' órdenes'+(ordenes.length>500?' (se muestran las 500 primeras; afina con el buscador)':'')+'</div>';
+}
+
+/* Facturas */
+async function cargarFacturas(){
+  const { data, error } = await client.from("cabfacturas").select("anyo, serie, factura, ffactura, impbruto, impiva, impneto")
+    .order("ffactura",{ascending:false}).limit(500);
+  if (error) { document.getElementById("f_tabla").innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
+  document.getElementById("f_tabla").innerHTML = data.length ? '<table><tr><th>Factura</th><th>Fecha</th><th>Base</th><th>IVA</th><th>Total</th><th></th></tr>'+
+    data.map(f => { const n = f.anyo+'-'+f.serie+'-'+f.factura; return '<tr><td>'+f.serie+'-'+f.anyo+'/'+f.factura+'</td><td>'+(f.ffactura?new Date(f.ffactura).toLocaleDateString("es-ES"):"")+'</td><td>'+eur(f.impbruto)+'</td><td>'+eur(f.impiva)+'</td><td>'+eur(f.impneto)+'</td><td><a href="factura_imprimir.html?ids='+n+'" target="_blank">Ver / imprimir</a></td></tr>'; }).join("")+'</table>'
+    : '<span class="muted">Todavía no hay facturas.</span>';
+}
+
+/* Mi equipo (usa la función admin-usuarios, limitada a tu tienda) */
+async function llamar(cuerpo){
+  const { data, error } = await client.functions.invoke("admin-usuarios", { body: cuerpo });
+  if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch(_){} return { error: m }; }
+  return data;
+}
+async function cargarEquipo(){
+  const r = await llamar({ accion:"listar" });
+  if (r.error) { document.getElementById("e_tabla").innerHTML = '<span class="muted">Error: '+esc(r.error)+'</span>'; return; }
+  document.getElementById("e_tabla").innerHTML = '<table><tr><th>Nombre</th><th>Email</th><th>Tipo</th><th>Último acceso</th><th>Estado</th><th></th></tr>'+
+    r.usuarios.map(x => '<tr class="'+(x.bloqueado?'bloq':'')+'"><td>'+esc(x.nombre)+'</td><td>'+esc(x.email)+'</td><td>'+esc(x.tipo)+'</td><td>'+(x.ultimo_acceso?new Date(x.ultimo_acceso).toLocaleString("es-ES"):"Nunca")+'</td><td>'+(x.bloqueado?"Bloqueado":"Activo")+'</td><td>'+(x.tipo==="Dependiente"?'<button class="secondary" onclick="bloqueo(\''+x.user_id+'\','+x.bloqueado+')">'+(x.bloqueado?"Desbloquear":"Bloquear")+'</button> <button class="secondary" onclick="pass(\''+x.user_id+'\')">Contraseña</button>':'')+'</td></tr>').join("")+'</table>';
+}
+async function bloqueo(id, b){ if(!b && !confirm("¿Bloquear esta cuenta?")) return; const r = await llamar({accion:b?"desbloquear":"bloquear",user_id:id}); if(r.error) alert(r.error); else cargarEquipo(); }
+async function pass(id){ const p = prompt("Nueva contraseña (mínimo 10 caracteres):"); if(!p) return; const r = await llamar({accion:"password",user_id:id,password:p}); alert(r.error||"Contraseña cambiada."); }
+async function crearDep(){
+  const r = await llamar({ accion:"crear", tipo:"dependiente", nombre:document.getElementById("n_nombre").value, email:document.getElementById("n_email").value, password:document.getElementById("n_pass").value });
+  if (r.error) { alert(r.error); return; }
+  ["n_nombre","n_email","n_pass"].forEach(i => document.getElementById(i).value = ""); cargarEquipo();
+}
+iniciar();
+</script>
+</body>
+</html>

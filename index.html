@@ -85,8 +85,8 @@ button:disabled{opacity:.6;cursor:default;}
       const { data: staffRow } = await client.from("staff").select("user_id, solo_deca, solo_montajes").eq("user_id", user.id).maybeSingle();
       if (staffRow) { window.location.href = staffRow.solo_deca ? "deca.html" : staffRow.solo_montajes ? "montador.html" : "pedidos.html"; return; }
 
-      const { data: depRow } = await client.from("dependientes").select("id").eq("user_id", user.id).maybeSingle();
-      if (depRow) { window.location.href = "mis-pedidos.html"; return; }
+      const { data: depRow } = await client.from("dependientes").select("id, es_admin_tienda").eq("user_id", user.id).maybeSingle();
+      if (depRow) { window.location.href = depRow.es_admin_tienda ? "tienda.html" : "mis-pedidos.html"; return; }
 
       await client.auth.signOut();
       mostrarError("Esta cuenta no tiene acceso a la app de ALMMA.");
