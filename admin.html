@@ -354,7 +354,7 @@ async function imprimirHoja(dia, equipo, btn){
     const F = await doc.embedFont(StandardFonts.Helvetica), B = await doc.embedFont(StandardFonts.HelveticaBold);
     const qr = await doc.embedPng(await fetch(generarQrDataUrl(urlPublica, 300)).then(r => r.arrayBuffer()));
     const W = 842, H = 595, M = 30, fechaLarga = new Date(dia + "T12:00").toLocaleDateString("es-ES", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
-    const COL = { hora:M, orden:66, pedido:118, cli:222, tel:462, prov:545 }, L = { bul:66, ubi:100, desc:178, cant:500, fab:540 };
+    const COL = { hora:M, orden:66, pedido:118, cli:222, tel:460, prov:548 }, L = { bul:66, ubi:100, desc:178, cant:500, fab:540 };
     let page, y;
     const t = (s, x, yy, sz = 8.5, f = F) => page.drawText(limpiar(s), { x, y: yy, size: sz, font: f, color: rgb(0,0,0) });
     const nueva = () => {
@@ -382,7 +382,7 @@ async function imprimirHoja(dia, equipo, btn){
       t(o.horamont || "-", COL.hora, y, 9, B); t(o.anyo + "/" + o.orden, COL.orden, y, 9, B);
       ped.forEach((s,i) => t(s, COL.pedido, y - i*10.5, 8.5));
       nom.forEach((s,i) => t(s, COL.cli, y - i*10.5, 9, B));
-      t([o.telefono_cli, o.telefono2_cli].filter(Boolean).join(" / "), COL.tel, y, 8.5);
+      [o.telefono_cli, o.telefono2_cli].filter(Boolean).forEach((s,i) => t(s, COL.tel, y - i*10.5, 8.5));
       envolver(F, 8.5, o.tiendas?.nombre || "", 245).slice(0,2).forEach((s,i) => t(s, COL.prov, y - i*10.5, 8.5));
       let yy = y - nom.length * 10.5 - 1; [...dir, ...obs].forEach((s,i) => { t(s, COL.cli, yy, 8.5, i >= dir.length ? B : F); yy -= 10.5; });
       y = Math.min(yy, y - Math.max(ped.length, 2) * 10.5 - 2);
