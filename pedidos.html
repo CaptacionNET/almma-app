@@ -133,10 +133,10 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .leyenda-listado span{border-left:5px solid var(--c,#94a3b8);padding-left:6px;}
 .mini-list .item{border-left:5px solid #2563eb;background:#f9fbff;border-color:#bfdbfe;border-left-color:#2563eb;}
 .estado-terminado_incidencia{background:#fff7ed;color:#9a3412;}
-/* color de toda la fila según el estado: rojo suave = montada y finalizada, naranja suave = completa sin montar, blanco = en proceso */
+/* color de toda la fila según el estado: verde suave = montada y finalizada, naranja suave = completa sin montar, blanco = en proceso */
 #tabla_pedidos .tabulator-row.tabulator-row-even,#tabla_montajes .tabulator-row.tabulator-row-even{background:#fff;}
-.tabulator .tabulator-row.fila-finalizada,.tabulator .tabulator-row.tabulator-row-even.fila-finalizada{background:#fde8e8 !important;}
-.tabulator .tabulator-row.fila-finalizada:hover{background:#fbd5d5 !important;}
+.tabulator .tabulator-row.fila-finalizada,.tabulator .tabulator-row.tabulator-row-even.fila-finalizada{background:#dcfce7 !important;}
+.tabulator .tabulator-row.fila-finalizada:hover{background:#bbf7d0 !important;}
 .tabulator .tabulator-row.fila-completa,.tabulator .tabulator-row.tabulator-row-even.fila-completa{background:#ffeedd !important;}
 .tabulator .tabulator-row.fila-completa:hover{background:#ffe0c2 !important;}
 .leyenda-listado .sw-leyenda{display:inline-flex;align-items:center;gap:6px;border-left:none;padding-left:0;}
@@ -1202,7 +1202,8 @@ async function cargarLineas() {
   tbody.innerHTML = "<tr><th>Artículo</th><th>Cant.</th><th>Importe</th><th>%</th><th>A cobrar</th><th>Ubicación</th><th>Albarán prov.</th><th>Recibido</th><th></th></tr>" +
     (lineas || []).map(l => {
       const recibida = !!l.recibido_at;
-      const boton = recibida
+      const boton = l.tipolinea === 4 ? ""   // las líneas de importes no se reciben: no llevan botón
+        : recibida
         ? `<span class="pill-recibida">${new Date(l.recibido_at).toLocaleDateString("es-ES")}</span> <button class="secondary btn-mini" onclick="marcarRecibida(${l.linea}, false)">Deshacer</button>`
         : `<button class="btn-mini" onclick="marcarRecibida(${l.linea}, true)">Marcar recibida</button>`;
       const claseTipo = [1, 2, 3, 4].includes(l.tipolinea) ? `lin-t${l.tipolinea}` : "";
@@ -1537,7 +1538,7 @@ comprobarSesion();
                    ["agendado", "Agendado", "#7c3aed"], ["completado", "Completado", "#16a34a"], ["incidencia", "Incidencia", "#dc2626"], ["terminado_incidencia", "Terminado con incidencia", "#9a3412"]];
   const pon = (id, items) => { const el = document.getElementById(id); if (el) el.innerHTML = items.map(([c, t]) => `<span style="--c:${c}">${t}</span>`).join(""); };
   const ley = document.getElementById("leyenda_estados");
-  if (ley) ley.innerHTML = [["#fde8e8", "Montada y finalizada"], ["#ffeedd", "Completa (pendiente de montar)"], ["#ffffff", "En proceso"]]
+  if (ley) ley.innerHTML = [["#dcfce7", "Montada y finalizada"], ["#ffeedd", "Completa (pendiente de montar)"], ["#ffffff", "En proceso"]]
     .map(([c, t]) => `<span class="sw-leyenda"><i style="background:${c}"></i>${t}</span>`).join("");
   pon("leyenda_recibido", [["#16a34a", "Recibido"], ["#d97706", "Pendiente de recibir"]]);
   pon("leyenda_entradas", [["#16a34a", "Enlazada con su orden (exacta)"], ["#94a3b8", "Deducida por la referencia de pedido (entrada antigua)"]]);
