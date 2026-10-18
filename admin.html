@@ -62,10 +62,14 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
   <p class="muted">Pulsa una cifra para ver las órdenes. Se cuentan los pedidos de los últimos 4 años.</p>
   <div class="tarjetas" id="tarjetas"><span class="muted">Cargando...</span></div>
   <h3>Facturación por tienda</h3>
-  <div class="barra"><select id="ft_periodo" onchange="cargarFactTiendas()">
-    <option value="mes">Este mes</option><option value="mes_ant">Mes anterior</option><option value="tri">Este trimestre</option>
-    <option value="tri_ant">Trimestre anterior</option><option value="anyo">Este año</option><option value="anyo_ant">Año anterior</option></select>
-    <b id="ft_rango"></b><span class="muted">Facturas emitidas, sin proformas.</span></div>
+  <div class="barra">
+    <select id="ft_modo" onchange="cambiaModoFact()">
+      <option value="trimestre">Por trimestre</option><option value="mes">Por mes</option>
+      <option value="anyo">Año completo</option><option value="rango">Rango de fechas</option></select>
+    <select id="ft_anyo" onchange="cargarFactTiendas()"></select>
+    <select id="ft_sub" onchange="cargarFactTiendas()"></select>
+    <span id="ft_rango_inputs" style="display:none"><input type="date" id="ft_d" onchange="cargarFactTiendas()"> – <input type="date" id="ft_h" onchange="cargarFactTiendas()"></span>
+    <span class="muted">Facturas emitidas, sin proformas. «Todos» saca una columna por periodo.</span></div>
   <div id="ft_tabla"></div>
 </div>
 
@@ -186,41 +190,65 @@ function cargarResumen(){
     { t:"Completados sin facturar", f:q => q.eq("estado","completado").eq("tipo_orden",1).or("facturada.is.null,facturada.neq.S"), clase:"" }
   ];
   pintarTarjetas("tarjetas", defsR, "r");
-  cargarFactTiendas();
+  iniciarFact();
 }
 
 /* ---------- Facturación por tienda ---------- */
-function rangoFact(p){
-  const h = new Date(), y = h.getFullYear(), m = h.getMonth(), qi = Math.floor(m/3)*3;
-  if (p === "mes") return [new Date(y,m,1), new Date(y,m+1,0)];
-  if (p === "mes_ant") return [new Date(y,m-1,1), new Date(y,m,0)];
-  if (p === "tri") return [new Date(y,qi,1), new Date(y,qi+3,0)];
-  if (p === "tri_ant") return [new Date(y,qi-3,1), new Date(y,qi,0)];
-  if (p === "anyo_ant") return [new Date(y-1,0,1), new Date(y-1,11,31)];
-  return [new Date(y,0,1), new Date(y,11,31)];
+const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+function iniciarFact(){
+  const y = new Date().getFullYear(), sel = document.getElementById("ft_anyo");
+  for (let a = y; a >= 2004; a--) sel.innerHTML += '<option value="'+a+'">'+a+'</option>';
+  cambiaModoFact();
+}
+function cambiaModoFact(){
+  const modo = document.getElementById("ft_modo").value, sub = document.getElementById("ft_sub"), hoy = new Date();
+  document.getElementById("ft_anyo").style.display = modo === "rango" ? "none" : "";
+  document.getElementById("ft_rango_inputs").style.display = modo === "rango" ? "" : "none";
+  sub.style.display = (modo === "trimestre" || modo === "mes") ? "" : "none";
+  if (modo === "trimestre") { sub.innerHTML = '<option value="todos">Todos los trimestres</option>' + [1,2,3,4].map(q => '<option value="'+q+'">'+q+'º trimestre</option>').join(""); sub.value = String(Math.floor(hoy.getMonth()/3)+1); }
+  if (modo === "mes") { sub.innerHTML = '<option value="todos">Todos los meses</option>' + MESES.map((m,i) => '<option value="'+(i+1)+'">'+m+'</option>').join(""); sub.value = String(hoy.getMonth()+1); }
+  if (modo === "rango" && !document.getElementById("ft_d").value) { document.getElementById("ft_d").value = iso(new Date(hoy.getFullYear(), 0, 1)); document.getElementById("ft_h").value = iso(hoy); }
+  cargarFactTiendas();
+}
+function periodosFact(){
+  const modo = document.getElementById("ft_modo").value, y = +document.getElementById("ft_anyo").value, sub = document.getElementById("ft_sub").value, P = [];
+  if (modo === "rango") return [{ et:"Rango", d:new Date(document.getElementById("ft_d").value+"T12:00"), h:new Date(document.getElementById("ft_h").value+"T12:00") }];
+  if (modo === "anyo") return [{ et:String(y), d:new Date(y,0,1), h:new Date(y,11,31) }];
+  if (modo === "trimestre") for (let q = 1; q <= 4; q++) { if (sub === "todos" || +sub === q) P.push({ et:q+"T "+y, d:new Date(y,(q-1)*3,1), h:new Date(y,q*3,0) }); }
+  if (modo === "mes") for (let m = 1; m <= 12; m++) { if (sub === "todos" || +sub === m) P.push({ et:MESES[m-1].slice(0,3)+" "+y, d:new Date(y,m-1,1), h:new Date(y,m,0) }); }
+  return P;
 }
 async function cargarFactTiendas(){
-  const [d,h] = rangoFact(document.getElementById("ft_periodo").value), cont = document.getElementById("ft_tabla");
-  document.getElementById("ft_rango").textContent = d.toLocaleDateString("es-ES")+" – "+h.toLocaleDateString("es-ES");
+  const P = periodosFact(), cont = document.getElementById("ft_tabla");
+  if (!P.length || isNaN(+P[0].d) || isNaN(+P[P.length-1].h)) { cont.innerHTML = '<span class="muted">Elige las fechas.</span>'; return; }
+  const desde = iso(P[0].d), hasta = iso(P[P.length-1].h);
   cont.innerHTML = '<span class="muted">Cargando...</span>';
   const filas = [];
-  for (let desde = 0; ; desde += 1000) {
-    const { data, error } = await client.from("cabfacturas").select("tienda_id, impbruto, impiva, impneto, tiendas!tienda_id(nombre)")
-      .neq("serie", 5).gte("ffactura", iso(d)).lte("ffactura", iso(h)).order("anyo").order("serie").order("factura").range(desde, desde + 999);
+  for (let ini = 0; ; ini += 1000) {
+    const { data, error } = await client.from("cabfacturas").select("tienda_id, ffactura, impbruto, impiva, impneto, tiendas!tienda_id(nombre)")
+      .neq("serie", 5).gte("ffactura", desde).lt("ffactura", iso(new Date(+P[P.length-1].h + 864e5))).order("anyo").order("serie").order("factura").range(ini, ini + 999);
     if (error) { cont.innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
     filas.push(...data); if (data.length < 1000) break;
   }
-  const por = {};
+  const por = {}, vacio = () => ({ n:0, base:0, iva:0, total:0 });
   for (const f of filas) {
-    const k = f.tienda_id || "sin", r = por[k] ||= { nombre: f.tiendas?.nombre || "(sin tienda enlazada)", n:0, base:0, iva:0, total:0 };
-    r.n++; r.base += +f.impbruto || 0; r.iva += +f.impiva || 0; r.total += +f.impneto || 0;
+    const fd = String(f.ffactura).slice(0,10), i = P.findIndex(p => fd >= iso(p.d) && fd <= iso(p.h)); if (i < 0) continue;
+    const k = f.tienda_id || "sin", r = por[k] ||= { nombre: f.tiendas?.nombre || "(sin tienda enlazada)", per: P.map(vacio), t: vacio() };
+    for (const x of [r.per[i], r.t]) { x.n++; x.base += +f.impbruto || 0; x.iva += +f.impiva || 0; x.total += +f.impneto || 0; }
   }
-  const lista = Object.values(por).sort((a,b) => b.total - a.total), T = lista.reduce((s,r) => ({ n:s.n+r.n, base:s.base+r.base, iva:s.iva+r.iva, total:s.total+r.total }), { n:0, base:0, iva:0, total:0 });
-  const eur = n => n.toLocaleString("es-ES",{style:"currency",currency:"EUR"});
-  cont.innerHTML = lista.length ? '<table><tr><th>Tienda</th><th>Facturas</th><th>Base</th><th>IVA</th><th>Total</th></tr>'+
-    lista.map(r => '<tr><td>'+esc(r.nombre)+'</td><td>'+r.n+'</td><td>'+eur(r.base)+'</td><td>'+eur(r.iva)+'</td><td>'+eur(r.total)+'</td></tr>').join("")+
-    '<tr style="font-weight:700;background:#eff6ff"><td>TOTAL ('+lista.length+' tiendas)</td><td>'+T.n+'</td><td>'+eur(T.base)+'</td><td>'+eur(T.iva)+'</td><td>'+eur(T.total)+'</td></tr></table>'
-    : '<span class="muted">No hay facturas en ese periodo (las proformas de la serie 5 no cuentan).</span>';
+  const lista = Object.values(por).sort((a,b) => b.t.total - a.t.total), eur = n => n.toLocaleString("es-ES",{style:"currency",currency:"EUR"});
+  if (!lista.length) { cont.innerHTML = '<span class="muted">No hay facturas en ese periodo (las proformas de la serie 5 no cuentan).</span>'; return; }
+  const TT = P.map(() => 0); let G = vacio();
+  lista.forEach(r => { r.per.forEach((x,i) => TT[i] += x.total); G.n += r.t.n; G.base += r.t.base; G.iva += r.t.iva; G.total += r.t.total; });
+  if (P.length === 1) {
+    cont.innerHTML = '<table><tr><th>Tienda</th><th>Facturas</th><th>Base</th><th>IVA</th><th>Total</th></tr>'+
+      lista.map(r => '<tr><td>'+esc(r.nombre)+'</td><td>'+r.t.n+'</td><td>'+eur(r.t.base)+'</td><td>'+eur(r.t.iva)+'</td><td>'+eur(r.t.total)+'</td></tr>').join("")+
+      '<tr style="font-weight:700;background:#eff6ff"><td>TOTAL ('+lista.length+' tiendas)</td><td>'+G.n+'</td><td>'+eur(G.base)+'</td><td>'+eur(G.iva)+'</td><td>'+eur(G.total)+'</td></tr></table>';
+  } else {
+    cont.innerHTML = '<div class="muted" style="margin-bottom:6px">Importes con IVA incluido, por tienda y periodo.</div><table><tr><th>Tienda</th>'+P.map(p => '<th>'+p.et+'</th>').join("")+'<th>Total</th></tr>'+
+      lista.map(r => '<tr><td>'+esc(r.nombre)+'</td>'+r.per.map(x => '<td>'+(x.n ? eur(x.total) : '<span class="muted">—</span>')+'</td>').join("")+'<td><b>'+eur(r.t.total)+'</b></td></tr>').join("")+
+      '<tr style="font-weight:700;background:#eff6ff"><td>TOTAL ('+lista.length+' tiendas)</td>'+TT.map(t => '<td>'+eur(t)+'</td>').join("")+'<td>'+eur(G.total)+'</td></tr></table>';
+  }
 }
 
 /* ---------- Montajes de la semana ---------- */
