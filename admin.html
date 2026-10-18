@@ -95,6 +95,9 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
       <select id="n_tipo" onchange="cambiaTipo()">
         <option value="oficina">Oficina / almacén</option><option value="montador">Montador</option>
         <option value="dependiente">Dependiente de tienda</option><option value="admin_tienda">Administrador de tienda</option><option value="admin">Administrador</option></select>
+      <span id="n_tienda_caja" style="display:none">
+        <input id="n_tienda_buscar" placeholder="1º Buscar tienda..." oninput="filtrarTiendas()" style="width:170px">
+        <select id="n_tienda" onchange="cargaDependientes()"></select></span>
       <select id="n_vinculo" style="display:none"></select>
       <input id="n_nombre" placeholder="Nombre">
       <input id="n_email" type="email" placeholder="Email">
@@ -437,23 +440,41 @@ async function cambiarPass(id){
   alert(r.error || "Contraseña cambiada.");
 }
 async function abrirNuevo(){ document.getElementById("u_nuevo").style.display = "block"; cambiaTipo(); }
+let tiendasCache = null;
+const norm = t => String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
 async function cambiaTipo(){
-  const t = document.getElementById("n_tipo").value, sel = document.getElementById("n_vinculo");
-  sel.style.display = (t === "montador" || t === "dependiente" || t === "admin_tienda") ? "" : "none";
+  const t = document.getElementById("n_tipo").value, sel = document.getElementById("n_vinculo"), esTienda = (t === "dependiente" || t === "admin_tienda");
+  document.getElementById("n_tienda_caja").style.display = esTienda ? "" : "none";
+  sel.style.display = (t === "montador" || esTienda) ? "" : "none";
   if (t === "montador") {
     const { data } = await client.from("montadores").select("id, nombre").eq("activo", true).eq("especial", false).is("staff_user_id", null).order("nombre");
     sel.innerHTML = '<option value="">¿Qué montador?</option>' + (data||[]).map(m => '<option value="'+m.id+'" data-n="'+esc(m.nombre)+'">'+esc(m.nombre)+'</option>').join("");
-  } else if (t === "dependiente" || t === "admin_tienda") {
-    const { data } = await client.from("dependientes").select("id, nombre").is("user_id", null).order("nombre").limit(500);
-    sel.innerHTML = '<option value="">¿Qué dependiente?</option>' + (data||[]).map(m => '<option value="'+m.id+'" data-n="'+esc(m.nombre)+'">'+esc(m.nombre)+'</option>').join("");
+  } else if (esTienda) {
+    if (!tiendasCache) { const { data } = await client.from("tiendas").select("id, nombre").order("nombre"); tiendasCache = data || []; }
+    filtrarTiendas();
   }
+}
+function filtrarTiendas(){
+  const q = norm(document.getElementById("n_tienda_buscar").value), sel = document.getElementById("n_tienda");
+  const l = (tiendasCache || []).filter(x => !q || norm(x.nombre).includes(q)).slice(0, 200);
+  sel.innerHTML = '<option value="">— Elige la tienda —</option>' + l.map(x => '<option value="'+x.id+'">'+esc(x.nombre)+'</option>').join("");
+  if (l.length === 1) sel.value = l[0].id;
+  cargaDependientes();
+}
+async function cargaDependientes(){
+  const tid = document.getElementById("n_tienda").value, sel = document.getElementById("n_vinculo");
+  if (!tid) { sel.innerHTML = '<option value="">Primero elige la tienda</option>'; return; }
+  const { data } = await client.from("dependientes").select("id, nombre").eq("tienda_id", tid).is("user_id", null).order("nombre");
+  sel.innerHTML = '<option value="">+ Dependiente nuevo (usa el nombre de al lado)</option>' + (data||[]).map(m => '<option value="'+m.id+'" data-n="'+esc(m.nombre)+'">'+esc(m.nombre)+'</option>').join("");
 }
 async function crearCuenta(){
   const t = document.getElementById("n_tipo").value, v = document.getElementById("n_vinculo");
   let nombre = document.getElementById("n_nombre").value.trim();
   if (!nombre && v.selectedOptions[0]) nombre = v.selectedOptions[0].dataset.n || "";
-  const r = await llamar({ accion:"crear", tipo:t, nombre, email:document.getElementById("n_email").value, password:document.getElementById("n_pass").value,
-    montador_id: t==="montador" ? v.value : undefined, dependiente_id: (t==="dependiente"||t==="admin_tienda") ? v.value : undefined });
+  const esTienda = (t === "dependiente" || t === "admin_tienda"), tienda = document.getElementById("n_tienda").value;
+  if (esTienda && !tienda) { alert("Primero elige la tienda a la que das acceso."); return; }
+  const r = await llamar({ accion:"crear", tipo:t, tienda_id: esTienda ? tienda : undefined, nombre, email:document.getElementById("n_email").value, password:document.getElementById("n_pass").value,
+    montador_id: t==="montador" ? v.value : undefined, dependiente_id: esTienda ? (v.value || undefined) : undefined });
   if (r.error) { alert(r.error); return; }
   ["n_nombre","n_email","n_pass"].forEach(i => document.getElementById(i).value = "");
   document.getElementById("u_nuevo").style.display = "none"; cargarUsuarios();
