@@ -36,6 +36,9 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
 
 .barra{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:16px 24px;}
 .barra input{flex:1;min-width:220px;max-width:420px;}
+#filtros_articulos{align-items:flex-end;}
+#filtros_articulos label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;}
+#filtros_articulos input{min-width:200px;}
 .tabla-scroll{margin:0 24px 24px;overflow-x:auto;}
 
 #overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.15);z-index:30;}
@@ -104,6 +107,12 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
   <div class="spacer" style="flex:1;"></div>
   <button id="btn_nuevo" onclick="abrirNuevo()">+ Nuevo</button>
 </div>
+<div class="barra" id="filtros_articulos" style="display:none;">
+  <div><label>Tienda (código o nombre)</label><input id="fa_tienda" list="dl_tiendas_art" placeholder="Ej.: 354 o Tempur" oninput="buscarArticulosDebounce()" autocomplete="off"></div>
+  <div><label>Código de artículo</label><input id="fa_codigo" placeholder="Ej.: 354C21" oninput="buscarArticulosDebounce()" autocomplete="off"></div>
+  <div><label>Descripción</label><input id="fa_desc" placeholder="Ej.: colchón 150" oninput="buscarArticulosDebounce()" autocomplete="off"></div>
+  <datalist id="dl_tiendas_art"></datalist>
+</div>
 <div class="aviso-carga" id="aviso_carga" style="padding:0 24px;"></div>
 <div class="tabla-scroll"><div id="tabla_catalogo"></div></div>
 
@@ -169,6 +178,7 @@ async function cargarTiendas() {
 const CATALOGOS = {
   tiendas: {
     tabla: "tiendas", pk: "id", pkGenerado: true, titulo: "Tienda",
+    autoCodigo: { principal: "codigo", espejo: "codigo_legado" },   // código correlativo automático
     columnasLista: ["codigo_legado", "nombre", "localidad", "telefono", "listado_albaranes"],
     cabeceras: { codigo_legado: "Cód.", nombre: "Nombre", localidad: "Localidad", telefono: "Teléfono", listado_albaranes: "Albarán c/ tienda" },
     campos: [
@@ -188,6 +198,7 @@ const CATALOGOS = {
   },
   fabricantes: {
     tabla: "fabricantes", pk: "codigo", pkGenerado: false, titulo: "Fabricante",
+    autoCodigo: { principal: "codigo" },
     columnasLista: ["codigo", "nombre", "localidad", "telefono1", "email"],
     cabeceras: { codigo: "Cód.", nombre: "Nombre", localidad: "Localidad", telefono1: "Teléfono", email: "Email" },
     campos: [
@@ -219,6 +230,7 @@ const CATALOGOS = {
   },
   dependientes: {
     tabla: "dependientes", pk: "id", pkGenerado: true, titulo: "Dependiente",
+    autoCodigo: { principal: "codigo_legado", texto: true },
     columnasLista: ["codigo_legado", "nombre", "telefono1", "email", "_tienda", "_acceso"],
     cabeceras: { codigo_legado: "Cód.", nombre: "Nombre", telefono1: "Teléfono", email: "Email", _tienda: "Tienda", _acceso: "Acceso" },
     campos: [
@@ -233,8 +245,8 @@ const CATALOGOS = {
   },
   articulos: {
     tabla: "articulos", pk: "articulo", pkGenerado: false, titulo: "Artículo",
-    columnasLista: ["articulo", "descripcion", "proveedor", "importe", "serie"],
-    cabeceras: { articulo: "Código", descripcion: "Descripción", proveedor: "Tienda (cód.)", importe: "Importe", serie: "Serie" },
+    columnasLista: ["articulo", "descripcion", "_tienda", "importe", "serie"],
+    cabeceras: { articulo: "Código", descripcion: "Descripción", _tienda: "Tienda", importe: "Importe", serie: "Serie" },
     campos: [
       { id: "articulo", label: "Código de artículo", requerido: true },
       { id: "descripcion", label: "Descripción", requerido: true },
@@ -256,6 +268,11 @@ function cambiarCatalogo(cat) {
   document.querySelectorAll(".cat-tab").forEach(b => b.classList.toggle("activa", b.dataset.cat === cat));
   document.getElementById("buscador").value = "";
   document.getElementById("btn_nuevo").style.display = "inline-block";
+  // artículos: tres filtros separados (tienda, código y descripción) en lugar de un buscador único
+  const esArticulos = cat === "articulos";
+  document.getElementById("buscador").style.display = esArticulos ? "none" : "";
+  document.getElementById("filtros_articulos").style.display = esArticulos ? "flex" : "none";
+  if (esArticulos) prepararFiltrosArticulos();
   cargarCatalogo();
 }
 
@@ -263,7 +280,7 @@ async function cargarCatalogo() {
   const cfg = CATALOGOS[catalogoActivo];
   const avisoBox = document.getElementById("aviso_carga");
   if (cfg.requiereBusqueda) {
-    avisoBox.textContent = "Escribe algo en el buscador para ver artículos (hay demasiados para listarlos todos).";
+    avisoBox.textContent = "Rellena algún filtro (tienda, código o descripción) para ver artículos: hay demasiados para listarlos todos.";
     renderTabla(cfg, []);
     return;
   }
@@ -311,7 +328,58 @@ function renderTabla(cfg, data) {
   }
 }
 
+let tiendasArticulosListas = false;
+async function prepararFiltrosArticulos() {
+  if (tiendasArticulosListas) return;
+  const { data } = await client.from("tiendas").select("codigo, nombre").not("codigo", "is", null).order("nombre");
+  document.getElementById("dl_tiendas_art").innerHTML = (data || [])
+    .map(t => `<option value="${t.codigo} · ${(t.nombre || "").replace(/"/g, "&quot;")}">`).join("");
+  tiendasArticulosListas = true;
+}
+
+let debounceArticulos = null;
+function buscarArticulosDebounce() { clearTimeout(debounceArticulos); debounceArticulos = setTimeout(buscarArticulos, 300); }
+
+async function buscarArticulos() {
+  const cfg = CATALOGOS.articulos;
+  const aviso = document.getElementById("aviso_carga");
+  const tienda = document.getElementById("fa_tienda").value.trim();
+  const codigo = document.getElementById("fa_codigo").value.trim();
+  const desc = document.getElementById("fa_desc").value.trim();
+  if (!tienda && !codigo && desc.length < 2) {
+    aviso.textContent = "Rellena algún filtro (tienda, código o descripción de al menos 2 letras) para ver artículos.";
+    renderTabla(cfg, []);
+    return;
+  }
+  aviso.textContent = "Buscando...";
+  let q = client.from("articulos").select("*").order("articulo").limit(300);
+  if (codigo) q = q.ilike("articulo", `%${codigo}%`);
+  if (desc) q = q.ilike("descripcion", `%${desc}%`);
+  if (tienda) {
+    const m = tienda.match(/^(\d+)/);   // "354" o "354 · TEMPUR SEALY": manda el código
+    if (m) q = q.eq("proveedor", parseInt(m[1], 10));
+    else {
+      const { data: ts } = await client.from("tiendas").select("codigo").ilike("nombre", `%${tienda}%`).not("codigo", "is", null).limit(100);
+      const codigos = (ts || []).map(t => t.codigo);
+      if (!codigos.length) { aviso.textContent = "Ninguna tienda coincide con ese nombre."; renderTabla(cfg, []); return; }
+      q = q.in("proveedor", codigos);
+    }
+  }
+  const { data, error } = await q;
+  if (error) { aviso.textContent = "Error: " + error.message; return; }
+  const codigosTienda = [...new Set(data.map(a => a.proveedor).filter(x => x !== null && x !== undefined))];
+  const nombres = {};
+  if (codigosTienda.length) {
+    const { data: ts } = await client.from("tiendas").select("codigo, nombre").in("codigo", codigosTienda);
+    (ts || []).forEach(t => { nombres[t.codigo] = t.nombre; });
+  }
+  data.forEach(a => { a._tienda = (a.proveedor !== null && a.proveedor !== undefined) ? `${a.proveedor} · ${nombres[a.proveedor] || ""}` : ""; });
+  aviso.textContent = `${data.length} resultados` + (data.length >= 300 ? " (puede haber más: acota los filtros)" : "") + ".";
+  renderTabla(cfg, data);
+}
+
 async function buscarEnCatalogo() {
+  if (catalogoActivo === "articulos") { buscarArticulosDebounce(); return; }
   const cfg = CATALOGOS[catalogoActivo];
   const texto = document.getElementById("buscador").value.trim();
   const avisoBox = document.getElementById("aviso_carga");
@@ -352,6 +420,25 @@ async function abrirNuevo() {
   document.getElementById("overlay").style.display = "block";
 }
 
+// ¿este campo es un código que se asigna solo (siguiente número) al crear un registro nuevo?
+function esCodigoAutomatico(cfg, campoId) {
+  return !!cfg.autoCodigo && (campoId === cfg.autoCodigo.principal || campoId === cfg.autoCodigo.espejo);
+}
+
+// siguiente código correlativo: el mayor que existe + 1
+async function siguienteCodigo(cfg) {
+  const ac = cfg.autoCodigo;
+  if (ac.texto) {   // columna de texto (dependientes): se calcula sobre los valores numéricos
+    const { data, error } = await client.from(cfg.tabla).select(ac.principal).limit(10000);
+    if (error) throw error;
+    return (data || []).reduce((m, r) => { const n = parseInt(r[ac.principal], 10); return isNaN(n) ? m : Math.max(m, n); }, 0) + 1;
+  }
+  const { data, error } = await client.from(cfg.tabla).select(ac.principal)
+    .not(ac.principal, "is", null).order(ac.principal, { ascending: false }).limit(1);
+  if (error) throw error;
+  return (data && data.length ? data[0][ac.principal] : 0) + 1;
+}
+
 async function renderFormulario(cfg, registro) {
   const cont = document.getElementById("p_campos");
   let html = "";
@@ -369,6 +456,10 @@ async function renderFormulario(cfg, registro) {
       const soloLectura = campo.soloLectura ? "readonly" : "";
       const tipo = campo.tipo === "number" ? "number" : "text";
       const deshabilitadoEdicion = (campo.id === cfg.pk && registroActivo) ? "readonly" : "";
+      if (esCodigoAutomatico(cfg, campo.id) && !registroActivo) {
+        html += `<div class="campo"><label>${campo.label}</label><input id="f_${campo.id}" type="text" value="" placeholder="Se asigna solo al grabar (el siguiente número)" readonly></div>`;
+        continue;
+      }
       html += `<div class="campo"><label>${campo.label}</label><input id="f_${campo.id}" type="${tipo}" value="${valor ?? ""}" ${soloLectura} ${deshabilitadoEdicion}></div>`;
     }
   }
@@ -389,6 +480,7 @@ async function guardarRegistro() {
   const cfg = CATALOGOS[catalogoActivo];
   const valores = {};
   for (const campo of cfg.campos) {
+    if (!registroActivo && esCodigoAutomatico(cfg, campo.id)) continue;   // lo pone siguienteCodigo()
     if (campo.tipo === "checkbox") {
       valores[campo.id] = document.getElementById(`f_${campo.id}`).checked;
     } else if (campo.tipo === "select-tienda") {
@@ -403,14 +495,28 @@ async function guardarRegistro() {
   }
 
   let error;
+  let codigoAsignado = null;
   if (registroActivo) {
     ({ error } = await client.from(cfg.tabla).update(valores).eq(cfg.pk, registroActivo[cfg.pk]));
+  } else if (cfg.autoCodigo) {
+    // código correlativo automático; si otra persona coge el mismo número a la vez, se reintenta con el siguiente
+    for (let intento = 0; intento < 5; intento++) {
+      let n;
+      try { n = await siguienteCodigo(cfg); } catch (e) { error = e; break; }
+      const ac = cfg.autoCodigo;
+      const fila = { ...valores, [ac.principal]: ac.texto ? String(n) : n };
+      if (ac.espejo) fila[ac.espejo] = String(n);
+      ({ error } = await client.from(cfg.tabla).insert(fila));
+      if (!error) { codigoAsignado = n; break; }
+      if (error.code !== "23505") break;   // 23505 = código repetido
+    }
   } else {
     ({ error } = await client.from(cfg.tabla).insert(valores));
   }
   if (error) { alert("No se pudo guardar: " + error.message); return; }
   cerrarPanel();
-  cargarCatalogo();
+  if (codigoAsignado !== null) alert(`${cfg.titulo}: creado con el código ${codigoAsignado}.`);
+  if (catalogoActivo === "articulos") buscarArticulos(); else cargarCatalogo();
 }
 
 comprobarSesion();

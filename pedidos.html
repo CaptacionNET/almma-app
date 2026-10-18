@@ -79,6 +79,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .chip input{width:auto;margin:0;}
 .chip.especial{font-style:italic;}
 .chip.inactivo{opacity:.6;}
+#no_tienda_filtro.tienda-elegida{border:2px solid #1e40af;background:#eff6ff;color:#1e3a8a;font-weight:700;}
 #toolbar button:not([onclick="logout()"]){background:#dbeafe;color:#1e3a8a;border:1px solid #93c5fd;font-weight:600;}
 #toolbar button:not([onclick="logout()"]):hover{background:#bfdbfe;opacity:1;}
 #toolbar button.activo,#toolbar button.activo:hover{background:#1e40af;color:#fff;border:1px solid #1e3a8a;box-shadow:0 2px 6px rgba(30,64,175,.4);}
@@ -181,19 +182,27 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
     <h3 style="margin-top:0;">Nueva Orden</h3>
     <p id="no_error" class="error"></p>
     <div class="form-grid">
-      <div class="campo">
+      <div class="campo" style="grid-column:span 2;">
         <label for="no_tienda_filtro">Tienda <span id="no_tienda_contador" style="font-weight:normal;"></span></label>
-        <input id="no_tienda_filtro" placeholder="Escribe para filtrar las tiendas…" autocomplete="off" oninput="filtrarTiendasNuevaOrden()" onkeydown="if(event.key==='Enter'){event.preventDefault();elegirPrimeraTiendaNuevaOrden();}">
-        <select id="no_tienda" size="6" onchange="cambioTiendaNuevaOrden()" style="margin-top:6px;"></select>
-        <label style="display:flex;gap:6px;align-items:center;font-weight:normal;margin-top:6px;"><input type="checkbox" id="no_tiendas_todas" style="width:auto;" onchange="cargarListaTiendasNuevaOrden()"> Incluir tiendas sin pedidos en los últimos 4 años</label>
+        <input id="no_tienda_filtro" placeholder="Escribe para buscar y elige una tienda…" autocomplete="off"
+               oninput="alEscribirTiendaNuevaOrden()" onfocus="this.select();abrirListaTiendasNuevaOrden()"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();elegirPrimeraTiendaNuevaOrden();}">
+        <div id="no_tienda_desplegable" style="display:none;border:1px solid var(--border);border-radius:6px;background:#fff;margin-top:4px;padding:4px;">
+          <select id="no_tienda" size="6" onclick="elegirTiendaNuevaOrden()" onkeydown="if(event.key==='Enter'){event.preventDefault();elegirTiendaNuevaOrden();}" style="width:100%;border:none;"></select>
+          <label style="display:flex;gap:6px;align-items:center;font-weight:normal;margin:6px 4px 2px;"><input type="checkbox" id="no_tiendas_todas" style="width:auto;" onchange="cargarListaTiendasNuevaOrden()"> Incluir tiendas sin pedidos en los últimos 4 años</label>
+        </div>
       </div>
       <div class="campo">
         <label for="no_dependiente">Dependiente</label>
         <select id="no_dependiente"><option value="">-- sin asignar --</option></select>
       </div>
-      <div class="campo">
+      <div class="campo" style="grid-column:span 2;">
         <label for="no_tipo_orden">Tipo de Orden</label>
-        <input id="no_tipo_orden" type="number" value="1">
+        <select id="no_tipo_orden">
+          <option value="1">1 – Se factura a la tienda (lo habitual)</option>
+          <option value="2">2 – Se factura al fabricante</option>
+          <option value="3">3 – Se carga a un vendedor de la tienda (no se imputa a la tienda)</option>
+        </select>
       </div>
       <div class="campo">
         <label for="no_num_pedido">Nº Pedido</label>
@@ -260,7 +269,12 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
     <div class="form-grid">
       <div class="campo"><label>Tienda</label><select id="ch_tienda" onchange="cambioTiendaCabecera()"><option value="">-- sin asignar --</option></select></div>
       <div class="campo"><label>Dependiente</label><select id="ch_dependiente"><option value="">-- sin asignar --</option></select></div>
-      <div class="campo"><label>Tipo de Orden</label><input id="ch_tipo_orden" type="number" value="1"></div>
+      <div class="campo" style="grid-column:span 2;"><label>Tipo de Orden</label><select id="ch_tipo_orden">
+          <option value="0">0 – Sin definir (órdenes antiguas)</option>
+          <option value="1">1 – Se factura a la tienda (lo habitual)</option>
+          <option value="2">2 – Se factura al fabricante</option>
+          <option value="3">3 – Se carga a un vendedor de la tienda (no se imputa a la tienda)</option>
+        </select></div>
       <div class="campo"><label>Nº Pedido</label><input id="ch_num_pedido"></div>
     </div>
 
@@ -523,10 +537,12 @@ async function llenarSelectDependiente(tiendaId, dependienteIdActual, selectId =
   sel.value = dependienteIdActual || "";
 }
 
-// --- selector de tienda de "Nueva orden": con filtro y limitado a tiendas con pedidos en los últimos 4 años ---
+// --- selector de tienda de "Nueva orden": con filtro, limitado a tiendas con pedidos en los últimos 4 años.
+// El buscador solo se ve mientras escribes; al elegir una tienda su nombre queda marcado arriba. ---
 let tiendasNuevaOrden = [];
+let tiendaNuevaOrdenElegida = null;
 
-function sinAcentos(s) { return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase(); }
+function sinAcentos(s) { return String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase(); }
 
 async function cargarListaTiendasNuevaOrden() {
   const todas = document.getElementById("no_tiendas_todas").checked;
@@ -544,32 +560,72 @@ async function cargarListaTiendasNuevaOrden() {
     } else lista = data || [];
   }
   tiendasNuevaOrden = lista;
-  filtrarTiendasNuevaOrden();
+  contador.textContent = "";
+  if (!tiendaNuevaOrdenElegida) filtrarTiendasNuevaOrden();
 }
 
 function filtrarTiendasNuevaOrden() {
   const palabras = sinAcentos(document.getElementById("no_tienda_filtro").value).split(/\s+/).filter(Boolean);
   const sel = document.getElementById("no_tienda");
-  const anterior = sel.value;
   const visibles = tiendasNuevaOrden.filter(t => palabras.every(p => sinAcentos(t.nombre).includes(p)));
   sel.innerHTML = visibles.map(t => `<option value="${t.id}">${(t.nombre || "").replace(/</g, "&lt;")}</option>`).join("");
-  if (visibles.some(t => t.id === anterior)) sel.value = anterior;
-  else { sel.selectedIndex = -1; document.getElementById("no_dependiente").innerHTML = '<option value="">-- sin asignar --</option>'; }
+  sel.selectedIndex = -1;
   document.getElementById("no_tienda_contador").textContent = `(${visibles.length} de ${tiendasNuevaOrden.length})`;
-  if (visibles.length === 1 && sel.value !== visibles[0].id) { sel.value = visibles[0].id; cambioTiendaNuevaOrden(); }
+}
+
+function abrirListaTiendasNuevaOrden() {
+  document.getElementById("no_tienda_desplegable").style.display = "block";
+  if (!tiendaNuevaOrdenElegida) filtrarTiendasNuevaOrden();
+}
+
+function alEscribirTiendaNuevaOrden() {
+  const input = document.getElementById("no_tienda_filtro");
+  if (tiendaNuevaOrdenElegida) {   // si empiezas a escribir, se anula la tienda elegida
+    tiendaNuevaOrdenElegida = null;
+    input.classList.remove("tienda-elegida");
+    document.getElementById("no_dependiente").innerHTML = '<option value="">-- sin asignar --</option>';
+  }
+  abrirListaTiendasNuevaOrden();
+  filtrarTiendasNuevaOrden();
+}
+
+function elegirTiendaNuevaOrden() {
+  const sel = document.getElementById("no_tienda");
+  const id = sel.value;
+  if (!id) return;
+  const t = tiendasNuevaOrden.find(x => x.id === id);
+  if (!t) return;
+  tiendaNuevaOrdenElegida = t;
+  const input = document.getElementById("no_tienda_filtro");
+  input.value = t.nombre;
+  input.classList.add("tienda-elegida");
+  sel.innerHTML = `<option value="${t.id}" selected>${(t.nombre || "").replace(/</g, "&lt;")}</option>`;   // queda solo la elegida
+  sel.value = t.id;
+  document.getElementById("no_tienda_desplegable").style.display = "none";
+  document.getElementById("no_tienda_contador").textContent = "✓";
+  cambioTiendaNuevaOrden();
 }
 
 function elegirPrimeraTiendaNuevaOrden() {
   const sel = document.getElementById("no_tienda");
-  if (sel.options.length) { sel.selectedIndex = 0; cambioTiendaNuevaOrden(); }
+  if (!tiendaNuevaOrdenElegida && sel.options.length) { sel.selectedIndex = 0; elegirTiendaNuevaOrden(); }
 }
+
+// el desplegable se cierra al pinchar fuera
+document.addEventListener("click", (e) => {
+  const caja = document.getElementById("no_tienda_desplegable");
+  if (caja && caja.style.display === "block" && !e.target.closest("#no_tienda_desplegable") && e.target.id !== "no_tienda_filtro") caja.style.display = "none";
+});
 
 async function abrirModalNuevaOrden() {
   document.getElementById("no_error").style.display = "none";
-  document.getElementById("no_tienda_filtro").value = "";
+  tiendaNuevaOrdenElegida = null;
+  const filtro = document.getElementById("no_tienda_filtro");
+  filtro.value = "";
+  filtro.classList.remove("tienda-elegida");
+  document.getElementById("no_tienda_desplegable").style.display = "none";
   document.getElementById("no_tiendas_todas").checked = false;
   await cargarListaTiendasNuevaOrden();
-  document.getElementById("no_tienda_filtro").focus();
   document.getElementById("no_dependiente").innerHTML = '<option value="">-- sin asignar --</option>';
   document.getElementById("no_tipo_orden").value = 1;
   ["no_num_pedido", "no_nombre_cli", "no_domicilio_cli", "no_localidad_cli", "no_provincia_cli", "no_telefono_cli", "no_telefono2_cli", "no_dni_cli"]
@@ -595,7 +651,7 @@ async function crearNuevaOrden() {
   const { data, error } = await client.rpc("crear_orden_staff", {
     p_tienda_id: tiendaId,
     p_dependiente_id: document.getElementById("no_dependiente").value || null,
-    p_tipo_orden: parseInt(document.getElementById("no_tipo_orden").value, 10) || 1,
+    p_tipo_orden: parseInt(document.getElementById("no_tipo_orden").value, 10),
     p_num_pedido: document.getElementById("no_num_pedido").value || null,
     p_nombre_cli: document.getElementById("no_nombre_cli").value || null,
     p_domicilio_cli: document.getElementById("no_domicilio_cli").value || null,
@@ -858,7 +914,7 @@ async function guardarCabecera() {
   const valores = {
     tienda_id: document.getElementById("ch_tienda").value || null,
     dependiente_id: document.getElementById("ch_dependiente").value || null,
-    tipo_orden: parseInt(document.getElementById("ch_tipo_orden").value, 10) || 1,
+    tipo_orden: parseInt(document.getElementById("ch_tipo_orden").value, 10),
     num_pedido: document.getElementById("ch_num_pedido").value.trim() || null,
     nombre_cli: document.getElementById("ch_nombre_cli").value.trim() || null,
     domicilio_cli: document.getElementById("ch_domicilio_cli").value.trim() || null,
