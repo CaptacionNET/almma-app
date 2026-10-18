@@ -139,6 +139,8 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .tabulator .tabulator-row.fila-finalizada:hover{background:#bbf7d0 !important;}
 .tabulator .tabulator-row.fila-completa,.tabulator .tabulator-row.tabulator-row-even.fila-completa{background:#ffeedd !important;}
 .tabulator .tabulator-row.fila-completa:hover{background:#ffe0c2 !important;}
+.tabulator .tabulator-row.fila-agendada,.tabulator .tabulator-row.tabulator-row-even.fila-agendada{background:#fef9c3 !important;}
+.tabulator .tabulator-row.fila-agendada:hover{background:#fef08a !important;}
 .leyenda-listado .sw-leyenda{display:inline-flex;align-items:center;gap:6px;border-left:none;padding-left:0;}
 .leyenda-listado .sw-leyenda i{display:inline-block;width:16px;height:12px;border:1px solid #cbd5e1;border-radius:2px;}
 .item-pendiente{border-left:5px solid #d97706 !important;background:#fffbeb !important;}
@@ -933,7 +935,7 @@ async function cargarPedidos() {
 
   if (!tabla) {
     tabla = new Tabulator("#tabla_pedidos", {
-      data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 240px)", rowFormatter: (row) => { const e = row.getData().estado; if (e === "completado") row.getElement().classList.add("fila-finalizada"); else if (e === "recepcionado_total") row.getElement().classList.add("fila-completa"); },
+      data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 240px)", rowFormatter: (row) => { const e = row.getData().estado; if (e === "completado") row.getElement().classList.add("fila-finalizada"); else if (e === "recepcionado_total") row.getElement().classList.add("fila-completa"); else if (e === "agendado") row.getElement().classList.add("fila-agendada"); },
     });
     // no usamos la opcion rowClick de Tabulator: bloquea el callback si detecta
     // cualquier seleccion de texto activa en la pagina (falso positivo frecuente

@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ALMMA - Administración</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
 :root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
 *{box-sizing:border-box;}
@@ -30,10 +32,16 @@ tr.dia th{background:#eff6ff;font-size:12px;}
 .chip{display:inline-block;background:#dbeafe;color:#1e3a8a;border-radius:12px;padding:2px 4px 2px 10px;margin:0 4px 4px 0;font-size:12px;}
 .chip button{background:none;color:#1e3a8a;padding:0 6px;font-size:14px;}
 .muted{color:var(--muted);font-size:13px;}
+tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.2);z-index:30;}
+#detalle{display:none;position:fixed;top:0;right:0;bottom:0;width:min(780px,100vw);background:var(--card);border-left:1px solid var(--border);box-shadow:-10px 0 30px -20px rgba(0,0,0,.3);z-index:31;padding:20px;overflow-y:auto;}
+.tarjeta{transition:box-shadow .1s;} .tarjeta:hover{box-shadow:0 4px 12px -6px rgba(30,64,175,.6);}
 .caja{background:var(--card);border:1px dashed #93c5fd;border-radius:8px;padding:16px;max-width:760px;line-height:1.5;}
 </style>
 </head>
 <body>
+<div id="overlay" onclick="cerrarDetalle()"></div>
+<div id="detalle"><div class="barra"><b id="det_titulo" style="font-size:16px"></b><span style="flex:1"></span><button class="secondary" onclick="cerrarDetalle()">Cerrar</button></div><div id="det_cuerpo"></div></div>
 <div id="toolbar">
   <b>ALMMA · Administración</b>
   <button class="secondary" onclick="location.href='pedidos.html'">Órdenes</button>
@@ -51,8 +59,14 @@ tr.dia th{background:#eff6ff;font-size:12px;}
 </div>
 
 <div class="panel activa" id="p_resumen">
-  <p class="muted">Pulsa una tarjeta para ir a esos pedidos. Se cuentan los pedidos de los últimos 4 años.</p>
+  <p class="muted">Pulsa una cifra para ver las órdenes. Se cuentan los pedidos de los últimos 4 años.</p>
   <div class="tarjetas" id="tarjetas"><span class="muted">Cargando...</span></div>
+  <h3>Facturación por tienda</h3>
+  <div class="barra"><select id="ft_periodo" onchange="cargarFactTiendas()">
+    <option value="mes">Este mes</option><option value="mes_ant">Mes anterior</option><option value="tri">Este trimestre</option>
+    <option value="tri_ant">Trimestre anterior</option><option value="anyo">Este año</option><option value="anyo_ant">Año anterior</option></select>
+    <b id="ft_rango"></b><span class="muted">Facturas emitidas, sin proformas.</span></div>
+  <div id="ft_tabla"></div>
 </div>
 
 <div class="panel" id="p_montajes">
@@ -63,6 +77,7 @@ tr.dia th{background:#eff6ff;font-size:12px;}
     <button class="secondary" onclick="moverSemana(0)">Hoy</button>
     <label class="muted"><input type="checkbox" id="solo_sin" onchange="pintarMontajes()"> Solo sin montador</label>
   </div>
+  <div id="hoja_msg" class="muted" style="margin-bottom:10px"></div>
   <div id="montajes_tabla"><span class="muted">Cargando...</span></div>
 </div>
 
@@ -120,25 +135,93 @@ async function iniciar(){
   cargarResumen(); cargarMontajes(); cargarUsuarios(); cargarControl();
 }
 
-/* ---------- Resumen ---------- */
-async function contar(f){ let q = client.from("ordenes").select("anyo", { count:"exact", head:true }).gte("anyo", new Date().getFullYear()-3); q = f(q); const { count, error } = await q; return error ? "?" : count; }
-async function cargarResumen(){
-  const hoy = iso(new Date()), ini = iso(semanaIni), fin = iso(new Date(+semanaIni + 7*864e5));
-  const defs = [
-    ["En proceso (esperando mercancía)", q => q.eq("estado","en_proceso"), "", "pedidos.html"],
-    ["Recepción parcial", q => q.eq("estado","recepcionado_parcial"), "", "pedidos.html"],
-    ["Listos para montar", q => q.eq("estado","recepcionado_total"), "ok", "pedidos.html"],
-    ["Agendados", q => q.eq("estado","agendado"), "", "pedidos.html"],
-    ["Con incidencia abierta", q => q.eq("estado","incidencia"), "aviso", "pedidos.html"],
-    ["Montajes esta semana", q => q.gte("fecha_prev_montaje", ini).lt("fecha_prev_montaje", fin), "", "#montajes"],
-    ["Montajes pasados sin completar", q => q.lt("fecha_prev_montaje", hoy).in("estado",["agendado","recepcionado_total","recepcionado_parcial"]), "aviso", "pedidos.html"],
-    ["Completados sin facturar", q => q.eq("estado","completado").eq("tipo_orden",1).neq("facturada","S"), "", "facturas.html?tab=pendiente"]
-  ];
-  const nums = await Promise.all(defs.map(d => contar(d[1])));
-  document.getElementById("tarjetas").innerHTML = defs.map((d,i) =>
-    '<div class="tarjeta '+d[2]+'" onclick="irTarjeta(\''+d[3]+'\')"><div class="n">'+nums[i]+'</div><div class="t">'+d[0]+'</div></div>').join("");
+/* ---------- Detalle al pulsar una cifra ---------- */
+const ANYOS = () => new Date().getFullYear() - 3;
+let defsR = [], defsC = [];
+function consulta(d, lista){
+  const head = !lista;
+  if (d.tipo === "mon") return d.f(client.from("montadores").select("id, nombre", { count:"exact", head }));
+  if (d.tipo === "lin") {
+    let q = client.from("linorden").select(lista ? "anyo, orden, linea, descripcion, articulo" : "anyo", { count:"exact", head }).gte("anyo", ANYOS());
+    q = d.f(q); return lista ? q.order("anyo",{ascending:false}).order("orden",{ascending:false}).limit(300) : q;
+  }
+  let q = client.from("ordenes").select(lista ? "anyo, orden, nombre_cli, num_pedido, estado, fecha_prev_montaje, tiendas(nombre)" : "anyo", { count:"exact", head }).gte("anyo", ANYOS());
+  q = d.f(q); return lista ? q.order("anyo",{ascending:false}).order("orden",{ascending:false}).limit(300) : q;
 }
-function irTarjeta(u){ if (u === "#montajes") document.querySelector('[data-t="montajes"]').click(); else location.href = u; }
+function pintarTarjetas(id, defs, grupo){
+  Promise.all(defs.map(d => consulta(d, false))).then(res => {
+    document.getElementById(id).innerHTML = defs.map((d,i) => {
+      const n = res[i].error ? "?" : res[i].count, clase = n === 0 ? "ok" : (n === "?" ? "" : d.clase);
+      return '<div class="tarjeta '+clase+'" onclick="verDetalle(\''+grupo+'\','+i+')"><div class="n">'+n+'</div><div class="t">'+d.t+'</div></div>';
+    }).join("");
+  });
+}
+async function verDetalle(grupo, i){
+  const d = (grupo === "r" ? defsR : defsC)[i], dr = document.getElementById("detalle");
+  dr.style.display = "block"; document.getElementById("overlay").style.display = "block";
+  document.getElementById("det_titulo").textContent = d.t;
+  const cuerpo = document.getElementById("det_cuerpo"); cuerpo.innerHTML = '<span class="muted">Cargando...</span>';
+  const { data, count, error } = await consulta(d, true);
+  if (error) { cuerpo.innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
+  const enlace = o => '<a href="pedidos.html?anyo='+o.anyo+'&orden='+o.orden+'" target="_blank">'+o.anyo+'/'+o.orden+'</a>';
+  let h = "";
+  if (d.tipo === "mon") h = '<table><tr><th>Montador</th></tr>'+data.map(m => '<tr><td>'+esc(m.nombre)+'</td></tr>').join("")+'</table>';
+  else if (d.tipo === "lin") h = '<table><tr><th>Orden</th><th>Línea</th><th>Artículo</th><th>Descripción</th></tr>'+data.map(o => '<tr><td>'+enlace(o)+'</td><td>'+o.linea+'</td><td>'+esc(o.articulo)+'</td><td>'+esc(o.descripcion)+'</td></tr>').join("")+'</table>';
+  else h = '<table><tr><th>Orden</th><th>Cliente</th><th>Tienda</th><th>Referencia</th><th>Estado</th><th>Montaje previsto</th></tr>'+data.map(o => '<tr><td>'+enlace(o)+'</td><td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.tiendas?.nombre)+'</td><td>'+esc(o.num_pedido)+'</td><td>'+esc((o.estado||"").replace(/_/g," "))+'</td><td>'+(o.fecha_prev_montaje?new Date(o.fecha_prev_montaje).toLocaleDateString("es-ES"):"")+'</td></tr>').join("")+'</table>';
+  cuerpo.innerHTML = '<div class="muted" style="margin-bottom:8px">'+count+' en total'+(count > data.length ? ' (se muestran los '+data.length+' más recientes)' : '')+'</div>' + (data.length ? h : '<span class="muted">Nada que mostrar.</span>');
+}
+function cerrarDetalle(){ document.getElementById("detalle").style.display = "none"; document.getElementById("overlay").style.display = "none"; }
+
+/* ---------- Resumen ---------- */
+function cargarResumen(){
+  const hoy = iso(new Date()), ini = iso(semanaIni), fin = iso(new Date(+semanaIni + 7*864e5));
+  defsR = [
+    { t:"En proceso (esperando mercancía)", f:q => q.eq("estado","en_proceso"), clase:"" },
+    { t:"Recepción parcial", f:q => q.eq("estado","recepcionado_parcial"), clase:"" },
+    { t:"Listos para montar", f:q => q.eq("estado","recepcionado_total"), clase:"" },
+    { t:"Agendados", f:q => q.eq("estado","agendado"), clase:"" },
+    { t:"Con incidencia abierta", f:q => q.eq("estado","incidencia"), clase:"aviso" },
+    { t:"Montajes esta semana", f:q => q.gte("fecha_prev_montaje", ini).lt("fecha_prev_montaje", fin), clase:"" },
+    { t:"Montajes pasados sin completar", f:q => q.lt("fecha_prev_montaje", hoy).in("estado",["agendado","recepcionado_total","recepcionado_parcial"]), clase:"aviso" },
+    { t:"Completados sin facturar", f:q => q.eq("estado","completado").eq("tipo_orden",1).or("facturada.is.null,facturada.neq.S"), clase:"" }
+  ];
+  pintarTarjetas("tarjetas", defsR, "r");
+  cargarFactTiendas();
+}
+
+/* ---------- Facturación por tienda ---------- */
+function rangoFact(p){
+  const h = new Date(), y = h.getFullYear(), m = h.getMonth(), qi = Math.floor(m/3)*3;
+  if (p === "mes") return [new Date(y,m,1), new Date(y,m+1,0)];
+  if (p === "mes_ant") return [new Date(y,m-1,1), new Date(y,m,0)];
+  if (p === "tri") return [new Date(y,qi,1), new Date(y,qi+3,0)];
+  if (p === "tri_ant") return [new Date(y,qi-3,1), new Date(y,qi,0)];
+  if (p === "anyo_ant") return [new Date(y-1,0,1), new Date(y-1,11,31)];
+  return [new Date(y,0,1), new Date(y,11,31)];
+}
+async function cargarFactTiendas(){
+  const [d,h] = rangoFact(document.getElementById("ft_periodo").value), cont = document.getElementById("ft_tabla");
+  document.getElementById("ft_rango").textContent = d.toLocaleDateString("es-ES")+" – "+h.toLocaleDateString("es-ES");
+  cont.innerHTML = '<span class="muted">Cargando...</span>';
+  const filas = [];
+  for (let desde = 0; ; desde += 1000) {
+    const { data, error } = await client.from("cabfacturas").select("tienda_id, impbruto, impiva, impneto, tiendas!tienda_id(nombre)")
+      .neq("serie", 5).gte("ffactura", iso(d)).lte("ffactura", iso(h)).order("anyo").order("serie").order("factura").range(desde, desde + 999);
+    if (error) { cont.innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
+    filas.push(...data); if (data.length < 1000) break;
+  }
+  const por = {};
+  for (const f of filas) {
+    const k = f.tienda_id || "sin", r = por[k] ||= { nombre: f.tiendas?.nombre || "(sin tienda enlazada)", n:0, base:0, iva:0, total:0 };
+    r.n++; r.base += +f.impbruto || 0; r.iva += +f.impiva || 0; r.total += +f.impneto || 0;
+  }
+  const lista = Object.values(por).sort((a,b) => b.total - a.total), T = lista.reduce((s,r) => ({ n:s.n+r.n, base:s.base+r.base, iva:s.iva+r.iva, total:s.total+r.total }), { n:0, base:0, iva:0, total:0 });
+  const eur = n => n.toLocaleString("es-ES",{style:"currency",currency:"EUR"});
+  cont.innerHTML = lista.length ? '<table><tr><th>Tienda</th><th>Facturas</th><th>Base</th><th>IVA</th><th>Total</th></tr>'+
+    lista.map(r => '<tr><td>'+esc(r.nombre)+'</td><td>'+r.n+'</td><td>'+eur(r.base)+'</td><td>'+eur(r.iva)+'</td><td>'+eur(r.total)+'</td></tr>').join("")+
+    '<tr style="font-weight:700;background:#eff6ff"><td>TOTAL ('+lista.length+' tiendas)</td><td>'+T.n+'</td><td>'+eur(T.base)+'</td><td>'+eur(T.iva)+'</td><td>'+eur(T.total)+'</td></tr></table>'
+    : '<span class="muted">No hay facturas en ese periodo (las proformas de la serie 5 no cuentan).</span>';
+}
 
 /* ---------- Montajes de la semana ---------- */
 function moverSemana(n){ semanaIni = n === 0 ? lunes(new Date()) : new Date(semanaIni.getFullYear(), semanaIni.getMonth(), semanaIni.getDate() + 7*n); cargarMontajes(); }
@@ -146,22 +229,38 @@ async function cargarMontajes(){
   const fin = new Date(semanaIni.getFullYear(), semanaIni.getMonth(), semanaIni.getDate()+7);
   document.getElementById("rango_semana").textContent = semanaIni.toLocaleDateString("es-ES") + " – " + new Date(+fin-864e5).toLocaleDateString("es-ES");
   const { data, error } = await client.from("ordenes")
-    .select("anyo, orden, nombre_cli, localidad_cli, estado, fecha_prev_montaje, ordenes_montadores(montador_id)")
+    .select("anyo, orden, nombre_cli, localidad_cli, estado, fecha_prev_montaje, horamont, ordenes_montadores(montador_id)")
     .gte("fecha_prev_montaje", iso(semanaIni)).lt("fecha_prev_montaje", iso(fin)).order("fecha_prev_montaje");
   if (error) { document.getElementById("montajes_tabla").innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
   ordenesSemana = data || []; pintarMontajes();
 }
+const SIN_EQ = "SIN MONTADOR";
+function claveEquipo(o){
+  const nom = Object.fromEntries(montadores.map(m => [m.id, m.nombre]));
+  const n = o.ordenes_montadores.map(a => (nom[a.montador_id] || "?").toUpperCase()).sort();
+  return n.length ? n.join("/") : SIN_EQ;
+}
+const porHora = (a,b) => (a.horamont || "99").localeCompare(b.horamont || "99") || a.orden - b.orden;
 function pintarMontajes(){
   const soloSin = document.getElementById("solo_sin").checked, nom = Object.fromEntries(montadores.map(m => [m.id, m.nombre]));
   const filas = ordenesSemana.filter(o => !soloSin || !o.ordenes_montadores.length);
   if (!filas.length) { document.getElementById("montajes_tabla").innerHTML = '<span class="muted">No hay montajes con esos criterios.</span>'; return; }
-  let h = '<table><tr><th>Orden</th><th>Cliente</th><th>Localidad</th><th>Estado</th><th>Montadores</th><th>Añadir</th></tr>', dia = "";
-  for (const o of filas) {
-    const d = String(o.fecha_prev_montaje).slice(0,10);
-    if (d !== dia) { dia = d; h += '<tr class="dia"><th colspan="6">'+new Date(d+"T12:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"})+'</th></tr>'; }
-    const asig = o.ordenes_montadores.map(a => '<span class="chip">'+esc(nom[a.montador_id] || "?")+'<button title="Quitar" onclick="quitar('+o.anyo+','+o.orden+',\''+a.montador_id+'\')">×</button></span>').join("");
-    const opts = montadores.filter(m => !o.ordenes_montadores.some(a => a.montador_id === m.id)).map(m => '<option value="'+m.id+'">'+esc(m.nombre)+'</option>').join("");
-    h += '<tr class="'+(o.ordenes_montadores.length?'con':'sin')+'"><td><a href="pedidos.html?anyo='+o.anyo+'&orden='+o.orden+'">'+o.anyo+'/'+o.orden+'</a></td><td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.localidad_cli)+'</td><td>'+esc(o.estado)+'</td><td>'+(asig||'<span class="muted">Sin montador</span>')+'</td><td><select onchange="anadir('+o.anyo+','+o.orden+',this)"><option value="">Elegir...</option>'+opts+'</select></td></tr>';
+  const dias = [...new Set(filas.map(o => String(o.fecha_prev_montaje).slice(0,10)))].sort();
+  let h = '<table><tr><th>Hora</th><th>Orden</th><th>Cliente</th><th>Localidad</th><th>Estado</th><th>Montadores</th><th>Añadir</th></tr>';
+  for (const d of dias) {
+    h += '<tr class="dia"><th colspan="7">'+new Date(d+"T12:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"})+'</th></tr>';
+    const delDia = filas.filter(o => String(o.fecha_prev_montaje).slice(0,10) === d);
+    const equipos = [...new Set(delDia.map(claveEquipo))].sort((a,b) => (a === SIN_EQ) - (b === SIN_EQ) || a.localeCompare(b));
+    for (const eq of equipos) {
+      const delEq = delDia.filter(o => claveEquipo(o) === eq).sort(porHora);
+      h += '<tr class="eq"><td colspan="7"><b>'+esc(eq)+'</b> <span class="muted">· '+delEq.length+' montaje'+(delEq.length>1?'s':'')+'</span> '+
+        (eq !== SIN_EQ ? '<button class="secondary" onclick="imprimirHoja(\''+d+'\',\''+eq.replace(/'/g,"")+'\',this)">Imprimir hoja (PDF con QR)</button>' : '')+'</td></tr>';
+      for (const o of delEq) {
+        const asig = o.ordenes_montadores.map(a => '<span class="chip">'+esc(nom[a.montador_id] || "?")+'<button title="Quitar" onclick="quitar('+o.anyo+','+o.orden+',\''+a.montador_id+'\')">×</button></span>').join("");
+        const opts = montadores.filter(m => !o.ordenes_montadores.some(a => a.montador_id === m.id)).map(m => '<option value="'+m.id+'">'+esc(m.nombre)+'</option>').join("");
+        h += '<tr class="'+(o.ordenes_montadores.length?'con':'sin')+'"><td><b>'+esc(o.horamont || "—")+'</b></td><td><a href="pedidos.html?anyo='+o.anyo+'&orden='+o.orden+'">'+o.anyo+'/'+o.orden+'</a></td><td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.localidad_cli)+'</td><td>'+esc(o.estado)+'</td><td>'+(asig||'<span class="muted">Sin montador</span>')+'</td><td><select onchange="anadir('+o.anyo+','+o.orden+',this)"><option value="">Elegir...</option>'+opts+'</select></td></tr>';
+      }
+    }
   }
   document.getElementById("montajes_tabla").innerHTML = h + '</table>';
 }
@@ -175,6 +274,93 @@ async function quitar(anyo, orden, mid){
   const { error } = await client.from("ordenes_montadores").delete().eq("anyo", anyo).eq("orden", orden).eq("montador_id", mid);
   if (error) alert("No se pudo quitar: " + error.message); else cargarMontajes();
 }
+
+/* ---------- Hoja de reparto de un equipo (PDF con QR, se guarda como los DeCA) ---------- */
+function generarQrDataUrl(texto, tamano){
+  const c = document.createElement("div"); c.style.display = "none"; document.body.appendChild(c);
+  new QRCode(c, { text: texto, width: tamano, height: tamano, correctLevel: QRCode.CorrectLevel.M });
+  const url = c.querySelector("canvas").toDataURL("image/png"); document.body.removeChild(c); return url;
+}
+const limpiar = t => String(t ?? "").replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/[–—]/g,"-").replace(/\s+/g," ").trim().replace(/[^\x20-\x7E\xA0-\xFF]/g,"?");
+function envolver(font, size, texto, ancho){
+  const out = []; let cur = "";
+  for (const w of limpiar(texto).split(" ")) {
+    const t = cur ? cur + " " + w : w;
+    if (font.widthOfTextAtSize(t, size) <= ancho || !cur) cur = t; else { out.push(cur); cur = w; }
+  }
+  if (cur) out.push(cur); return out.length ? out : [""];
+}
+async function imprimirHoja(dia, equipo, btn){
+  const txtBtn = btn.textContent; btn.disabled = true; btn.textContent = "Generando...";
+  try {
+    const ords = ordenesSemana.filter(o => String(o.fecha_prev_montaje).slice(0,10) === dia && claveEquipo(o) === equipo).sort(porHora);
+    const porAnyo = {}; ords.forEach(o => (porAnyo[o.anyo] ||= []).push(o.orden));
+    let det = [];
+    for (const [a, lst] of Object.entries(porAnyo)) {
+      const { data, error } = await client.from("ordenes")
+        .select("anyo, orden, nombre_cli, telefono_cli, telefono2_cli, domicilio_cli, localidad_cli, num_pedido, horamont, obs_albaran, observaciones, tiendas(nombre), linorden(linea, tipolinea, descripcion, cantidad, ubicacion, bultos, proveedor)")
+        .eq("anyo", +a).in("orden", lst);
+      if (error) throw error; det.push(...data);
+    }
+    det.sort(porHora);
+    const codigos = [...new Set(det.flatMap(o => o.linorden.map(l => l.proveedor)).filter(Boolean))];
+    const fab = {};
+    if (codigos.length) { const { data } = await client.from("fabricantes").select("codigo, nombre").in("codigo", codigos); (data||[]).forEach(f => fab[f.codigo] = f.nombre); }
+
+    const { data:{ user } } = await client.auth.getUser();
+    const ruta = Date.now() + "-HOJA_" + equipo.replace(/[^A-Za-z0-9._-]/g, "_") + "_" + dia + ".pdf";
+    const urlPublica = client.storage.from("deca-documentos").getPublicUrl(ruta).data.publicUrl;
+
+    const { PDFDocument, StandardFonts, rgb } = PDFLib, doc = await PDFDocument.create();
+    const F = await doc.embedFont(StandardFonts.Helvetica), B = await doc.embedFont(StandardFonts.HelveticaBold);
+    const qr = await doc.embedPng(await fetch(generarQrDataUrl(urlPublica, 300)).then(r => r.arrayBuffer()));
+    const W = 842, H = 595, M = 30, fechaLarga = new Date(dia + "T12:00").toLocaleDateString("es-ES", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
+    const COL = { hora:M, orden:68, pedido:128, cli:200, tel:450, tienda:540 }, L = { ubi:68, desc:170, cant:500, fab:540, bul:760 };
+    let page, y;
+    const t = (s, x, yy, sz = 8.5, f = F) => page.drawText(limpiar(s), { x, y: yy, size: sz, font: f, color: rgb(0,0,0) });
+    const nueva = () => {
+      page = doc.addPage([W, H]);
+      t("C/.San Isidro 73 - 46133 - Meliana - Valencia   CIF: E98819030", M, H-30, 8);
+      t("ALBARANES DIARIOS", M, H-48, 14, B); t("muebles almma", M+160, H-48, 10);
+      t(fechaLarga, M, H-64, 10); t(equipo, M, H-82, 13, B);
+      page.drawImage(qr, { x: W-M-70, y: H-M-60, width: 70, height: 70 });
+      y = H-104;
+      page.drawRectangle({ x: M, y: y-4, width: W-2*M, height: 14, color: rgb(.86,.92,.99) });
+      [["HORA",COL.hora],["ORDEN",COL.orden],["PEDIDO",COL.pedido],["CLIENTE / DIRECCIÓN",COL.cli],["TELÉFONO",COL.tel],["TIENDA",COL.tienda]].forEach(([s,x]) => t(s, x, y, 8, B));
+      y -= 16;
+    };
+    nueva();
+    for (const o of det) {
+      const dir = envolver(F, 8.5, [o.domicilio_cli, o.localidad_cli].filter(Boolean).join(" - "), 240);
+      const obs = o.obs_albaran || o.observaciones ? envolver(F, 8.5, "Observaciones: " + (o.obs_albaran || o.observaciones), 240) : [];
+      const lineas = o.linorden.filter(l => l.tipolinea !== 4).sort((a,b) => a.linea - b.linea).map(l => ({ ubi: l.ubicacion || "", desc: envolver(F, 8.5, l.descripcion || "", 320), cant: l.cantidad ?? "", fab: envolver(F, 8.5, fab[l.proveedor] || "", 210), bul: l.bultos ?? "" }));
+      const hCab = 12 + (dir.length + obs.length) * 10.5, hLin = lineas.reduce((s,l) => s + Math.max(l.desc.length, l.fab.length) * 10.5, 0);
+      if (y - (hCab + hLin) < 36 && y < H-130) nueva();
+      t(o.horamont || "-", COL.hora, y, 9, B); t(o.anyo + "/" + o.orden, COL.orden, y, 9, B); t(o.num_pedido || "", COL.pedido, y, 8.5);
+      t(o.nombre_cli || "", COL.cli, y, 9, B); t([o.telefono_cli, o.telefono2_cli].filter(Boolean).join(" / "), COL.tel, y, 8.5);
+      envolver(F, 8.5, o.tiendas?.nombre || "", 260).slice(0,2).forEach((s,i) => t(s, COL.tienda, y - i*10.5, 8.5));
+      let yy = y - 11; [...dir, ...obs].forEach((s,i) => { t(s, COL.cli, yy, 8.5, i >= dir.length ? B : F); yy -= 10.5; });
+      y = Math.min(yy, y - 22);
+      for (const l of lineas) {
+        if (y < 40) nueva();
+        t(l.ubi, L.ubi, y); t(String(l.cant), L.cant, y); t(String(l.bul), L.bul, y);
+        l.desc.forEach((s,i) => t(s, L.desc, y - i*10.5)); l.fab.forEach((s,i) => t(s, L.fab, y - i*10.5));
+        y -= Math.max(l.desc.length, l.fab.length) * 10.5;
+      }
+      page.drawLine({ start:{x:M,y:y+3}, end:{x:W-M,y:y+3}, thickness:.5, color:rgb(.6,.6,.6) }); y -= 10;
+    }
+    const pags = doc.getPages(); pags.forEach((p,i) => p.drawText("Página "+(i+1)+" de "+pags.length, { x: W-M-150, y: H-M-72, size: 8, font: F }));
+    const bytes = await doc.save();
+    const { error: eu } = await client.storage.from("deca-documentos").upload(ruta, new Blob([bytes], { type:"application/pdf" }), { contentType:"application/pdf" });
+    if (eu) throw eu;
+    const { error: ef } = await client.from("deca_documentos").insert({ nombre: "Hoja " + equipo + " " + new Date(dia+"T12:00").toLocaleDateString("es-ES"), pdf_path: ruta, subido_por: user.id, fecha_documento: dia });
+    if (ef) throw ef;
+    window.open(urlPublica, "_blank");
+    document.getElementById("hoja_msg").innerHTML = 'Hoja de <b>'+esc(equipo)+'</b> lista: <a href="'+urlPublica+'" target="_blank">abrir PDF</a> (también está en la pantalla DeCA).';
+  } catch (e) { alert("No se pudo generar la hoja: " + (e.message || e)); }
+  btn.disabled = false; btn.textContent = txtBtn;
+}
+
 /* ---------- Usuarios y accesos ---------- */
 async function llamar(cuerpo){
   const { data, error } = await client.functions.invoke("admin-usuarios", { body: cuerpo });
@@ -228,23 +414,18 @@ async function crearCuenta(){
   document.getElementById("u_nuevo").style.display = "none"; cargarUsuarios();
 }
 /* ---------- Control del sistema ---------- */
-async function cargarControl(){
-  const desde = new Date().getFullYear()-3, hoy = iso(new Date());
-  const O = f => { let q = client.from("ordenes").select("anyo", { count:"exact", head:true }).gte("anyo", desde); return f(q); };
-  const defs = [
-    ["Órdenes sin tienda asignada", () => O(q => q.is("tienda_id", null)), "aviso"],
-    ["Órdenes sin nombre de cliente", () => O(q => q.or("nombre_cli.is.null,nombre_cli.eq.")), "aviso"],
-    ["Completadas sin fecha de montaje", () => O(q => q.eq("estado","completado").is("fecha_montaje", null)), "aviso"],
-    ["Montajes pasados sin completar", () => O(q => q.lt("fecha_prev_montaje", hoy).in("estado",["agendado","recepcionado_total","recepcionado_parcial"])), "aviso"],
-    ["Líneas sin fabricante", () => client.from("linorden").select("anyo", { count:"exact", head:true }).gte("anyo", desde).is("proveedor", null), "aviso"],
-    ["Órdenes con incidencia abierta", () => O(q => q.eq("estado","incidencia")), ""],
-    ["Montadores activos sin cuenta", () => client.from("montadores").select("id", { count:"exact", head:true }).eq("activo", true).eq("especial", false).is("staff_user_id", null), ""]
+function cargarControl(){
+  const hoy = iso(new Date());
+  defsC = [
+    { t:"Órdenes sin tienda asignada", f:q => q.is("tienda_id", null), clase:"aviso" },
+    { t:"Órdenes sin nombre de cliente", f:q => q.or("nombre_cli.is.null,nombre_cli.eq."), clase:"aviso" },
+    { t:"Completadas sin fecha de montaje", f:q => q.eq("estado","completado").is("fecha_montaje", null), clase:"aviso" },
+    { t:"Montajes pasados sin completar", f:q => q.lt("fecha_prev_montaje", hoy).in("estado",["agendado","recepcionado_total","recepcionado_parcial"]), clase:"aviso" },
+    { t:"Líneas sin fabricante", tipo:"lin", f:q => q.is("proveedor", null), clase:"aviso" },
+    { t:"Órdenes con incidencia abierta", f:q => q.eq("estado","incidencia"), clase:"" },
+    { t:"Montadores activos sin cuenta", tipo:"mon", f:q => q.eq("activo", true).eq("especial", false).is("staff_user_id", null), clase:"" }
   ];
-  const res = await Promise.all(defs.map(d => d[1]()));
-  document.getElementById("c_avisos").innerHTML = defs.map((d,i) => {
-    const n = res[i].error ? "?" : res[i].count, clase = n === 0 ? "ok" : (n === "?" ? "" : d[2]);
-    return '<div class="tarjeta '+clase+'" style="cursor:default"><div class="n">'+n+'</div><div class="t">'+d[0]+'</div></div>';
-  }).join("");
+  pintarTarjetas("c_avisos", defsC, "c");
 }
 function pintarAccesos(){
   const u = window._usuarios || [], lim = Date.now() - 30*864e5;
