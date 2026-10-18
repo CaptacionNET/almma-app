@@ -79,6 +79,8 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .chip input{width:auto;margin:0;}
 .chip.especial{font-style:italic;}
 .chip.inactivo{opacity:.6;}
+#toolbar button.activo{border:2px solid var(--primary);color:var(--primary);font-weight:600;background:#eff6ff;}
+.menu-item.activo-menu > span{box-shadow:inset 0 -3px 0 #3b82f6;background:#374151;}
 </style>
 </head>
 <body>
@@ -125,6 +127,14 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
   <div class="campo-mini" style="max-width:90px;">
     <label>Año hasta</label>
     <input id="anyo_hasta" type="number" onkeydown="if(event.key==='Enter')cargarPedidos()">
+  </div>
+  <div class="campo-mini" style="max-width:150px;">
+    <label>Montaje previsto desde</label>
+    <input id="prev_desde" type="date" onkeydown="if(event.key==='Enter')cargarPedidos()">
+  </div>
+  <div class="campo-mini" style="max-width:150px;">
+    <label>Montaje previsto hasta</label>
+    <input id="prev_hasta" type="date" onkeydown="if(event.key==='Enter')cargarPedidos()">
   </div>
   <div class="campo-mini" style="max-width:190px;align-self:flex-end;">
     <label style="display:flex;gap:6px;align-items:center;font-weight:normal;margin:0;font-size:13px;"><input id="incluir_anteriores" type="checkbox" style="width:auto;" onchange="cargarPedidos()"> Incluir años anteriores</label>
@@ -431,7 +441,7 @@ async function comprobarSesion() {
   if (staffRow.solo_montajes) { window.location.href = "montador.html"; return; }
   staffUserId = staffRow.user_id;
   await llenarSelectEstado("filtro_estado", "");
-  await cargarPedidos();   // sin filtros: las últimas órdenes de los últimos 4 años
+  await cargarPedidos();   // sin filtros no carga nada: avisa de que hay que buscar
 
   const params = new URLSearchParams(window.location.search);
   const anyoParam = parseInt(params.get("anyo"), 10);
@@ -615,6 +625,15 @@ async function cargarPedidos() {
   const cliente = document.getElementById("filtro_cliente").value.trim();
   const numPedido = document.getElementById("filtro_num_pedido").value.trim();
   const importe = parseFloat(document.getElementById("filtro_importe").value);
+  const prevDesde = document.getElementById("prev_desde").value;
+  const prevHasta = document.getElementById("prev_hasta").value;
+
+  // De inicio no se carga nada: hay que buscar (por número de orden, cliente, fechas, etc.)
+  if (!estado && isNaN(anyoDesde) && isNaN(anyoHasta) && isNaN(pedido) && !cliente && !numPedido && isNaN(importe) && !prevDesde && !prevHasta) {
+    document.getElementById("aviso_carga").textContent = "Rellena algún filtro y pulsa \"Buscar\" para ver órdenes.";
+    if (tabla) tabla.setData([]);
+    return;
+  }
 
   // Por defecto solo se buscan los últimos 4 años (este y los 3 anteriores). La casilla
   // "Incluir años anteriores" amplía a todo el histórico; si se escribe un año anterior
@@ -622,11 +641,14 @@ async function cargarPedidos() {
   const casilla = document.getElementById("incluir_anteriores");
   const anyoMinimo = new Date().getFullYear() - 3;
   if (!isNaN(anyoDesde) && anyoDesde < anyoMinimo) casilla.checked = true;
+  if (prevDesde && parseInt(prevDesde.slice(0, 4), 10) < anyoMinimo) casilla.checked = true;
   const incluirAnteriores = casilla.checked;
-  const desdeEfectivo = incluirAnteriores ? anyoDesde : Math.max(isNaN(anyoDesde) ? anyoMinimo : anyoDesde, anyoMinimo);
+  // si se busca por fechas de montaje previsto, las propias fechas acotan: no se recorta por año
+  const hayFechasPrev = !!(prevDesde || prevHasta);
+  const desdeEfectivo = (incluirAnteriores || hayFechasPrev) ? anyoDesde : Math.max(isNaN(anyoDesde) ? anyoMinimo : anyoDesde, anyoMinimo);
 
   let query = client.from("ordenes")
-    .select("anyo, orden, nombre_cli, num_pedido, estado, fecha_creacion, importe_total, creado_por, modificado_por, modificado_at")
+    .select("anyo, orden, nombre_cli, num_pedido, estado, fecha_creacion, fecha_prev_montaje, importe_total, creado_por, modificado_por, modificado_at")
     .order("anyo", { ascending: false })
     .order("orden", { ascending: false })
     .limit(500);
@@ -637,6 +659,8 @@ async function cargarPedidos() {
   if (cliente) query = query.ilike("nombre_cli", `%${cliente}%`);
   if (numPedido) query = query.ilike("num_pedido", `%${numPedido}%`);
   if (estado) query = query.eq("estado", estado);
+  if (prevDesde) query = query.gte("fecha_prev_montaje", prevDesde);
+  if (prevHasta) query = query.lte("fecha_prev_montaje", prevHasta + "T23:59:59");
   if (!isNaN(importe)) query = query.eq("importe_total", importe);
 
   const { data, error } = await query;
@@ -654,6 +678,10 @@ async function cargarPedidos() {
     { title: "Pedido", field: "orden", width: 90 },
     { title: "Cliente", field: "nombre_cli" },
     { title: "Nº pedido", field: "num_pedido" },
+    { title: "F. prev. montaje", field: "fecha_prev_montaje", width: 130, formatter: (cell) => {
+        const v = cell.getValue();
+        return v ? v.slice(8, 10) + "/" + v.slice(5, 7) + "/" + v.slice(0, 4) : "";
+      } },
     { title: "Estado", field: "estado", formatter: (cell) => {
         const v = cell.getValue() || "en_proceso";
         return `<span class="estado-pill estado-${v}">${v}</span>`;
@@ -1183,6 +1211,16 @@ async function registrarLlamada() {
 }
 
 comprobarSesion();
+// marca en azul en qué pantalla y en qué menú estás
+(function () {
+  const pagina = location.pathname.split("/").pop() || "index.html";
+  const destino = { "punteo.html": "pedidos.html" }[pagina] || pagina;
+  document.querySelectorAll("#toolbar button[onclick]").forEach(b => {
+    if ((b.getAttribute("onclick") || "").includes("'" + destino + "'")) b.classList.add("activo");
+  });
+  const menu = { "pedidos.html": "ordenes", "punteo.html": "ordenes", "sistema.html": "sistema" }[pagina];
+  if (menu) { const m = document.querySelector('.menu-item[data-menu="' + menu + '"]'); if (m) m.classList.add("activo-menu"); }
+})();
 </script>
 </body>
 </html>

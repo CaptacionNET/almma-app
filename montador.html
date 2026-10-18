@@ -35,13 +35,16 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .estado-agendado{background:#f5f3ff;color:#6d28d9;}
 .estado-completado{background:#f0fdf4;color:#15803d;}
 .estado-incidencia{background:#fef2f2;color:#dc2626;}
-#panel_detalle{display:none;position:fixed;top:0;right:0;bottom:0;width:min(480px,100vw);background:var(--card);border-left:1px solid var(--border);box-shadow:-10px 0 30px -20px rgba(0,0,0,.3);padding:24px;overflow-y:auto;}
+#panel_detalle{display:none;position:fixed;top:0;right:0;bottom:0;z-index:40;width:min(480px,100vw);background:var(--card);border-left:1px solid var(--border);box-shadow:-10px 0 30px -20px rgba(0,0,0,.3);padding:24px;overflow-y:auto;}
 #panel_detalle h3{margin-top:0;}
 #panel_detalle h4{margin:22px 0 8px;font-size:14px;border-top:1px solid var(--border);padding-top:16px;}
 #panel_detalle .campo{margin-bottom:14px;}
 #panel_detalle label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;}
 #panel_detalle select,#panel_detalle textarea,#panel_detalle input{width:100%;}
-#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.15);}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.15);z-index:35;}
+.badge{display:inline-block;margin-left:6px;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700;}
+.badge-fotos{background:#e0f2fe;color:#0369a1;}
+.badge-firmado{background:#dcfce7;color:#15803d;}
 .lineas-table{width:100%;font-size:13px;border-collapse:collapse;margin-top:8px;}
 .lineas-table th,.lineas-table td{border-bottom:1px solid var(--border);padding:6px 4px;text-align:left;}
 .pill-recibida{background:#f0fdf4;color:#15803d;padding:2px 8px;border-radius:999px;font-size:11px;}
@@ -54,6 +57,8 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 canvas#firma_canvas{border:1px solid var(--border);border-radius:8px;width:100%;height:160px;touch-action:none;background:#fafbfe;}
 .aviso-ok{display:none;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:16px;}
 .error{display:none;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:16px;}
+#toolbar button.activo{border:2px solid var(--primary);color:var(--primary);font-weight:600;background:#eff6ff;}
+.menu-item.activo-menu > span{box-shadow:inset 0 -3px 0 #3b82f6;background:#374151;}
 </style>
 </head>
 <body>
@@ -102,6 +107,8 @@ canvas#firma_canvas{border:1px solid var(--border);border-radius:8px;width:100%;
   <p id="error" class="error"></p>
 
   <div class="campo"><label>Estado</label><div id="d_estado_txt"></div></div>
+  <div class="campo"><label>Fecha y hora propuesta</label><div id="d_propuesta"></div></div>
+  <div class="campo"><label>Fecha y hora realizada (firma del cliente)</label><div id="d_realizada"></div></div>
   <div class="campo"><label>Cliente</label><div id="d_cliente"></div></div>
   <div class="campo"><label>Dirección</label><div id="d_direccion"></div><a id="d_direccion_maps" href="#" target="_blank" style="display:none;font-size:12px;">Ver en Google Maps</a></div>
   <div class="campo"><label>Teléfono</label><div id="d_telefono"></div></div>
@@ -189,24 +196,41 @@ async function cargarMontajes() {
     return;
   }
   const { data: crudos, error } = await client.from("ordenes")
-    .select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, estado, mio:ordenes_montadores!inner(montador_id), equipo:ordenes_montadores(montadores(nombre))")
+    .select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, estado, fecha_prev_montaje, horamont, mio:ordenes_montadores!inner(montador_id), equipo:ordenes_montadores(montadores(nombre)), fotos:fotos_orden(id), firmas:entregas(firmado_at)")
     .eq("mio.montador_id", yo.id)
     .order("anyo", { ascending: false })
     .order("orden", { ascending: false })
     .limit(200);
   if (error) { console.error(error); return; }
-  const data = (crudos || []).map(o => ({ ...o, equipo_txt: (o.equipo || []).map(e => e.montadores?.nombre).filter(Boolean).join(" + ") }));
+  const fmtFecha = (v) => v ? v.slice(8, 10) + "/" + v.slice(5, 7) + "/" + v.slice(0, 4) : "";
+  const data = (crudos || []).map(o => {
+    const firmas = (o.firmas || []).map(f => f.firmado_at).filter(Boolean).sort();
+    const ultimaFirma = firmas.length ? firmas[firmas.length - 1] : null;
+    return {
+      ...o,
+      equipo_txt: (o.equipo || []).map(e => e.montadores?.nombre).filter(Boolean).join(" + "),
+      propuesta_txt: [fmtFecha(o.fecha_prev_montaje), (o.horamont && o.horamont !== "M") ? o.horamont : ""].filter(Boolean).join(" "),
+      num_fotos: (o.fotos || []).length,
+      firmado_at: ultimaFirma,
+      realizada_txt: ultimaFirma ? new Date(ultimaFirma).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" }) : "",
+    };
+  });
 
   const columnas = [
     { title: "Año", field: "anyo", width: 70 },
     { title: "Pedido", field: "orden", width: 90 },
     { title: "Cliente", field: "nombre_cli" },
     { title: "Equipo", field: "equipo_txt" },
+    { title: "Fecha y hora propuesta", field: "propuesta_txt", width: 170 },
+    { title: "Fecha y hora realizada", field: "realizada_txt", width: 170 },
     { title: "Dirección", field: "domicilio_cli" },
     { title: "Localidad", field: "localidad_cli" },
     { title: "Estado", field: "estado", formatter: (cell) => {
         const v = cell.getValue() || "en_proceso";
-        return `<span class="estado-pill estado-${v}">${v.replace(/_/g, " ")}</span>`;
+        const d = cell.getRow().getData();
+        return `<span class="estado-pill estado-${v}">${v.replace(/_/g, " ")}</span>` +
+          (d.num_fotos ? `<span class="badge badge-fotos">${d.num_fotos} ${d.num_fotos === 1 ? "foto" : "fotos"}</span>` : "") +
+          (d.firmado_at ? `<span class="badge badge-firmado">FIRMADO</span>` : "");
       } },
   ];
 
@@ -235,6 +259,8 @@ async function abrirPanel(orden) {
   document.getElementById("error").style.display = "none";
   document.getElementById("d_titulo").textContent = `Pedido ${orden.anyo}/${orden.orden}`;
   document.getElementById("d_estado_txt").innerHTML = `<span class="estado-pill estado-${orden.estado || "en_proceso"}">${(orden.estado || "en_proceso").replace(/_/g, " ")}</span>`;
+  document.getElementById("d_propuesta").textContent = orden.propuesta_txt || "-";
+  document.getElementById("d_realizada").textContent = orden.realizada_txt || "-";
   document.getElementById("d_cliente").textContent = orden.nombre_cli || "-";
   const direccionTexto = [orden.domicilio_cli, orden.localidad_cli].filter(Boolean).join(", ");
   document.getElementById("d_direccion").textContent = direccionTexto || "-";
@@ -262,6 +288,7 @@ function cerrarPanel() {
   document.getElementById("panel_detalle").style.display = "none";
   document.getElementById("overlay").style.display = "none";
   pedidoActivo = null;
+  cargarMontajes();   // al cerrar se refresca la lista: así salen las fotos y la firma recién hechas
 }
 
 async function cargarLineas() {
@@ -460,6 +487,16 @@ canvasFirma.addEventListener("touchmove", trazar);
 canvasFirma.addEventListener("touchend", terminarTrazo);
 
 comprobarSesion();
+// marca en azul en qué pantalla y en qué menú estás
+(function () {
+  const pagina = location.pathname.split("/").pop() || "index.html";
+  const destino = { "punteo.html": "pedidos.html" }[pagina] || pagina;
+  document.querySelectorAll("#toolbar button[onclick]").forEach(b => {
+    if ((b.getAttribute("onclick") || "").includes("'" + destino + "'")) b.classList.add("activo");
+  });
+  const menu = { "pedidos.html": "ordenes", "punteo.html": "ordenes", "sistema.html": "sistema" }[pagina];
+  if (menu) { const m = document.querySelector('.menu-item[data-menu="' + menu + '"]'); if (m) m.classList.add("activo-menu"); }
+})();
 </script>
 </body>
 </html>

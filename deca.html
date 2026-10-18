@@ -39,6 +39,8 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .btn-mini{padding:4px 8px;font-size:12px;border-radius:5px;}
 .tabla-scroll{margin:0 24px 24px;overflow-x:auto;}
 .meta{color:var(--muted);font-size:13px;}
+#toolbar button.activo{border:2px solid var(--primary);color:var(--primary);font-weight:600;background:#eff6ff;}
+.menu-item.activo-menu > span{box-shadow:inset 0 -3px 0 #3b82f6;background:#374151;}
 </style>
 </head>
 <body>
@@ -371,6 +373,16 @@ async function cargarHistorial() {
 }
 
 comprobarSesion();
+// marca en azul en qué pantalla y en qué menú estás
+(function () {
+  const pagina = location.pathname.split("/").pop() || "index.html";
+  const destino = { "punteo.html": "pedidos.html" }[pagina] || pagina;
+  document.querySelectorAll("#toolbar button[onclick]").forEach(b => {
+    if ((b.getAttribute("onclick") || "").includes("'" + destino + "'")) b.classList.add("activo");
+  });
+  const menu = { "pedidos.html": "ordenes", "punteo.html": "ordenes", "sistema.html": "sistema" }[pagina];
+  if (menu) { const m = document.querySelector('.menu-item[data-menu="' + menu + '"]'); if (m) m.classList.add("activo-menu"); }
+})();
 </script>
 </body>
 </html>

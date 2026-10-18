@@ -41,6 +41,12 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .sugerencias{display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 10px 20px -10px rgba(0,0,0,.2);max-height:220px;overflow-y:auto;z-index:5;}
 .sugerencias div{padding:8px 10px;cursor:pointer;font-size:13px;}
 .sugerencias div:hover{background:#f5f6fa;}
+.pestanas{display:flex;gap:2px;padding:0 24px;margin-top:14px;border-bottom:1px solid var(--border);}
+.pestanas button{background:transparent;color:var(--muted);border:none;border-bottom:3px solid transparent;border-radius:0;padding:10px 16px;font-size:14px;}
+.pestanas button.activa{color:var(--primary);border-bottom-color:var(--primary);font-weight:600;}
+.linea-nombre{font-size:19px;font-weight:700;line-height:1.3;}
+#toolbar button.activo{border:2px solid var(--primary);color:var(--primary);font-weight:600;background:#eff6ff;}
+.menu-item.activo-menu > span{box-shadow:inset 0 -3px 0 #3b82f6;background:#374151;}
 </style>
 </head>
 <body>
@@ -79,6 +85,12 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
   <button class="secondary" onclick="logout()">Salir</button>
 </div>
 
+<div class="pestanas">
+  <button id="tabbtn_recepcion" class="activa" onclick="cambiarPestana('recepcion')">Recepción</button>
+  <button id="tabbtn_movimientos" onclick="cambiarPestana('movimientos')">Últimas entradas registradas</button>
+</div>
+
+<div id="pestana_recepcion">
 <div class="card">
   <h3 style="margin-top:0;">Buscar pedido</h3>
   <p id="error_busqueda" class="error"></p>
@@ -100,7 +112,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 </div>
 
 <div class="card" id="card_entrada" style="display:none;">
-  <button class="secondary" onclick="reiniciarBusqueda()" style="float:right;">Buscar otro pedido</button>
+  <button onclick="reiniciarBusqueda()" style="float:right;">Buscar otro pedido</button>
   <h3 style="margin-top:0;">Entrada para el pedido <span id="entrada_titulo"></span></h3>
 
   <h4>Líneas de este pedido</h4>
@@ -150,9 +162,13 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
   <div id="lista_lineas_entrada" class="mini-list"><div class="meta">Todavía no has añadido ninguna línea.</div></div>
 </div>
 
-<div class="tabla-scroll">
-  <h4 style="margin:0 24px 8px;">Últimas entradas registradas</h4>
-  <div id="tabla_movimientos"></div>
+</div>
+
+<div id="pestana_movimientos" style="display:none;">
+  <div class="tabla-scroll" style="margin-top:20px;">
+    <h4 style="margin:0 0 8px;">Últimas entradas registradas</h4>
+    <div id="tabla_movimientos"></div>
+  </div>
 </div>
 
 <script>
@@ -197,8 +213,14 @@ async function comprobarSesion() {
   const { data: fabricantes } = await client.from("fabricantes").select("codigo, nombre").order("nombre");
   document.getElementById("dl_fabricantes").innerHTML = (fabricantes || []).map(f => `<option value="${(f.nombre || "").replace(/"/g, "&quot;")}">`).join("");
   (fabricantes || []).forEach(f => { if (f.nombre) fabricantesPorNombre[f.nombre.toLowerCase()] = f.codigo; });
+}
 
-  cargarMovimientos();
+function cambiarPestana(p) {
+  document.getElementById("pestana_recepcion").style.display = p === "recepcion" ? "block" : "none";
+  document.getElementById("pestana_movimientos").style.display = p === "movimientos" ? "block" : "none";
+  document.getElementById("tabbtn_recepcion").classList.toggle("activa", p === "recepcion");
+  document.getElementById("tabbtn_movimientos").classList.toggle("activa", p === "movimientos");
+  if (p === "movimientos") cargarMovimientos();
 }
 
 async function logout() {
@@ -282,27 +304,34 @@ function activarPedido(orden, numPedido) {
 
 async function cargarLineasPedido() {
   const { data: lineas, error } = await client.from("linorden")
-    .select("linea, articulo, descripcion, cantidad, ubicacion, bultos, albaran, proveedor, recibido_at, fabricantes ( nombre )")
+    .select("linea, tipolinea, articulo, descripcion, cantidad, ubicacion, bultos, albaran, proveedor, recibido_at, fabricantes ( nombre )")
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden)
     .order("linea");
 
   const cont = document.getElementById("lista_lineas_pedido");
   if (error) { cont.innerHTML = `<div class="meta">Error al cargar líneas: ${error.message}</div>`; return; }
-  if (!lineas || !lineas.length) { cont.innerHTML = '<div class="meta">Este pedido todavía no tiene líneas.</div>'; return; }
+  // las líneas de importes/servicios (tipo 4, "Valor del Servicio"...) no son mercancía: no se reciben
+  const lineasMercancia = (lineas || []).filter(l => l.tipolinea !== 4);
+  if (!lineasMercancia.length) {
+    cont.innerHTML = lineas && lineas.length
+      ? '<div class="meta">Este pedido solo tiene líneas de importes (servicios): no hay mercancía que recibir.</div>'
+      : '<div class="meta">Este pedido todavía no tiene líneas.</div>';
+    return;
+  }
 
   const esc = (v) => (v ?? "").toString().replace(/"/g, "&quot;");
 
-  cont.innerHTML = lineas.map(l => {
+  cont.innerHTML = lineasMercancia.map(l => {
     const nombreLinea = l.descripcion || l.articulo || `línea ${l.linea}`;
     if (l.recibido_at) {
       return `<div class="item">
-        <strong>${nombreLinea}</strong> — ${l.cantidad ?? ""} ud.
+        <span class="linea-nombre">${nombreLinea}</span> — ${l.cantidad ?? ""} ud.
         <div class="meta">Recibida el ${new Date(l.recibido_at).toLocaleString("es-ES")}${l.fabricantes?.nombre ? " · " + l.fabricantes.nombre : ""}${l.ubicacion ? " · " + l.ubicacion : ""}${l.bultos ? " · " + l.bultos + " bultos" : ""}${l.albaran ? " · albarán " + l.albaran : ""}</div>
         <button class="secondary btn-mini" style="margin-top:6px;" onclick="deshacerRecepcionLinea(${l.linea})">Deshacer recepción</button>
       </div>`;
     }
     return `<div class="item">
-      <strong>${nombreLinea}</strong> — ${l.cantidad ?? ""} ud. pedida(s)
+      <span class="linea-nombre">${nombreLinea}</span> — ${l.cantidad ?? ""} ud. pedida(s)
       <div class="form-grid" style="margin-top:8px;">
         <div class="campo"><label>Fabricante</label><input id="rl_fab_${l.linea}" list="dl_fabricantes" value="${esc(l.fabricantes?.nombre)}"></div>
         <div class="campo"><label>Cantidad recibida</label><input id="rl_cant_${l.linea}" type="number" step="any" value="${esc(l.cantidad)}"></div>
@@ -321,6 +350,8 @@ async function marcarLineaRecibida(linea) {
   const ubicacion = document.getElementById(`rl_ubi_${linea}`).value.trim() || null;
   const bultos = document.getElementById(`rl_bul_${linea}`).value ? parseInt(document.getElementById(`rl_bul_${linea}`).value, 10) : null;
   const albaran = document.getElementById(`rl_alb_${linea}`).value.trim() || null;
+
+  if (!ubicacion && !confirm("¡Atención! Esta línea no tiene ubicación (está en blanco).\n\n¿Marcarla como recibida de todos modos?")) return;
 
   const valores = { ubicacion, bultos, albaran, recibido_at: new Date().toISOString(), recibido_por: staffUserId };
   if (!isNaN(cantidad)) valores.cantidad = cantidad;
@@ -393,6 +424,7 @@ async function anyadirLineaEntrada() {
 
   if (!descripcion) { errorBox.textContent = "Falta la descripción."; errorBox.style.display = "block"; return; }
   if (isNaN(cantidad)) { errorBox.textContent = "Falta la cantidad."; errorBox.style.display = "block"; return; }
+  if (!ubicacion && !confirm("¡Atención! Esta línea no tiene ubicación (está en blanco).\n\n¿Añadirla de todos modos?")) return;
 
   const anyo = new Date().getFullYear();
   const { data: ultimo } = await client.from("alm_movimientos")
@@ -424,8 +456,6 @@ async function anyadirLineaEntrada() {
   document.getElementById("ent_albaran").value = "";
   fabricanteSeleccionado = null;
   document.getElementById("ent_fabricante_buscar").focus();
-
-  cargarMovimientos();
 }
 
 async function cargarMovimientos() {
@@ -454,6 +484,16 @@ async function cargarMovimientos() {
 }
 
 comprobarSesion();
+// marca en azul en qué pantalla y en qué menú estás
+(function () {
+  const pagina = location.pathname.split("/").pop() || "index.html";
+  const destino = { "punteo.html": "pedidos.html" }[pagina] || pagina;
+  document.querySelectorAll("#toolbar button[onclick]").forEach(b => {
+    if ((b.getAttribute("onclick") || "").includes("'" + destino + "'")) b.classList.add("activo");
+  });
+  const menu = { "pedidos.html": "ordenes", "punteo.html": "ordenes", "sistema.html": "sistema" }[pagina];
+  if (menu) { const m = document.querySelector('.menu-item[data-menu="' + menu + '"]'); if (m) m.classList.add("activo-menu"); }
+})();
 </script>
 </body>
 </html>
