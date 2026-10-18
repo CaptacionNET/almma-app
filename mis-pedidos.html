@@ -304,7 +304,7 @@ function renderLineas() {
     ).join("");
 }
 
-// Artículo genérico "18206 VARIOS": el material del PDF va en UNA línea con su texto en la descripción.
+// Artículo genérico "18206 VARIOS": cada línea del PDF va como una línea con su texto en la descripción.
 const ARTICULO_GENERICO_PDF = "18206";
 
 function pdfABase64(file) {
@@ -348,8 +348,10 @@ async function leerPdfPedido() {
     poner("domicilio_cli", data.domicilio_cli);
     poner("localidad_cli", data.localidad_cli);
     poner("num_pedido", data.num_pedido);
-    if (data.material) {
-      lineasNuevoPedido = [{ articulo: ARTICULO_GENERICO_PDF, descripcion: data.material, cantidad: 1 }];
+    // una línea por artículo del documento (si la función antigua devuelve "material", una sola)
+    const lineas = (data.lineas && data.lineas.length) ? data.lineas : (data.material ? [{ cantidad: 1, descripcion: data.material }] : []);
+    if (lineas.length) {
+      lineasNuevoPedido = lineas.map(l => ({ articulo: ARTICULO_GENERICO_PDF, descripcion: l.descripcion, cantidad: l.cantidad || 1 }));
       renderLineas();
     }
     estado.textContent = "Listo. Revisa los datos antes de crear el pedido.";
