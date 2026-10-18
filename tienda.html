@@ -96,7 +96,7 @@ document.querySelectorAll(".tab[data-t]").forEach(b => b.onclick = () => {
 async function iniciar(){
   const { data:{ user } } = await client.auth.getUser();
   if (!user) { location.href = "login.html"; return; }
-  const { data: d } = await client.from("dependientes").select("nombre, es_admin_tienda, tiendas(nombre)").eq("user_id", user.id).maybeSingle();
+  const { data: d } = await client.from("dependientes").select("nombre, es_admin_tienda, tiendas!tienda_id(nombre)").eq("user_id", user.id).maybeSingle();
   if (!d || !d.es_admin_tienda) { location.href = "mis-pedidos.html"; return; }
   document.getElementById("tienda_nombre").textContent = d.tiendas?.nombre || "Mi tienda";
   const { data: ts } = await client.from("tiendas").select("id, nombre").order("nombre");

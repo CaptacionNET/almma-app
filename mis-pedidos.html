@@ -163,7 +163,7 @@ async function comprobarSesion() {
   if (!user) { window.location.href = "login.html"; return; }
 
   const { data: depRow } = await client.from("dependientes")
-    .select("id, nombre, tienda_id, tiendas(nombre)").eq("user_id", user.id).maybeSingle();
+    .select("id, nombre, tienda_id, tiendas!tienda_id(nombre)").eq("user_id", user.id).maybeSingle();
 
   if (!depRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
 
