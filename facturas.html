@@ -101,6 +101,8 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
 .tabulator .tabulator-row.f-proforma .tabulator-cell:first-child{border-left-color:#94a3b8;}
 .tabulator .tabulator-row.f-ordinaria .tabulator-cell:first-child{border-left-color:#16a34a;}
 .tabulator .tabulator-row.f-rectificativa{background:#fff5f5 !important;}
+.tab-origen{background:transparent;color:var(--muted);border:none;border-bottom:3px solid transparent;border-radius:0;padding:10px 16px;font-size:14px;}
+.tab-origen.activa{color:var(--primary);border-bottom-color:var(--primary);font-weight:600;}
 .modal-f{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);align-items:flex-start;justify-content:center;padding:30px 16px;overflow-y:auto;z-index:60;}
 .modal-f .caja{background:var(--card);border:1px solid var(--border);border-radius:10px;width:100%;max-width:900px;padding:20px;}
 </style>
@@ -149,6 +151,10 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
   <button class="secondary" onclick="logout()">Salir</button>
 </div>
 
+<div class="pestanas" style="display:flex;gap:2px;padding:0 24px;margin-top:14px;border-bottom:1px solid var(--border);">
+  <button id="tab_web" class="tab-origen activa" onclick="cambiarOrigen('web')">Emitidas</button>
+  <button id="tab_antiguo" class="tab-origen" onclick="cambiarOrigen('programa_antiguo')">Ver anteriores (programa antiguo)</button>
+</div>
 <div class="filtros-entradas" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;padding:14px 24px 4px;">
   <div><label style="display:block;font-size:11px;color:var(--muted);font-weight:600;margin-bottom:4px;">Año</label><input id="ff_anyo" type="number" style="width:90px;" onchange="cargar()"></div>
   <div><label style="display:block;font-size:11px;color:var(--muted);font-weight:600;margin-bottom:4px;">Serie</label><select id="ff_serie" onchange="cargar()"></select></div>
@@ -228,33 +234,51 @@ async function comprobarSesionStaff() {
 }
 
 
-let tabla = null, seriePorCodigo = {}, datos = [], seleccion = new Set(), debounce = null;
+let tiendasLista = [];
+let tabla = null, seriePorCodigo = {}, datos = [], seleccion = new Set(), debounce = null, origenActual = "web";
 const g = (id) => document.getElementById(id);
+const sinAcentos = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const idDe = (c) => `${c.anyo}-${c.serie}-${c.factura}`;
 
 async function iniciar() {
   if (!(await comprobarSesionStaff())) return;
   const series = await cargarSeries(false);
+  tiendasLista = (await client.from("tiendas").select("id, nombre").order("nombre")).data || [];
   seriePorCodigo = Object.fromEntries(series.map(s => [s.codigo, s]));
   g("ff_serie").innerHTML = '<option value="">Todas</option>' + series.map(s => `<option value="${s.codigo}">${s.codigo} — ${esc(s.emisor_nombre || s.descripcion)}</option>`).join("");
-  g("ff_anyo").value = new Date().getFullYear();
+  g("ff_anyo").value = "";   // las emitidas aquí se ven todas; las anteriores, por año
+  cargar();
+}
+// "Emitidas" = las de esta web; "Ver anteriores" = las del programa antiguo, aparte para que no molesten
+function cambiarOrigen(o) {
+  origenActual = o;
+  g("tab_web").classList.toggle("activa", o === "web");
+  g("tab_antiguo").classList.toggle("activa", o !== "web");
+  seleccion = new Set();
+  g("ff_anyo").value = o === "web" ? "" : new Date().getFullYear();
   cargar();
 }
 function cargarDebounce() { clearTimeout(debounce); debounce = setTimeout(cargar, 350); }
-function limpiar() { ["ff_anyo", "ff_serie", "ff_tipo", "ff_tienda", "ff_desde", "ff_hasta"].forEach(i => { g(i).value = ""; }); g("ff_anyo").value = new Date().getFullYear(); cargar(); }
+function limpiar() { ["ff_anyo", "ff_serie", "ff_tipo", "ff_tienda", "ff_desde", "ff_hasta"].forEach(i => { g(i).value = ""; }); g("ff_anyo").value = origenActual === "web" ? "" : new Date().getFullYear(); cargar(); }
 
 async function cargar() {
   g("aviso").textContent = "Cargando...";
   const anyo = g("ff_anyo").value, tienda = g("ff_tienda").value.trim();
   let q = client.from("cabfacturas")
-    .select("anyo, serie, factura, ffactura, tipo_factura, origen, impbruto, impiva, impneto, iva_pct, motivo, rectifica_anyo, rectifica_serie, rectifica_factura, tienda_id, tiendas!tienda_id" + (tienda ? "!inner" : "") + "(nombre)")
+    .select("anyo, serie, factura, ffactura, tipo_factura, origen, impbruto, impiva, impneto, iva_pct, motivo, rectifica_anyo, rectifica_serie, rectifica_factura, tienda_id, tiendas!tienda_id(nombre)")
     .order("ffactura", { ascending: false }).order("factura", { ascending: false }).limit(500);
+  q = q.eq("origen", origenActual);
   if (anyo) q = q.eq("anyo", anyo);
   if (g("ff_serie").value) q = q.eq("serie", g("ff_serie").value);
   if (g("ff_tipo").value) q = q.eq("tipo_factura", g("ff_tipo").value);
   if (g("ff_desde").value) q = q.gte("ffactura", g("ff_desde").value);
   if (g("ff_hasta").value) q = q.lt("ffactura", diaSiguiente(g("ff_hasta").value));
-  if (tienda) q = q.ilike("tiendas.nombre", `%${tienda}%`);
+  if (tienda) {   // la búsqueda por tienda no distingue mayúsculas ni acentos: se resuelve aquí y se filtra por identificador
+    const palabras = sinAcentos(tienda).split(/\s+/).filter(Boolean);
+    const ids = tiendasLista.filter(t => palabras.every(p => sinAcentos(t.nombre).includes(p))).map(t => t.id);
+    if (!ids.length) { datos = []; g("aviso").textContent = "Ninguna tienda coincide con ese nombre."; pintar(); return; }
+    q = q.in("tienda_id", ids);
+  }
   const { data, error } = await q;
   if (error) { g("aviso").textContent = "Error: " + error.message; return; }
   datos = (data || []).map(c => ({
@@ -286,7 +310,7 @@ function pintar() {
     { title: "Rectifica / amplía a", field: "rect_txt", minWidth: 130 },
     { title: "Origen", field: "origen_txt", width: 130 },
   ];
-  const opciones = { data: datos, columns: columnas, layout: "fitColumns", height: "calc(100vh - 300px)", placeholder: "No hay facturas con esos filtros",
+  const opciones = { data: datos, columns: columnas, layout: "fitColumns", height: "calc(100vh - 300px)", placeholder: origenActual === "web" ? "Todavía no hay facturas emitidas desde esta web con esos filtros" : "No hay facturas del programa antiguo con esos filtros",
     rowFormatter: (row) => { row.getElement().classList.add("f-" + row.getData().tipo_factura); } };
   if (!tabla) {
     tabla = new Tabulator("#tabla_facturas", opciones);
@@ -314,7 +338,7 @@ function imprimirSeleccion() {
 let mr = null;   // { cab, modo, lineas: [{...}] }
 async function abrirModal(id, modo) {
   const cab = datos.find(d => d.id === id); if (!cab) return;
-  const { data, error } = await client.from("linfacturas").select("linea, descripcion, cantidad, porcentaje, importe, importecobrar, anyoord, numeroord, orden_linea, referencia_pedido, cliente_final")
+  const { data, error } = await client.from("linfacturas").select("linea, descripcion, cantidad, porcentaje, importe, importecobrar, anyoord, numeroord, orden_linea, referencia_pedido, cliente_final, fecha_montaje, cobrado, forma_cobro")
     .eq("anyo", cab.anyo).eq("serie", cab.serie).eq("factura", cab.factura).order("linea");
   if (error) { alert("No se pudieron cargar las líneas: " + error.message); return; }
   mr = { cab, modo, lineas: (data || []).map(l => ({ ...l, incluir: true, valor: Math.abs(Number(l.importecobrar || 0)), libre: false })) };
@@ -363,7 +387,8 @@ async function emitirRect() {
     return { descripcion: l.descripcion, cantidad: l.cantidad || 1,
       importe: s * (editada ? l.valor : Math.abs(Number(l.importe || 0))), porcentaje: editada ? 100 : (l.porcentaje ?? 100),
       importecobrar: s * l.valor, anyoord: l.anyoord || null, numeroord: l.numeroord || null, orden_linea: l.orden_linea || null,
-      referencia_pedido: l.referencia_pedido || null, cliente_final: l.cliente_final || null };
+      referencia_pedido: l.referencia_pedido || null, cliente_final: l.cliente_final || null,
+      fecha_montaje: l.fecha_montaje || null, cobrado: l.cobrado ?? null, forma_cobro: l.forma_cobro || null };
   });
   g("mr_emitir").disabled = true;
   const { data, error } = await client.rpc("emitir_rectificativa", {

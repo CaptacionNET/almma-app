@@ -24,7 +24,14 @@ body{margin:0;background:#e8ebf2;color:var(--text);font-family:-apple-system,Bli
 .cliente .et{font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.6px;}
 .datos{display:flex;gap:30px;margin-top:12px;color:var(--muted);flex-wrap:wrap;}
 .datos b{color:var(--text);}
-table{width:100%;border-collapse:collapse;margin-top:16px;}
+table{width:100%;border-collapse:collapse;margin-top:14px;}
+thead{display:table-header-group;}
+tbody.orden{break-inside:avoid;page-break-inside:avoid;}
+tr.og td{background:#eef4ff;border-bottom:1px solid #cfdcf5;border-top:2px solid #cfdcf5;padding:6px 8px;}
+tr.og .cobro{float:right;font-weight:700;color:#166534;}
+tr.og .sub{color:var(--muted);}
+.resumen{display:flex;gap:26px;margin-top:10px;font-size:14px;flex-wrap:wrap;}
+.resumen b{font-size:15px;}
 th{background:#f1f4fa;text-align:left;padding:7px 8px;border-bottom:2px solid var(--line);font-size:12px;}
 td{padding:6px 8px;border-bottom:1px solid #e6eaf2;vertical-align:top;}
 td.num,th.num{text-align:right;white-space:nowrap;}
@@ -38,7 +45,7 @@ td.num,th.num{text-align:right;white-space:nowrap;}
 @media print{
   body{background:#fff;}
   #barra{display:none;}
-  .hoja{margin:0;box-shadow:none;width:auto;min-height:0;height:296mm;page-break-after:always;break-after:page;}
+  .hoja{margin:0;box-shadow:none;width:auto;min-height:0;height:auto;page-break-after:always;break-after:page;}
   .hoja:last-child{page-break-after:auto;break-after:auto;}
 }
 </style>
@@ -79,14 +86,28 @@ async function iniciar() {
   const tiendas = sinReceptor.length ? (await client.from("tiendas").select("id, nombre, nombre_comercial, cif, direccion, cp, localidad, provincia").in("id", [...new Set(sinReceptor)])).data || [] : [];
   const tiendaPorId = Object.fromEntries(tiendas.map(t => [t.id, t]));
 
+  // datos de cada orden (fecha de montaje, referencia, cliente, lo cobrado): las facturas del programa antiguo no los
+  // guardaban en la línea, así que se leen de la orden; las nuevas los llevan guardados
+  const claves = [...new Set((lins || []).filter(l => l.anyoord).map(l => `${l.anyoord}/${l.numeroord}`))];
+  const ordenPorClave = {};
+  const trozos = [];
+  for (let i = 0; i < claves.length; i += 30) trozos.push(claves.slice(i, i + 30));
+  const resp = await Promise.all(trozos.map(g => client.from("ordenes")
+    .select("anyo, orden, num_pedido, nombre_cli, fecha_montaje, importe_cobrado, tipo_cobro")
+    .or(g.map(c => { const [a, o] = c.split("/"); return `and(anyo.eq.${a},orden.eq.${o})`; }).join(","))));
+  resp.forEach(r => (r.data || []).forEach(o => { ordenPorClave[`${o.anyo}/${o.orden}`] = o; }));
+
   const orden = ids.map(([a, s, f]) => (cabs || []).find(c => c.anyo === a && c.serie === s && c.factura === f)).filter(Boolean);
-  document.getElementById("hojas").innerHTML = orden.map(c => hoja(c, (lins || []).filter(l => l.anyo === c.anyo && l.serie === c.serie && l.factura === c.factura), ss, originales, tiendaPorId)).join("");
+  document.getElementById("hojas").innerHTML = orden.map(c => hoja(c, (lins || []).filter(l => l.anyo === c.anyo && l.serie === c.serie && l.factura === c.factura), ss, originales, tiendaPorId, ordenPorClave)).join("");
   document.getElementById("estado").textContent = `${orden.length} factura(s) lista(s) para imprimir. Elige "Guardar como PDF" en el cuadro de impresión si prefieres un fichero.`;
   document.title = orden.length === 1 ? "Factura " + numeroFactura(orden[0], ss) : `Facturas (${orden.length})`;
   if (params.get("auto") === "1") setTimeout(() => window.print(), 600);
 }
 
-function hoja(c, lineas, ss, originales, tiendaPorId) {
+const FORMAS_COBRO = { "00": "Pago fca.", BZ: "Bizum", C: "Contado", CH: "Cheque-talón", DA: "Datáfono", E: "Efectivo", FI: "Financiado", IN: "Ingreso banco", J: "Caja", NO: "", TI: "Tienda", N: "" };
+const formaCobroTexto = (v) => { const s = String(v ?? "").trim(); return Object.prototype.hasOwnProperty.call(FORMAS_COBRO, s.toUpperCase()) ? FORMAS_COBRO[s.toUpperCase()] : s; };
+
+function hoja(c, lineas, ss, originales, tiendaPorId, ordenPorClave) {
   const s = ss[c.serie] || {};
   const proforma = c.tipo_factura === "proforma";
   const emisor = c.emisor || { nombre: s.emisor_nombre, nif: s.emisor_nif, direccion: s.emisor_direccion, cp_localidad: s.emisor_cp_localidad, iban: s.emisor_iban, con_cabecera: s.con_cabecera !== false };
@@ -94,10 +115,37 @@ function hoja(c, lineas, ss, originales, tiendaPorId) {
   const r = c.receptor || tiendaPorId[c.tienda_id] || {};
   const orig = c.rectifica_factura ? originales.find(o => o.anyo === c.rectifica_anyo && o.serie === c.rectifica_serie && o.factura === c.rectifica_factura) : null;
   const pct = c.iva_pct ?? (c.impbruto ? Math.round(c.impiva / c.impbruto * 10000) / 100 : 0);
-  const filas = lineas.map(l => `<tr>
-      <td>${l.anyoord ? `${l.anyoord}/${l.numeroord}` : ""}</td><td>${esc(l.referencia_pedido)}</td><td>${esc(l.cliente_final)}</td>
-      <td>${esc(l.descripcion)}</td><td class="num">${euros(l.importe)}</td><td class="num">${l.porcentaje !== null && l.porcentaje !== undefined ? Math.round(l.porcentaje * 100) / 100 + " %" : ""}</td>
-      <td class="num"><strong>${euros(l.importecobrar)}</strong></td></tr>`).join("");
+
+  // cada línea completa sus datos con los de la orden si la factura no los guardó
+  const filas = lineas.map(l => {
+    const o = ordenPorClave[`${l.anyoord}/${l.numeroord}`] || {};
+    return { ...l,
+      _ref: l.referencia_pedido || o.num_pedido || "", _cli: l.cliente_final || o.nombre_cli || "",
+      _fecha: l.fecha_montaje || (o.fecha_montaje ? String(o.fecha_montaje).slice(0, 10) : ""),
+      _cobrado: l.cobrado ?? o.importe_cobrado ?? null, _forma: l.forma_cobro ?? o.tipo_cobro ?? "" };
+  });
+  // agrupadas por orden (y ordenadas por fecha de montaje), como en el programa antiguo
+  const grupos = [];
+  filas.forEach(l => {
+    const clave = l.anyoord ? `${l.anyoord}/${l.numeroord}` : "sin-orden";
+    let g = grupos.find(x => x.clave === clave);
+    if (!g) { g = { clave, fecha: l._fecha, ref: l._ref, cli: l._cli, cobrado: l._cobrado, forma: l._forma, orden: l.anyoord ? clave : "", lineas: [] }; grupos.push(g); }
+    g.lineas.push(l);
+  });
+  grupos.sort((a, b) => (a.fecha || "9999").localeCompare(b.fecha || "9999") || a.clave.localeCompare(b.clave, undefined, { numeric: true }));
+
+  const cuerpo = grupos.map(g => {
+    const cobrado = Number(g.cobrado || 0), forma = formaCobroTexto(g.forma);
+    const cab = g.orden ? `<tr class="og"><td colspan="5">
+        ${g.fecha ? `<strong>${fechaES(g.fecha)}</strong> &nbsp;·&nbsp; ` : ""}Orden <strong>${esc(g.orden)}</strong> &nbsp;·&nbsp; ${g.ref ? `Ref. <strong>${esc(g.ref)}</strong> &nbsp;·&nbsp; ` : ""}<span class="sub">Cliente:</span> ${esc(g.cli)}
+        ${cobrado > 0 ? `<span class="cobro">Cobrado por nosotros: ${euros(cobrado)}${forma ? " (" + esc(forma) + ")" : ""}</span>` : ""}
+      </td></tr>` : "";
+    return `<tbody class="orden">${cab}` + g.lineas.map(l => `<tr>
+      <td class="num" style="width:12mm;">${Number(l.cantidad || 1).toLocaleString("es-ES")}</td><td>${esc(l.descripcion)}</td>
+      <td class="num">${euros(l.importe)}</td><td class="num">${l.porcentaje !== null && l.porcentaje !== undefined ? Math.round(l.porcentaje * 100) / 100 + " %" : ""}</td>
+      <td class="num"><strong>${euros(l.importecobrar)}</strong></td></tr>`).join("") + "</tbody>";
+  }).join("");
+
   return `<section class="hoja">
     <div class="cab">
       ${conCabecera ? `<div class="emisor"><strong>${esc(emisor.nombre)}</strong><br>NIF: ${esc(emisor.nif)}<br>${esc(emisor.direccion)}<br>${esc(emisor.cp_localidad)}</div>` : '<div class="sinmembrete"></div>'}
@@ -105,8 +153,9 @@ function hoja(c, lineas, ss, originales, tiendaPorId) {
     </div>
     <div class="datos"><span>Fecha: <b>${fechaES(c.ffactura)}</b></span></div>
     <div class="cliente"><div class="et">Cliente</div><strong>${esc(r.nombre)}</strong>${r.nombre_comercial && r.nombre_comercial !== r.nombre ? ` (${esc(r.nombre_comercial)})` : ""}<br>${r.cif ? "NIF/CIF: " + esc(r.cif) + "<br>" : ""}${esc(r.direccion)}${r.direccion ? "<br>" : ""}${[r.cp, r.localidad].filter(Boolean).map(esc).join(" ")}${r.provincia ? " (" + esc(r.provincia) + ")" : ""}</div>
+    <div class="resumen"><span>Base imponible <b>${euros(c.impbruto)}</b></span>${proforma ? "" : `<span>IVA ${pct} % <b>${euros(c.impiva)}</b></span><span>Total <b>${euros(c.impneto)}</b></span>`}</div>
     ${c.rectifica_factura ? `<div class="rect"><strong>${c.tipo_factura === "rectificativa" ? "Rectifica" : "Amplía"} la factura ${esc(numeroFactura({ anyo: c.rectifica_anyo, serie: c.rectifica_serie, factura: c.rectifica_factura, tipo_factura: "ordinaria" }, ss))}${orig ? " de fecha " + fechaES(orig.ffactura) : ""}.</strong>${c.motivo ? "<br>Motivo: " + esc(c.motivo) : ""}</div>` : ""}
-    <table><thead><tr><th>Orden</th><th>Referencia de pedido</th><th>Cliente final</th><th>Concepto</th><th class="num">Base</th><th class="num">%</th><th class="num">Importe</th></tr></thead><tbody>${filas}</tbody></table>
+    <table><thead><tr><th class="num">Cant.</th><th>Concepto</th><th class="num">Base</th><th class="num">%</th><th class="num">Importe</th></tr></thead>${cuerpo}</table>
     <div class="totales">
       <div><span>Base imponible</span><span>${euros(c.impbruto)}</span></div>
       ${proforma ? "" : `<div><span>IVA ${pct} %</span><span>${euros(c.impiva)}</span></div><div class="total"><span>TOTAL</span><span>${euros(c.impneto)}</span></div>`}

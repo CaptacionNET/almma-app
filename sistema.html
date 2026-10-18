@@ -375,6 +375,7 @@ function renderTabla(cfg, data) {
 }
 
 let tiendasArticulosListas = false;
+let tiendasNombres = [];
 async function prepararFiltrosArticulos() {
   if (tiendasArticulosListas) return;
   const { data } = await client.from("tiendas").select("codigo, nombre").not("codigo", "is", null).order("nombre");
@@ -405,8 +406,10 @@ async function buscarArticulos() {
     const m = tienda.match(/^(\d+)/);   // "354" o "354 · TEMPUR SEALY": manda el código
     if (m) q = q.eq("proveedor", parseInt(m[1], 10));
     else {
-      const { data: ts } = await client.from("tiendas").select("codigo").ilike("nombre", `%${tienda}%`).not("codigo", "is", null).limit(100);
-      const codigos = (ts || []).map(t => t.codigo);
+      if (!tiendasNombres.length) { const { data: todas } = await client.from("tiendas").select("codigo, nombre").not("codigo", "is", null); tiendasNombres = todas || []; }
+      const sa = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();   // sin acentos ni mayúsculas
+      const palabras = sa(tienda).split(/\s+/).filter(Boolean);
+      const codigos = tiendasNombres.filter(t => palabras.every(p => sa(t.nombre).includes(p))).map(t => t.codigo);
       if (!codigos.length) { aviso.textContent = "Ninguna tienda coincide con ese nombre."; renderTabla(cfg, []); return; }
       q = q.in("proveedor", codigos);
     }
@@ -444,7 +447,9 @@ async function buscarEnCatalogo() {
   if (!tabla) return;
   if (!texto) { cargarCatalogo(); return; }
   const filas = tabla.getData();
-  const filtradas = filas.filter(f => cfg.buscarCampos.some(c => (f[c] || "").toString().toLowerCase().includes(texto.toLowerCase())));
+  const _sa = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const ptexto = _sa(texto).split(/\s+/).filter(Boolean);
+  const filtradas = filas.filter(f => { const todo = _sa(cfg.buscarCampos.map(c => f[c] || "").join(" ")); return ptexto.every(p => todo.includes(p)); });
   tabla.setData(filtradas);
 }
 

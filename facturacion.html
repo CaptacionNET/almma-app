@@ -156,7 +156,9 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
 <div class="card" style="margin:12px 24px;padding:16px;background:var(--card);border:1px solid var(--border);border-radius:10px;">
   <h3 style="margin-top:0;">Emitir factura</h3>
   <div class="form-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;">
-    <div class="campo" style="grid-column:span 2;"><label>Tienda (código o nombre)</label><input id="f_tienda" list="dl_tiendas" placeholder="Escribe el código o el nombre y elige" autocomplete="off" style="width:100%;"></div>
+    <div class="campo" style="grid-column:span 2;position:relative;"><label>Tienda (código o nombre)</label>
+      <input id="f_tienda" placeholder="Escribe el código o parte del nombre (sin importar acentos) y elige" autocomplete="off" style="width:100%;" oninput="filtrarTiendas()" onfocus="filtrarTiendas()">
+      <div id="lista_tiendas" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:30;max-height:260px;overflow:auto;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 10px 24px -12px rgba(0,0,0,.35);"></div></div>
     <div class="campo"><label>Serie (quién factura)</label><select id="f_serie" style="width:100%;"></select></div>
     <div class="campo"><label>Fecha de la factura (día de emisión)</label><input id="f_fecha" type="date" readonly style="width:100%;background:#f3f4f6;" title="La factura lleva siempre la fecha del día en que se emite"></div>
     <div class="campo"><label>Montajes de…</label>
@@ -174,7 +176,6 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
     <div class="campo"><label>Forma de pago</label><input id="f_forma_pago" placeholder="ej. Transferencia" style="width:100%;"></div>
     <div class="campo" style="grid-column:span 2;"><label>Notas (salen en la factura)</label><input id="f_notas" style="width:100%;"></div>
   </div>
-  <datalist id="dl_tiendas"></datalist>
   <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
     <button onclick="buscarOrdenes()">Buscar líneas a facturar</button>
     <span id="aviso" class="meta"></span>
@@ -243,10 +244,31 @@ async function iniciar() {
     `<option value="${s.codigo}">${s.codigo} · ${s.es_proforma ? "PROFORMA (sin IVA)" : esc(s.emisor_nombre || s.descripcion)}${s.codigo === 2 ? " (almacenaje)" : ""}</option>`).join("");
   const { data } = await client.from("tiendas").select("id, codigo, nombre, cif, forma_pago").not("codigo", "is", null).order("nombre");
   tiendas = data || [];
-  f("dl_tiendas").innerHTML = tiendas.map(t => `<option value="${t.codigo} · ${esc(t.nombre)}">`).join("");
   f("f_fecha").value = hoyISO();
   f("f_tienda").addEventListener("change", () => { const t = tiendaElegida(); if (t && t.forma_pago && !f("f_forma_pago").value) f("f_forma_pago").value = t.forma_pago; });
 }
+
+const sinAcentos = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+// buscador de tienda: por palabras, sin distinguir mayúsculas ni acentos
+function filtrarTiendas() {
+  const palabras = sinAcentos(f("f_tienda").value).split(/\s+/).filter(Boolean);
+  const caja = f("lista_tiendas");
+  const vis = tiendas.filter(t => palabras.every(p => sinAcentos(t.codigo + " " + t.nombre).includes(p))).slice(0, 40);
+  caja.innerHTML = vis.length
+    ? vis.map(t => `<div data-id="${t.id}" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #eef2f8;"><strong>${t.codigo}</strong> · ${esc(t.nombre)}</div>`).join("")
+    : '<div style="padding:8px 12px;color:#6b7280;">Ninguna tienda coincide</div>';
+  caja.style.display = "block";
+}
+document.addEventListener("click", (e) => {
+  const caja = f("lista_tiendas"); if (!caja) return;
+  const fila = e.target.closest("#lista_tiendas [data-id]");
+  if (fila) {
+    const t = tiendas.find(x => x.id === fila.dataset.id);
+    if (t) { f("f_tienda").value = `${t.codigo} · ${t.nombre}`; if (t.forma_pago && !f("f_forma_pago").value) f("f_forma_pago").value = t.forma_pago; }
+    caja.style.display = "none";
+  } else if (e.target.id !== "f_tienda") caja.style.display = "none";
+});
 
 function tiendaElegida() {
   const m = f("f_tienda").value.trim().match(/^(\d+)/);
