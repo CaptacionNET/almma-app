@@ -124,9 +124,10 @@ function proximamente(nombre) {
 async function comprobarSesion() {
   const { data: { user } } = await client.auth.getUser();
   if (!user) { window.location.href = "login.html"; return; }
-  const { data: staffRow } = await client.from("staff").select("user_id, es_montador, solo_deca").eq("user_id", user.id).maybeSingle();
+  const { data: staffRow } = await client.from("staff").select("user_id, es_montador, solo_deca, solo_montajes").eq("user_id", user.id).maybeSingle();
   if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
   if (staffRow.solo_deca) { window.location.href = "deca.html"; return; }
+  if (staffRow.solo_montajes) { window.location.href = "montador.html"; return; }
 
   const anyoActual = new Date().getFullYear();
   document.getElementById("anyo_desde").value = anyoActual;
@@ -150,7 +151,7 @@ async function cargarPunteo() {
   // llegaba al statement timeout. Se cruzan en JS por anyo+orden.
   const [{ data: lineas, error: errLineas }, { data: ordenesData, error: errOrdenes }] = await Promise.all([
     client.from("linorden")
-      .select("anyo, orden, linea, descripcion, frecepcion, observacion, recibido_at, proveedores_mat ( nombre )")
+      .select("anyo, orden, linea, descripcion, frecepcion, observacion, recibido_at, fabricantes ( nombre )")
       .gte("anyo", anyoDesde).lte("anyo", anyoHasta)
       .order("orden", { ascending: document.getElementById("orden_sort").value === "asc" })
       .limit(5000),
@@ -176,7 +177,7 @@ async function cargarPunteo() {
       orden: r.orden,
       anyo: r.anyo,
       fecha: r.frecepcion,
-      fabricante: r.proveedores_mat?.nombre || "",
+      fabricante: r.fabricantes?.nombre || "",
       mercancia: r.descripcion || "",
       tienda: o.tiendas?.nombre || "",
       dependiente: o.dependientes?.nombre || "",

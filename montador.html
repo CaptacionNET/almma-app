@@ -181,18 +181,27 @@ async function logout() {
 }
 
 async function cargarMontajes() {
-  const { data, error } = await client.from("ordenes")
-    .select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, estado")
-    .eq("montador_id", montadorUserId)
+  // Esta persona (montador) y las órdenes en las que va asignada. La base de datos ya solo
+  // le deja ver las suyas; el filtro "mio" hace lo mismo para el administrador que también monta.
+  const { data: yo, error: errYo } = await client.from("montadores").select("id").eq("staff_user_id", montadorUserId).maybeSingle();
+  if (errYo || !yo) {
+    document.getElementById("tabla_montajes").innerHTML = '<p style="padding:20px;">Tu usuario todavía no está enlazado con ninguna persona de la lista de montadores. Avisa al administrador.</p>';
+    return;
+  }
+  const { data: crudos, error } = await client.from("ordenes")
+    .select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, estado, mio:ordenes_montadores!inner(montador_id), equipo:ordenes_montadores(montadores(nombre))")
+    .eq("mio.montador_id", yo.id)
     .order("anyo", { ascending: false })
     .order("orden", { ascending: false })
     .limit(200);
   if (error) { console.error(error); return; }
+  const data = (crudos || []).map(o => ({ ...o, equipo_txt: (o.equipo || []).map(e => e.montadores?.nombre).filter(Boolean).join(" + ") }));
 
   const columnas = [
     { title: "Año", field: "anyo", width: 70 },
     { title: "Pedido", field: "orden", width: 90 },
     { title: "Cliente", field: "nombre_cli" },
+    { title: "Equipo", field: "equipo_txt" },
     { title: "Dirección", field: "domicilio_cli" },
     { title: "Localidad", field: "localidad_cli" },
     { title: "Estado", field: "estado", formatter: (cell) => {

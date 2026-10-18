@@ -139,9 +139,10 @@ async function logout() {
 async function comprobarSesion() {
   const { data: { user } } = await client.auth.getUser();
   if (!user) { window.location.href = "login.html"; return; }
-  const { data: staffRow } = await client.from("staff").select("user_id, es_montador, solo_deca").eq("user_id", user.id).maybeSingle();
+  const { data: staffRow } = await client.from("staff").select("user_id, es_montador, solo_deca, solo_montajes").eq("user_id", user.id).maybeSingle();
   if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
   if (staffRow.solo_deca) { window.location.href = "deca.html"; return; }
+  if (staffRow.solo_montajes) { window.location.href = "montador.html"; return; }
 
   const params = new URLSearchParams(window.location.search);
   cambiarCatalogo(params.get("cat") || "tiendas");
@@ -177,7 +178,7 @@ const CATALOGOS = {
     orden: "nombre",
   },
   fabricantes: {
-    tabla: "proveedores_mat", pk: "codigo", pkGenerado: false, titulo: "Fabricante",
+    tabla: "fabricantes", pk: "codigo", pkGenerado: false, titulo: "Fabricante",
     columnasLista: ["codigo", "nombre", "localidad", "telefono1", "email"],
     cabeceras: { codigo: "Cód.", nombre: "Nombre", localidad: "Localidad", telefono1: "Teléfono", email: "Email" },
     campos: [
@@ -193,6 +194,18 @@ const CATALOGOS = {
       { id: "cif", label: "CIF" },
     ],
     buscarCampos: ["nombre", "localidad"],
+    orden: "nombre",
+  },
+  montadores: {
+    tabla: "montadores", pk: "id", pkGenerado: true, titulo: "Montador (persona)",
+    columnasLista: ["nombre", "activo", "especial"],
+    cabeceras: { nombre: "Nombre", activo: "Activo", especial: "Entrada especial (recoge…)" },
+    campos: [
+      { id: "nombre", label: "Nombre", requerido: true },
+      { id: "activo", label: "Activo (sale en la lista al asignar una orden)", tipo: "checkbox" },
+      { id: "especial", label: "Entrada especial (Sin montador, Recoge cliente…)", tipo: "checkbox" },
+    ],
+    buscarCampos: ["nombre"],
     orden: "nombre",
   },
   dependientes: {
@@ -212,11 +225,11 @@ const CATALOGOS = {
   articulos: {
     tabla: "articulos", pk: "articulo", pkGenerado: false, titulo: "Artículo",
     columnasLista: ["articulo", "descripcion", "proveedor", "importe", "serie"],
-    cabeceras: { articulo: "Código", descripcion: "Descripción", proveedor: "Fabricante (cód.)", importe: "Importe", serie: "Serie" },
+    cabeceras: { articulo: "Código", descripcion: "Descripción", proveedor: "Tienda (cód.)", importe: "Importe", serie: "Serie" },
     campos: [
       { id: "articulo", label: "Código de artículo", requerido: true },
       { id: "descripcion", label: "Descripción", requerido: true },
-      { id: "proveedor", label: "Código de fabricante", tipo: "number" },
+      { id: "proveedor", label: "Código de tienda", tipo: "number" },
       { id: "porcentaje", label: "Porcentaje", tipo: "number" },
       { id: "importe", label: "Importe", tipo: "number" },
       { id: "serie", label: "Serie", tipo: "number" },
@@ -230,7 +243,6 @@ const CATALOGOS = {
 };
 
 function cambiarCatalogo(cat) {
-  if (cat === "montadores") { cargarMontadoresCatalogo(); return; }
   catalogoActivo = cat;
   document.querySelectorAll(".cat-tab").forEach(b => b.classList.toggle("activa", b.dataset.cat === cat));
   document.getElementById("buscador").value = "";
@@ -272,14 +284,13 @@ document.getElementById("tabla_catalogo").addEventListener("click", (e) => {
   if (!rowEl) return;
   const row = tabla.getRows().find(r => r.getElement() === rowEl);
   if (!row) return;
-  if (catalogoActivo === "montadores") toggleMontador(row.getData());
-  else abrirEditar(row.getData());
+  abrirEditar(row.getData());
 });
 
 function renderTabla(cfg, data) {
   const columnas = cfg.columnasLista.map(campo => ({
     title: cfg.cabeceras[campo] || campo, field: campo,
-    formatter: campo === "listado_albaranes" ? (c => c.getValue() ? "Sí" : "No") : undefined,
+    formatter: ["listado_albaranes", "activo", "especial"].includes(campo) ? (c => c.getValue() ? "Sí" : "No") : undefined,
   }));
   if (!tabla) {
     tabla = new Tabulator("#tabla_catalogo", {
@@ -391,40 +402,6 @@ async function guardarRegistro() {
   if (error) { alert("No se pudo guardar: " + error.message); return; }
   cerrarPanel();
   cargarCatalogo();
-}
-
-// --- montadores: caso especial, es un subconjunto de staff ---
-
-async function cargarMontadoresCatalogo() {
-  catalogoActivo = "montadores";
-  document.querySelectorAll(".cat-tab").forEach(b => b.classList.toggle("activa", b.dataset.cat === "montadores"));
-  document.getElementById("buscador").value = "";
-  document.getElementById("btn_nuevo").style.display = "none"; // no se puede crear un montador sin una cuenta de staff existente
-  const avisoBox = document.getElementById("aviso_carga");
-  avisoBox.textContent = "Los montadores son personal de staff marcado como montador. Para dar de alta uno nuevo, primero necesita una cuenta de staff.";
-
-  const { data, error } = await client.from("staff").select("user_id, nombre, es_montador").order("nombre");
-  if (error) { avisoBox.textContent = "Error: " + error.message; return; }
-
-  const columnas = [
-    { title: "Nombre", field: "nombre" },
-    { title: "Es montador", field: "es_montador", formatter: c => c.getValue() ? "Sí" : "No" },
-  ];
-  if (!tabla) {
-    tabla = new Tabulator("#tabla_catalogo", {
-      data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 260px)",
-    });
-  } else {
-    tabla.setColumns(columnas);
-    tabla.setData(data);
-  }
-}
-
-async function toggleMontador(d) {
-  if (!confirm(`¿Cambiar "${d.nombre}" a es_montador = ${!d.es_montador}?`)) return;
-  const { error } = await client.from("staff").update({ es_montador: !d.es_montador }).eq("user_id", d.user_id);
-  if (error) { alert("No se pudo actualizar: " + error.message); return; }
-  cargarMontadoresCatalogo();
 }
 
 comprobarSesion();

@@ -87,6 +87,9 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
       <label for="buscar_num_pedido">Número de Pedido</label>
       <input id="buscar_num_pedido" placeholder="Nº pedido de la tienda" onkeydown="if(event.key==='Enter')buscarPedido()">
     </div>
+    <div class="campo" style="align-self:end;">
+      <label style="display:flex;gap:6px;align-items:center;font-weight:normal;"><input type="checkbox" id="incluir_anteriores" style="width:auto;"> Incluir años anteriores</label>
+    </div>
   </div>
   <div style="display:flex;gap:10px;margin-top:14px;align-items:center;">
     <button onclick="buscarPedido()">Buscar</button>
@@ -181,16 +184,17 @@ function proximamente(nombre) {
 async function comprobarSesion() {
   const { data: { user } } = await client.auth.getUser();
   if (!user) { window.location.href = "login.html"; return; }
-  const { data: staffRow } = await client.from("staff").select("user_id, solo_deca").eq("user_id", user.id).maybeSingle();
+  const { data: staffRow } = await client.from("staff").select("user_id, solo_deca, solo_montajes").eq("user_id", user.id).maybeSingle();
   if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
   if (staffRow.solo_deca) { window.location.href = "deca.html"; return; }
+  if (staffRow.solo_montajes) { window.location.href = "montador.html"; return; }
   staffUserId = staffRow.user_id;
 
   const { data: almacenes } = await client.from("almacenes").select("codigo, texto").order("texto");
   document.getElementById("ent_almacen").innerHTML = (almacenes || []).map(a => `<option value="${a.codigo}">${a.texto || a.codigo}</option>`).join("");
   document.getElementById("ent_fecha").value = new Date().toISOString().slice(0, 10);
 
-  const { data: fabricantes } = await client.from("proveedores_mat").select("codigo, nombre").order("nombre");
+  const { data: fabricantes } = await client.from("fabricantes").select("codigo, nombre").order("nombre");
   document.getElementById("dl_fabricantes").innerHTML = (fabricantes || []).map(f => `<option value="${(f.nombre || "").replace(/"/g, "&quot;")}">`).join("");
   (fabricantes || []).forEach(f => { if (f.nombre) fabricantesPorNombre[f.nombre.toLowerCase()] = f.codigo; });
 
@@ -218,16 +222,22 @@ async function buscarPedido() {
   const numPedido = document.getElementById("buscar_num_pedido").value.trim();
   if (!numPedido) { errorBox.textContent = "Escribe un número de pedido."; errorBox.style.display = "block"; return; }
 
-  const { data, error } = await client.from("ordenes")
+  // por defecto solo los últimos 4 años (este y los 3 anteriores); la casilla amplía a todo el histórico
+  const incluirAnteriores = document.getElementById("incluir_anteriores").checked;
+  const anyoMinimo = new Date().getFullYear() - 3;
+  let consulta = client.from("ordenes")
     .select("anyo, orden, num_pedido, nombre_cli, tienda_id, tiendas ( nombre )")
     .ilike("num_pedido", `%${numPedido}%`)
     .order("anyo", { ascending: false }).order("orden", { ascending: false })
     .limit(20);
+  if (!incluirAnteriores) consulta = consulta.gte("anyo", anyoMinimo);
+  const { data, error } = await consulta;
 
   if (error) { errorBox.textContent = "Error al buscar: " + error.message; errorBox.style.display = "block"; return; }
 
   if (!data || !data.length) {
-    resultadoBox.textContent = `No se encontró ningún pedido con número "${numPedido}".`;
+    resultadoBox.textContent = `No se encontró ningún pedido con número "${numPedido}"` +
+      (incluirAnteriores ? "." : ` en los últimos 4 años (desde ${anyoMinimo}). Marca "Incluir años anteriores" para buscar más atrás.`);
     btnCrear.style.display = "inline-block";
     return;
   }
@@ -272,7 +282,7 @@ function activarPedido(orden, numPedido) {
 
 async function cargarLineasPedido() {
   const { data: lineas, error } = await client.from("linorden")
-    .select("linea, articulo, descripcion, cantidad, ubicacion, bultos, albaran, proveedor, recibido_at, proveedores_mat ( nombre )")
+    .select("linea, articulo, descripcion, cantidad, ubicacion, bultos, albaran, proveedor, recibido_at, fabricantes ( nombre )")
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden)
     .order("linea");
 
@@ -287,14 +297,14 @@ async function cargarLineasPedido() {
     if (l.recibido_at) {
       return `<div class="item">
         <strong>${nombreLinea}</strong> — ${l.cantidad ?? ""} ud.
-        <div class="meta">Recibida el ${new Date(l.recibido_at).toLocaleString("es-ES")}${l.proveedores_mat?.nombre ? " · " + l.proveedores_mat.nombre : ""}${l.ubicacion ? " · " + l.ubicacion : ""}${l.bultos ? " · " + l.bultos + " bultos" : ""}${l.albaran ? " · albarán " + l.albaran : ""}</div>
+        <div class="meta">Recibida el ${new Date(l.recibido_at).toLocaleString("es-ES")}${l.fabricantes?.nombre ? " · " + l.fabricantes.nombre : ""}${l.ubicacion ? " · " + l.ubicacion : ""}${l.bultos ? " · " + l.bultos + " bultos" : ""}${l.albaran ? " · albarán " + l.albaran : ""}</div>
         <button class="secondary btn-mini" style="margin-top:6px;" onclick="deshacerRecepcionLinea(${l.linea})">Deshacer recepción</button>
       </div>`;
     }
     return `<div class="item">
       <strong>${nombreLinea}</strong> — ${l.cantidad ?? ""} ud. pedida(s)
       <div class="form-grid" style="margin-top:8px;">
-        <div class="campo"><label>Fabricante</label><input id="rl_fab_${l.linea}" list="dl_fabricantes" value="${esc(l.proveedores_mat?.nombre)}"></div>
+        <div class="campo"><label>Fabricante</label><input id="rl_fab_${l.linea}" list="dl_fabricantes" value="${esc(l.fabricantes?.nombre)}"></div>
         <div class="campo"><label>Cantidad recibida</label><input id="rl_cant_${l.linea}" type="number" step="any" value="${esc(l.cantidad)}"></div>
         <div class="campo"><label>Ubicación</label><input id="rl_ubi_${l.linea}" value="${esc(l.ubicacion)}"></div>
         <div class="campo"><label>Bultos</label><input id="rl_bul_${l.linea}" type="number" value="${esc(l.bultos)}"></div>
@@ -350,7 +360,7 @@ document.getElementById("ent_fabricante_buscar").addEventListener("input", (e) =
   const caja = document.getElementById("ent_fabricante_sugerencias");
   if (texto.length < 2) { caja.style.display = "none"; return; }
   debounceFab = setTimeout(async () => {
-    const { data } = await client.from("proveedores_mat").select("codigo, nombre").ilike("nombre", `%${texto}%`).limit(15);
+    const { data } = await client.from("fabricantes").select("codigo, nombre").ilike("nombre", `%${texto}%`).limit(15);
     caja.innerHTML = (data || []).map(f =>
       `<div data-cod="${f.codigo}" data-nom="${(f.nombre || "").replace(/"/g, "&quot;")}">${f.nombre}</div>`
     ).join("");

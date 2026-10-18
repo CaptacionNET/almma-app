@@ -74,6 +74,11 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .sugerencias{display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 10px 20px -10px rgba(0,0,0,.2);max-height:220px;overflow-y:auto;z-index:5;}
 .sugerencias div{padding:8px 10px;cursor:pointer;font-size:13px;}
 .sugerencias div:hover{background:#f5f6fa;}
+.chips{display:flex;flex-wrap:wrap;gap:8px;}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border:1px solid var(--border);border-radius:16px;font-size:13px;cursor:pointer;background:#fff;}
+.chip input{width:auto;margin:0;}
+.chip.especial{font-style:italic;}
+.chip.inactivo{opacity:.6;}
 </style>
 </head>
 <body>
@@ -120,6 +125,9 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
   <div class="campo-mini" style="max-width:90px;">
     <label>Año hasta</label>
     <input id="anyo_hasta" type="number" onkeydown="if(event.key==='Enter')cargarPedidos()">
+  </div>
+  <div class="campo-mini" style="max-width:190px;align-self:flex-end;">
+    <label style="display:flex;gap:6px;align-items:center;font-weight:normal;margin:0;font-size:13px;"><input id="incluir_anteriores" type="checkbox" style="width:auto;" onchange="cargarPedidos()"> Incluir años anteriores</label>
   </div>
   <div class="campo-mini" style="max-width:90px;">
     <label>Pedido</label>
@@ -260,7 +268,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
         <label>Situación</label>
         <select id="ch_estado"></select>
       </div>
-      <div class="campo"><label>Montador asignado</label><select id="ch_montador"><option value="">-- sin asignar --</option></select></div>
+      <div class="campo" style="grid-column:1/-1;"><label>Montadores (equipo del montaje)</label><div id="ch_montadores" class="chips"></div></div>
       <div class="campo"><label>Bultos (total líneas)</label><div id="ch_bultos">0</div></div>
     </div>
 
@@ -417,15 +425,13 @@ function cambiarTab(id) {
 async function comprobarSesion() {
   const { data: { user } } = await client.auth.getUser();
   if (!user) { window.location.href = "login.html"; return; }
-  const { data: staffRow } = await client.from("staff").select("user_id, es_montador, solo_deca").eq("user_id", user.id).maybeSingle();
+  const { data: staffRow } = await client.from("staff").select("user_id, es_montador, solo_deca, solo_montajes").eq("user_id", user.id).maybeSingle();
   if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
   if (staffRow.solo_deca) { window.location.href = "deca.html"; return; }
+  if (staffRow.solo_montajes) { window.location.href = "montador.html"; return; }
   staffUserId = staffRow.user_id;
   await llenarSelectEstado("filtro_estado", "");
-  const anyoActual = new Date().getFullYear();
-  document.getElementById("anyo_desde").value = anyoActual;
-  document.getElementById("anyo_hasta").value = anyoActual;
-  await cargarPedidos();
+  await cargarPedidos();   // sin filtros: las últimas órdenes de los últimos 4 años
 
   const params = new URLSearchParams(window.location.search);
   const anyoParam = parseInt(params.get("anyo"), 10);
@@ -438,7 +444,7 @@ async function comprobarSesion() {
 
 async function cargarMontadores() {
   if (montadoresCache && montadoresCache.length) return montadoresCache;
-  const { data, error } = await client.from("staff").select("user_id, nombre").eq("es_montador", true).order("nombre");
+  const { data, error } = await client.from("montadores").select("id, nombre, activo, especial").order("especial").order("nombre");
   if (error) console.error("cargarMontadores:", error);
   montadoresCache = data || [];
   return montadoresCache;
@@ -610,19 +616,22 @@ async function cargarPedidos() {
   const numPedido = document.getElementById("filtro_num_pedido").value.trim();
   const importe = parseFloat(document.getElementById("filtro_importe").value);
 
-  if (!estado && isNaN(anyoDesde) && isNaN(anyoHasta) && isNaN(pedido) && !cliente && !numPedido && isNaN(importe)) {
-    document.getElementById("aviso_carga").textContent = "Rellena algún filtro y pulsa \"Buscar\" para ver órdenes.";
-    if (tabla) tabla.setData([]);
-    return;
-  }
+  // Por defecto solo se buscan los últimos 4 años (este y los 3 anteriores). La casilla
+  // "Incluir años anteriores" amplía a todo el histórico; si se escribe un año anterior
+  // al límite en "Año desde", se entiende que se quiere ver y la casilla se marca sola.
+  const casilla = document.getElementById("incluir_anteriores");
+  const anyoMinimo = new Date().getFullYear() - 3;
+  if (!isNaN(anyoDesde) && anyoDesde < anyoMinimo) casilla.checked = true;
+  const incluirAnteriores = casilla.checked;
+  const desdeEfectivo = incluirAnteriores ? anyoDesde : Math.max(isNaN(anyoDesde) ? anyoMinimo : anyoDesde, anyoMinimo);
 
   let query = client.from("ordenes")
-    .select("anyo, orden, nombre_cli, num_pedido, estado, fecha_creacion, importe_total, montador_id, creado_por, modificado_por, modificado_at")
+    .select("anyo, orden, nombre_cli, num_pedido, estado, fecha_creacion, importe_total, creado_por, modificado_por, modificado_at")
     .order("anyo", { ascending: false })
     .order("orden", { ascending: false })
     .limit(500);
 
-  if (!isNaN(anyoDesde)) query = query.gte("anyo", anyoDesde);
+  if (!isNaN(desdeEfectivo)) query = query.gte("anyo", desdeEfectivo);
   if (!isNaN(anyoHasta)) query = query.lte("anyo", anyoHasta);
   if (!isNaN(pedido)) query = query.eq("orden", pedido);
   if (cliente) query = query.ilike("nombre_cli", `%${cliente}%`);
@@ -633,9 +642,12 @@ async function cargarPedidos() {
   const { data, error } = await query;
   if (error) { console.error(error); return; }
 
+  const avisoAnios = incluirAnteriores ? "" : ` (últimos 4 años, desde ${anyoMinimo})`;
   document.getElementById("aviso_carga").textContent = data.length >= 500
-    ? `${data.length} órdenes cargadas. Puede haber más — acota los filtros.`
-    : `${data.length} órdenes.`;
+    ? `${data.length} órdenes cargadas${avisoAnios}. Puede haber más — acota los filtros.`
+    : data.length === 0 && !incluirAnteriores
+      ? `0 órdenes en los últimos 4 años (desde ${anyoMinimo}). Marca "Incluir años anteriores" para buscar más atrás.`
+      : `${data.length} órdenes${avisoAnios}.`;
 
   const columnas = [
     { title: "Año", field: "anyo", width: 70 },
@@ -730,11 +742,7 @@ async function abrirPanel(orden) {
   document.getElementById("ch_observaciones").value = o.observaciones || "";
   await cargarDetallesMontaje();
 
-  const montadores = await cargarMontadores();
-  const selMontador = document.getElementById("ch_montador");
-  selMontador.innerHTML = '<option value="">-- sin asignar --</option>' +
-    montadores.map(m => `<option value="${m.user_id}">${m.nombre || m.user_id}</option>`).join("");
-  selMontador.value = o.montador_id || "";
+  await pintarMontadores(o);
 
   await cargarLineas();
   await cargarCitas();
@@ -786,7 +794,6 @@ async function guardarCabecera() {
     fecha_montaje: document.getElementById("ch_fecha_montaje").value || null,
     horamont: document.getElementById("ch_horamont").value.trim() || null,
     estado: document.getElementById("ch_estado").value,
-    montador_id: document.getElementById("ch_montador").value || null,
     importe_total: document.getElementById("ch_importe_total").value ? parseFloat(document.getElementById("ch_importe_total").value) : null,
     entrega_a_cuenta: document.getElementById("ch_entrega_a_cuenta").value ? parseFloat(document.getElementById("ch_entrega_a_cuenta").value) : null,
     importe_pendiente: document.getElementById("ch_importe_pendiente").value ? parseFloat(document.getElementById("ch_importe_pendiente").value) : null,
@@ -798,8 +805,49 @@ async function guardarCabecera() {
   const { error } = await client.from("ordenes").update(valores)
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden);
   if (error) { alert("No se pudo guardar: " + error.message); return; }
+  const errMontadores = await guardarMontadores();
+  if (errMontadores) { alert("La cabecera se guardó, pero no el equipo de montadores: " + errMontadores.message); return; }
   cargarPedidos();
   alert("Cabecera guardada.");
+}
+
+// --- equipo de montadores de la orden (varias personas, con casillas) ---
+let montadoresAsignadosOriginal = [];
+
+function escMont(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+
+async function pintarMontadores(o) {
+  const todos = await cargarMontadores();
+  const { data: asig, error } = await client.from("ordenes_montadores").select("montador_id").eq("anyo", o.anyo).eq("orden", o.orden);
+  if (error) console.error("ordenes_montadores:", error);
+  montadoresAsignadosOriginal = (asig || []).map(a => a.montador_id);
+  // se ofrecen los activos y, si la orden ya los tiene, también los antiguos
+  const visibles = todos.filter(m => m.activo || montadoresAsignadosOriginal.includes(m.id));
+  document.getElementById("ch_montadores").innerHTML = visibles.map(m => `
+    <label class="chip ${m.especial ? "especial" : ""} ${m.activo ? "" : "inactivo"}">
+      <input type="checkbox" value="${m.id}" ${montadoresAsignadosOriginal.includes(m.id) ? "checked" : ""}>
+      ${escMont(m.nombre)}${m.activo ? "" : " (antiguo)"}
+    </label>`).join("");
+}
+
+async function guardarMontadores() {
+  if (!pedidoActivo) return null;
+  const marcados = [...document.querySelectorAll("#ch_montadores input:checked")].map(i => i.value);
+  const quitar = montadoresAsignadosOriginal.filter(id => !marcados.includes(id));
+  const poner = marcados.filter(id => !montadoresAsignadosOriginal.includes(id));
+  if (quitar.length) {
+    const { error } = await client.from("ordenes_montadores").delete()
+      .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).in("montador_id", quitar);
+    if (error) return error;
+  }
+  if (poner.length) {
+    const { data: { user } } = await client.auth.getUser();
+    const { error } = await client.from("ordenes_montadores").insert(
+      poner.map(id => ({ anyo: pedidoActivo.anyo, orden: pedidoActivo.orden, montador_id: id, asignado_por: user ? user.id : null })));
+    if (error) return error;
+  }
+  montadoresAsignadosOriginal = marcados;
+  return null;
 }
 
 async function guardarObservaciones() {
@@ -940,7 +988,7 @@ document.getElementById("ln_fabricante_buscar").addEventListener("input", (e) =>
   const caja = document.getElementById("ln_fabricante_sugerencias");
   if (texto.length < 2) { caja.style.display = "none"; return; }
   debounceFab = setTimeout(async () => {
-    const { data } = await client.from("proveedores_mat").select("codigo, nombre").ilike("nombre", `%${texto}%`).limit(15);
+    const { data } = await client.from("fabricantes").select("codigo, nombre").ilike("nombre", `%${texto}%`).limit(15);
     caja.innerHTML = (data || []).map(f =>
       `<div data-cod="${f.codigo}" data-nom="${(f.nombre || "").replace(/"/g, "&quot;")}">${f.nombre}</div>`
     ).join("");
