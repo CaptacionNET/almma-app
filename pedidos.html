@@ -432,6 +432,9 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
       <button class="secondary" onclick="consultarFacturas()">Consulta facturas emitidas</button>
     </div>
 
+    <h4>Documentos del pedido (PDF de la tienda)</h4>
+    <div id="ch_lista_documentos" class="mini-list"></div>
+
     <h4>Detalles del montaje</h4>
     <div id="ch_lista_fotos_montaje" class="mini-list"></div>
     <div id="ch_firma_montaje"></div>
@@ -1036,6 +1039,7 @@ async function abrirPanel(orden) {
   document.getElementById("ch_obs_albaran").value = o.obs_albaran || "";
   document.getElementById("ch_observaciones").value = o.observaciones || "";
   await cargarDetallesMontaje();
+  await cargarDocumentosOrden();
 
   await pintarMontadores(o);
 
@@ -1201,6 +1205,21 @@ async function cargarDetallesMontaje() {
     const { data: signed } = await client.storage.from("ordenes-adjuntos").createSignedUrl(entrega.firma_storage_path, 300);
     if (signed) contFirma.innerHTML += `<img src="${signed.signedUrl}" alt="Firma" style="max-width:100%;border:1px solid var(--border);border-radius:8px;margin-top:6px;">`;
   }
+}
+
+// --- documentos de la orden: el PDF que subió la tienda (migracion/64_documentos_de_la_orden.sql) ---
+
+async function cargarDocumentosOrden() {
+  const { data } = await client.from("documentos_orden")
+    .select("id, storage_path, nombre, created_at")
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden)
+    .order("created_at", { ascending: false });
+  const cont = document.getElementById("ch_lista_documentos");
+  cont.innerHTML = (data || []).map(d => `
+    <div class="item">
+      <strong>${escMont(d.nombre || "documento.pdf")}</strong>
+      <div class="meta">${new Date(d.created_at).toLocaleString("es-ES")} — <a href="#" onclick="verFotoMontaje('${escMont(d.storage_path)}');return false;">abrir PDF</a></div>
+    </div>`).join("") || '<div class="meta">Sin documentos adjuntos.</div>';
 }
 
 async function verFotoMontaje(path) {

@@ -171,6 +171,7 @@ let tabla = null;
 let dependiente = null;
 let lineasNuevoPedido = [];
 let articuloSeleccionado = null;
+let pdfAdjunto = null; // el PDF leído con "Leer PDF": se guarda con el pedido como soporte
 
 async function comprobarSesion() {
   const { data: { user } } = await client.auth.getUser();
@@ -239,6 +240,7 @@ function abrirModalNuevo() {
   document.getElementById("aviso").style.display = "none";
   document.getElementById("error").style.display = "none";
   document.getElementById("pdf_pedido").value = "";
+  pdfAdjunto = null;
   document.getElementById("estado_pdf").textContent = "";
   document.getElementById("avisos_pdf").style.display = "none";
   document.getElementById("modal_nuevo").style.display = "flex";
@@ -330,6 +332,7 @@ async function leerPdfPedido() {
   if (file.size > 5 * 1024 * 1024) { estado.textContent = "El PDF pesa más de 5 MB."; return; }
 
   boton.disabled = true;
+  pdfAdjunto = null;
   estado.textContent = "Leyendo el PDF…";
   try {
     const pdf_base64 = await pdfABase64(file);
@@ -354,7 +357,8 @@ async function leerPdfPedido() {
       lineasNuevoPedido = lineas.map(l => ({ articulo: ARTICULO_GENERICO_PDF, descripcion: l.descripcion, cantidad: l.cantidad || 1 }));
       renderLineas();
     }
-    estado.textContent = "Listo. Revisa los datos antes de crear el pedido.";
+    pdfAdjunto = file;
+    estado.textContent = "Listo. Revisa los datos antes de crear el pedido. El PDF se guardará con el pedido.";
     if (data.avisos && data.avisos.length) {
       avisos.innerHTML = data.avisos.map(a => `<li>${esc(a)}</li>`).join("");
       avisos.style.display = "block";
@@ -366,6 +370,17 @@ async function leerPdfPedido() {
   } finally {
     boton.disabled = false;
   }
+}
+
+// devuelve null si fue bien, o el motivo del fallo
+async function guardarPdfSoporte(anyo, orden, file) {
+  const base = file.name.replace(/\.pdf$/i, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 60) || "documento";
+  const ruta = `${anyo}/${orden}/documentos/${Date.now()}_${base}.pdf`;
+  const { error: errSub } = await client.storage.from("ordenes-adjuntos").upload(ruta, file, { contentType: "application/pdf" });
+  if (errSub) return errSub.message;
+  const { error: errFila } = await client.from("documentos_orden").insert({ anyo, orden, storage_path: ruta, nombre: file.name });
+  return errFila ? errFila.message : null;
 }
 
 async function crearPedido() {
@@ -397,6 +412,19 @@ async function crearPedido() {
   const { anyo, orden } = data[0];
   avisoBox.textContent = `Pedido ${anyo}/${orden} creado correctamente.`;
   avisoBox.style.display = "block";
+
+  // el PDF leído se guarda como soporte de la orden (migracion/64_documentos_de_la_orden.sql)
+  if (pdfAdjunto) {
+    const fallo = await guardarPdfSoporte(anyo, orden, pdfAdjunto);
+    if (fallo) {
+      avisoBox.textContent += " Pero el PDF no se pudo guardar con el pedido (" + fallo + "). Guárdalo aparte y mándaselo a ALMMA.";
+      pdfAdjunto = null;
+      cargarPedidos();
+      return; // no se cierra la ventana para que se lea el aviso
+    }
+    pdfAdjunto = null;
+    avisoBox.textContent += " PDF guardado como soporte.";
+  }
   cargarPedidos();
   setTimeout(cerrarModalNuevo, 1200);
 }
