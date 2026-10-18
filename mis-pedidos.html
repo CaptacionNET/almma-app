@@ -86,11 +86,14 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
   <div class="brand">ALMMA · Mis pedidos<small id="tienda_nombre"></small></div>
   <div style="display:flex;gap:10px;flex-wrap:wrap;">
     <button onclick="abrirModalNuevo()">+ Nuevo pedido</button>
-    <button class="secondary" onclick="location.href='montajes_tienda.html'">Montajes</button>
     <button class="secondary" onclick="logout()">Cerrar sesión</button>
   </div>
 </div>
 
+<div style="display:flex;gap:2px;padding:10px 24px 0;border-bottom:1px solid #e2e4eb;background:#fff">
+  <button style="background:none;color:#2563eb;border:none;border-bottom:2px solid #2563eb;border-radius:0;font-weight:600;padding:10px 16px;cursor:pointer">Mis pedidos</button>
+  <button style="background:none;color:#6b7280;border:none;border-bottom:2px solid transparent;border-radius:0;font-weight:600;padding:10px 16px;cursor:pointer" onclick="location.href='montajes_tienda.html'">Montajes</button>
+</div>
 <div class="leyenda-listado" id="leyenda_estados"></div>
 <div class="tabla-scroll"><div id="tabla_pedidos"></div></div>
 
