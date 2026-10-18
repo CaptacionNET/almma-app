@@ -325,29 +325,14 @@ let pend = [];          // todas las líneas por facturar: {anyo, orden, linea, 
 async function cargarPendientes() {
   g("aviso_p").textContent = "Cargando...";
   const t0 = performance.now();
-  // solo se pide lo necesario: líneas de importes sin facturar y con importe (antes se traían también las de importe 0 y se descartaban aquí)
-  const pagina = (n) => client.from("ordenes")
-    .select("anyo, orden, num_pedido, nombre_cli, fecha_montaje, tienda_id, importe_cobrado, tipo_cobro, linorden!inner(linea, descripcion, importe, porcentaje, importe_cobrar, tipolinea, facturada)")
-    .eq("tipo_orden", 1).eq("estado", "completado").eq("linorden.tipolinea", 4).eq("linorden.facturada", false).neq("linorden.importe_cobrar", 0)
-    .order("fecha_montaje", { ascending: true }).order("anyo").order("orden").range(n * 1000, n * 1000 + 999);
-  // las páginas se piden de tres en tres a la vez, en vez de una detrás de otra
-  const ordenes = [];
-  for (let n = 0; ; n += 3) {
-    const lote = await Promise.all([pagina(n), pagina(n + 1), pagina(n + 2)]);
-    const fallo = lote.find(r => r.error);
-    if (fallo) { g("aviso_p").textContent = "Error: " + fallo.error.message; return; }
-    let llena = true;
-    lote.forEach(r => { ordenes.push(...(r.data || [])); if ((r.data || []).length < 1000) llena = false; });
-    if (!llena) break;
-  }
-  const filas = [];
-  ordenes.forEach(o => { if (!o.tienda_id) return; (o.linorden || []).filter(l => Number(l.importe_cobrar || 0) !== 0).sort((x, y) => x.linea - y.linea).forEach(l =>
-    filas.push({ anyo: o.anyo, orden: o.orden, num_pedido: o.num_pedido, nombre_cli: o.nombre_cli, fecha_montaje: o.fecha_montaje, tienda_id: o.tienda_id,
-                 linea: l.linea, descripcion: l.descripcion, importe: Number(l.importe_cobrar), importe_base: l.importe, porcentaje: l.porcentaje,
-                 cobrado: o.importe_cobrado, forma_cobro: o.tipo_cobro, marcada: false, idx: filas.length })); });
-  pend = filas;
+  // una sola llamada a la función facturas_pendientes() (migracion/53_facturas_pendientes_rapido.sql): la base empieza por las líneas pendientes, que son pocas
+  const { data, error } = await client.rpc("facturas_pendientes");
+  if (error) { g("aviso_p").textContent = "Error: " + error.message; return; }
+  pend = (data || []).map((l, i) => ({ anyo: l.anyo, orden: l.orden, num_pedido: l.num_pedido, nombre_cli: l.nombre_cli, fecha_montaje: l.fecha_montaje, tienda_id: l.tienda_id,
+    linea: l.linea, descripcion: l.descripcion, importe: Number(l.importe_cobrar), importe_base: l.importe, porcentaje: l.porcentaje,
+    cobrado: l.importe_cobrado, forma_cobro: l.tipo_cobro, marcada: false, idx: i }));
   pintarPendientes();
-  console.log(`pendientes: ${filas.length} líneas en ${Math.round(performance.now() - t0)} ms`);
+  console.log(`pendientes: ${pend.length} líneas en ${Math.round(performance.now() - t0)} ms`);
 }
 let debP = null;
 function pintarPendDebounce() { clearTimeout(debP); debP = setTimeout(pintarPendientes, 250); }
