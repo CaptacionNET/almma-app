@@ -107,10 +107,10 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 
     <!-- lectura de PDF: rellena el formulario, NO crea el pedido (migracion/63_funcion_leer_pdf_pedido.ts) -->
     <div style="border:1px dashed var(--border);border-radius:8px;padding:10px 12px;margin-bottom:14px;">
-      <label for="pdf_pedido" style="font-weight:600;">Rellenar desde un PDF (factura o albarán)</label>
+      <label for="pdf_pedido" style="font-weight:600;">Rellenar desde un PDF o una foto (factura o albarán)</label>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
-        <input type="file" id="pdf_pedido" accept="application/pdf,.pdf">
-        <button type="button" class="secondary" id="btn_leer_pdf" onclick="leerPdfPedido()">Leer PDF</button>
+        <input type="file" id="pdf_pedido" accept="application/pdf,.pdf,image/*">
+        <button type="button" class="secondary" id="btn_leer_pdf" onclick="leerPdfPedido()">Leer</button>
         <span id="estado_pdf" style="color:var(--muted);font-size:13px;"></span>
       </div>
       <ul id="avisos_pdf" style="display:none;margin:8px 0 0 18px;padding:0;color:#92400e;font-size:13px;"></ul>
@@ -329,14 +329,15 @@ async function leerPdfPedido() {
 
   const file = document.getElementById("pdf_pedido").files[0];
   if (!file) { estado.textContent = "Elige primero un PDF."; return; }
-  if (file.size > 5 * 1024 * 1024) { estado.textContent = "El PDF pesa más de 5 MB."; return; }
+  if (file.size > 25 * 1024 * 1024) { estado.textContent = "El archivo pesa demasiado."; return; }
 
   boton.disabled = true;
   pdfAdjunto = null;
-  estado.textContent = "Leyendo el PDF…";
+  estado.textContent = "Leyendo el documento…";
   try {
-    const pdf_base64 = await pdfABase64(file);
-    const { data, error } = await client.functions.invoke("leer-pdf-pedido", { body: { pdf_base64 } });
+    const archivo = await prepararArchivo(file);
+    const archivo_base64 = await pdfABase64(archivo);   // los PDF van como pdf_base64 (vale también para la función antigua)
+    const { data, error } = await client.functions.invoke("leer-pdf-pedido", { body: archivo.type === "application/pdf" ? { pdf_base64: archivo_base64 } : { archivo_base64, media_type: archivo.type } });
     if (error) {
       // si la función contestó con un mensaje propio, se enseña ese
       let mensaje = "No se pudo leer el PDF.";
@@ -357,8 +358,8 @@ async function leerPdfPedido() {
       lineasNuevoPedido = lineas.map(l => ({ articulo: ARTICULO_GENERICO_PDF, descripcion: l.descripcion, cantidad: l.cantidad || 1 }));
       renderLineas();
     }
-    pdfAdjunto = file;
-    estado.textContent = "Listo. Revisa los datos antes de crear el pedido. El PDF se guardará con el pedido.";
+    pdfAdjunto = archivo;
+    estado.textContent = "Listo. Revisa los datos antes de crear el pedido. El documento se guardará con el pedido.";
     if (data.avisos && data.avisos.length) {
       avisos.innerHTML = data.avisos.map(a => `<li>${esc(a)}</li>`).join("");
       avisos.style.display = "block";
@@ -372,12 +373,36 @@ async function leerPdfPedido() {
   }
 }
 
+// Prepara el archivo para leerlo: un PDF se manda tal cual; una FOTO se reduce a 2000 px y se pasa a JPG
+// (así pesa poco, la IA la lee igual y entra en el límite). Devuelve el archivo que se leerá Y se guardará.
+async function prepararArchivo(file) {
+  if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)) {
+    if (file.size > 5 * 1024 * 1024) throw new Error("El PDF pesa más de 5 MB.");
+    return file;
+  }
+  if (!file.type.startsWith("image/")) throw new Error("Solo se pueden leer PDF o fotos.");
+  let bmp;
+  try { bmp = await createImageBitmap(file); }
+  catch (_) { throw new Error("No se pudo abrir la foto. Si es de iPhone (HEIC), guárdala como JPG o hazle una captura."); }
+  const k = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+  const lienzo = document.createElement("canvas");
+  lienzo.width = Math.round(bmp.width * k); lienzo.height = Math.round(bmp.height * k);
+  lienzo.getContext("2d").drawImage(bmp, 0, 0, lienzo.width, lienzo.height);
+  const blob = await new Promise(ok => lienzo.toBlob(ok, "image/jpeg", 0.85));
+  if (!blob) throw new Error("No se pudo preparar la foto.");
+  return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+}
+
+function nombreSeguroArchivo(file) {
+  const base = file.name.replace(/\.(pdf|jpe?g|png|webp|gif)$/i, "").normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 60) || "documento";
+  return base + (file.type === "application/pdf" ? ".pdf" : ".jpg");
+}
+
 // devuelve null si fue bien, o el motivo del fallo
 async function guardarPdfSoporte(anyo, orden, file) {
-  const base = file.name.replace(/\.pdf$/i, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 60) || "documento";
-  const ruta = `${anyo}/${orden}/documentos/${Date.now()}_${base}.pdf`;
-  const { error: errSub } = await client.storage.from("ordenes-adjuntos").upload(ruta, file, { contentType: "application/pdf" });
+  const ruta = `${anyo}/${orden}/documentos/${Date.now()}_${nombreSeguroArchivo(file)}`;
+  const { error: errSub } = await client.storage.from("ordenes-adjuntos").upload(ruta, file, { contentType: file.type });
   if (errSub) return errSub.message;
   const { error: errFila } = await client.from("documentos_orden").insert({ anyo, orden, storage_path: ruta, nombre: file.name });
   return errFila ? errFila.message : null;
@@ -417,13 +442,13 @@ async function crearPedido() {
   if (pdfAdjunto) {
     const fallo = await guardarPdfSoporte(anyo, orden, pdfAdjunto);
     if (fallo) {
-      avisoBox.textContent += " Pero el PDF no se pudo guardar con el pedido (" + fallo + "). Guárdalo aparte y mándaselo a ALMMA.";
+      avisoBox.textContent += " Pero el documento no se pudo guardar con el pedido (" + fallo + "). Guárdalo aparte y mándaselo a ALMMA.";
       pdfAdjunto = null;
       cargarPedidos();
       return; // no se cierra la ventana para que se lea el aviso
     }
     pdfAdjunto = null;
-    avisoBox.textContent += " PDF guardado como soporte.";
+    avisoBox.textContent += " Documento guardado como soporte.";
   }
   cargarPedidos();
   setTimeout(cerrarModalNuevo, 1200);

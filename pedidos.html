@@ -273,10 +273,10 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 
     <!-- lectura de PDF: rellena los datos y las líneas; el PDF queda como soporte (migracion/63 y 64) -->
     <div style="border:1px dashed var(--border);border-radius:8px;padding:10px 12px;margin-bottom:14px;">
-      <label for="no_pdf" style="font-weight:600;">Rellenar desde un PDF (factura o albarán de la tienda)</label>
+      <label for="no_pdf" style="font-weight:600;">Rellenar desde un PDF o una foto (factura o albarán de la tienda)</label>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
-        <input type="file" id="no_pdf" accept="application/pdf,.pdf">
-        <button type="button" class="secondary" id="btn_no_leer_pdf" onclick="leerPdfNuevaOrden()">Leer PDF</button>
+        <input type="file" id="no_pdf" accept="application/pdf,.pdf,image/*">
+        <button type="button" class="secondary" id="btn_no_leer_pdf" onclick="leerPdfNuevaOrden()">Leer</button>
         <span id="no_estado_pdf" style="color:var(--muted);font-size:13px;"></span>
       </div>
       <ul id="no_avisos_pdf" style="display:none;margin:8px 0 0 18px;padding:0;color:#92400e;font-size:13px;"></ul>
@@ -445,7 +445,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
       <button class="secondary" onclick="consultarFacturas()">Consulta facturas emitidas</button>
     </div>
 
-    <h4>Documentos del pedido (PDF de la tienda)</h4>
+    <h4>Documentos del pedido (PDF o foto de la tienda)</h4>
     <div id="ch_lista_documentos" class="mini-list"></div>
 
     <h4>Detalles del montaje</h4>
@@ -801,6 +801,32 @@ const ARTICULO_GENERICO_PDF = "18206";
 let pdfNuevaOrden = null;       // el PDF leído: se guarda como soporte al crear la orden
 let lineasPdfNuevaOrden = [];   // las líneas que saldrán del PDF
 
+// Prepara el archivo para leerlo: un PDF se manda tal cual; una FOTO se reduce a 2000 px y se pasa a JPG
+// (así pesa poco, la IA la lee igual y entra en el límite). Devuelve el archivo que se leerá Y se guardará.
+async function prepararArchivo(file) {
+  if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)) {
+    if (file.size > 5 * 1024 * 1024) throw new Error("El PDF pesa más de 5 MB.");
+    return file;
+  }
+  if (!file.type.startsWith("image/")) throw new Error("Solo se pueden leer PDF o fotos.");
+  let bmp;
+  try { bmp = await createImageBitmap(file); }
+  catch (_) { throw new Error("No se pudo abrir la foto. Si es de iPhone (HEIC), guárdala como JPG o hazle una captura."); }
+  const k = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+  const lienzo = document.createElement("canvas");
+  lienzo.width = Math.round(bmp.width * k); lienzo.height = Math.round(bmp.height * k);
+  lienzo.getContext("2d").drawImage(bmp, 0, 0, lienzo.width, lienzo.height);
+  const blob = await new Promise(ok => lienzo.toBlob(ok, "image/jpeg", 0.85));
+  if (!blob) throw new Error("No se pudo preparar la foto.");
+  return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+}
+
+function nombreSeguroArchivo(file) {
+  const base = file.name.replace(/\.(pdf|jpe?g|png|webp|gif)$/i, "").normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 60) || "documento";
+  return base + (file.type === "application/pdf" ? ".pdf" : ".jpg");
+}
+
 function pdfABase64(file) {
   return new Promise((ok, ko) => {
     const lector = new FileReader();
@@ -828,13 +854,14 @@ async function leerPdfNuevaOrden() {
 
   const file = document.getElementById("no_pdf").files[0];
   if (!file) { estado.textContent = "Elige primero un PDF."; return; }
-  if (file.size > 5 * 1024 * 1024) { estado.textContent = "El PDF pesa más de 5 MB."; return; }
+  if (file.size > 25 * 1024 * 1024) { estado.textContent = "El archivo pesa demasiado."; return; }
 
   boton.disabled = true; pdfNuevaOrden = null;
-  estado.textContent = "Leyendo el PDF…";
+  estado.textContent = "Leyendo el documento…";
   try {
-    const pdf_base64 = await pdfABase64(file);
-    const { data, error } = await client.functions.invoke("leer-pdf-pedido", { body: { pdf_base64 } });
+    const archivo = await prepararArchivo(file);
+    const archivo_base64 = await pdfABase64(archivo);   // los PDF van como pdf_base64 (vale también para la función antigua)
+    const { data, error } = await client.functions.invoke("leer-pdf-pedido", { body: archivo.type === "application/pdf" ? { pdf_base64: archivo_base64 } : { archivo_base64, media_type: archivo.type } });
     if (error) {
       let mensaje = "No se pudo leer el PDF.";
       try { const cuerpo = await error.context.json(); if (cuerpo?.error) mensaje = cuerpo.error; } catch (_) {}
@@ -850,8 +877,8 @@ async function leerPdfNuevaOrden() {
     const avisosTienda = await elegirTiendaYVendedorDesdePdf(data);
     lineasPdfNuevaOrden = (data.lineas || []).map(l => ({ descripcion: l.descripcion, cantidad: l.cantidad || 1 }));
     pintarLineasPdfNuevaOrden();
-    pdfNuevaOrden = file;
-    estado.textContent = "Listo. Revisa los datos y elige la tienda antes de crear. El PDF se guardará con la orden.";
+    pdfNuevaOrden = archivo;
+    estado.textContent = "Listo. Revisa los datos y elige la tienda antes de crear. El documento se guardará con la orden.";
     const todosAvisos = [...avisosTienda, ...(data.avisos || [])];
     if (todosAvisos.length) {
       avisos.innerHTML = todosAvisos.map(a => `<li>${escMont(a)}</li>`).join("");
@@ -927,14 +954,12 @@ async function guardarPdfEnOrdenNueva(anyo, orden) {
     if (error) fallos.push("las líneas (" + error.message + ")");
   }
   if (pdfNuevaOrden) {
-    const base = pdfNuevaOrden.name.replace(/\.pdf$/i, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 60) || "documento";
-    const ruta = `${anyo}/${orden}/documentos/${Date.now()}_${base}.pdf`;
-    const { error: e1 } = await client.storage.from("ordenes-adjuntos").upload(ruta, pdfNuevaOrden, { contentType: "application/pdf" });
-    if (e1) fallos.push("el PDF (" + e1.message + ")");
+    const ruta = `${anyo}/${orden}/documentos/${Date.now()}_${nombreSeguroArchivo(pdfNuevaOrden)}`;
+    const { error: e1 } = await client.storage.from("ordenes-adjuntos").upload(ruta, pdfNuevaOrden, { contentType: pdfNuevaOrden.type });
+    if (e1) fallos.push("el documento (" + e1.message + ")");
     else {
       const { error: e2 } = await client.from("documentos_orden").insert({ anyo, orden, storage_path: ruta, nombre: pdfNuevaOrden.name });
-      if (e2) fallos.push("el registro del PDF (" + e2.message + ")");
+      if (e2) fallos.push("el registro del documento (" + e2.message + ")");
     }
   }
   pdfNuevaOrden = null; lineasPdfNuevaOrden = [];
@@ -1385,8 +1410,8 @@ async function cargarDocumentosOrden() {
   const cont = document.getElementById("ch_lista_documentos");
   cont.innerHTML = (data || []).map(d => `
     <div class="item">
-      <strong>${escMont(d.nombre || "documento.pdf")}</strong>
-      <div class="meta">${new Date(d.created_at).toLocaleString("es-ES")} — <a href="#" onclick="verFotoMontaje('${escMont(d.storage_path)}');return false;">abrir PDF</a></div>
+      <strong>${escMont(d.nombre || "documento")}</strong>
+      <div class="meta">${new Date(d.created_at).toLocaleString("es-ES")} — <a href="#" onclick="verFotoMontaje('${escMont(d.storage_path)}');return false;">abrir</a></div>
     </div>`).join("") || '<div class="meta">Sin documentos adjuntos.</div>';
 }
 
