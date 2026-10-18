@@ -105,6 +105,17 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
     <p id="aviso" class="aviso-ok"></p>
     <p id="error" class="error"></p>
 
+    <!-- lectura de PDF: rellena el formulario, NO crea el pedido (migracion/63_funcion_leer_pdf_pedido.ts) -->
+    <div style="border:1px dashed var(--border);border-radius:8px;padding:10px 12px;margin-bottom:14px;">
+      <label for="pdf_pedido" style="font-weight:600;">Rellenar desde un PDF (factura o albarán)</label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
+        <input type="file" id="pdf_pedido" accept="application/pdf,.pdf">
+        <button type="button" class="secondary" id="btn_leer_pdf" onclick="leerPdfPedido()">Leer PDF</button>
+        <span id="estado_pdf" style="color:var(--muted);font-size:13px;"></span>
+      </div>
+      <ul id="avisos_pdf" style="display:none;margin:8px 0 0 18px;padding:0;color:#92400e;font-size:13px;"></ul>
+    </div>
+
     <div class="form-grid">
       <div class="campo">
         <label for="nombre_cli">Cliente</label>
@@ -227,6 +238,9 @@ function abrirModalNuevo() {
   renderLineas();
   document.getElementById("aviso").style.display = "none";
   document.getElementById("error").style.display = "none";
+  document.getElementById("pdf_pedido").value = "";
+  document.getElementById("estado_pdf").textContent = "";
+  document.getElementById("avisos_pdf").style.display = "none";
   document.getElementById("modal_nuevo").style.display = "flex";
 }
 
@@ -276,13 +290,80 @@ function quitarLinea(i) {
   renderLineas();
 }
 
+// el texto que viene de un PDF no es de fiar: se escapa antes de pintarlo
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
 function renderLineas() {
   const tabla = document.getElementById("tabla_lineas_nuevo");
   tabla.innerHTML = "<tr><th>Artículo</th><th>Descripción</th><th>Cant.</th><th></th></tr>" +
     lineasNuevoPedido.map((l, i) =>
-      `<tr><td>${l.articulo}</td><td>${l.descripcion || ""}</td><td>${l.cantidad}</td>
+      `<tr><td>${esc(l.articulo)}</td><td>${esc(l.descripcion)}</td><td>${esc(l.cantidad)}</td>
        <td><button type="button" class="secondary" onclick="quitarLinea(${i})">Quitar</button></td></tr>`
     ).join("");
+}
+
+// Artículo genérico "18206 VARIOS": el material del PDF va en UNA línea con su texto en la descripción.
+const ARTICULO_GENERICO_PDF = "18206";
+
+function pdfABase64(file) {
+  return new Promise((ok, ko) => {
+    const lector = new FileReader();
+    lector.onload = () => ok(String(lector.result).split(",")[1] || "");
+    lector.onerror = () => ko(lector.error);
+    lector.readAsDataURL(file);
+  });
+}
+
+async function leerPdfPedido() {
+  const estado = document.getElementById("estado_pdf");
+  const avisos = document.getElementById("avisos_pdf");
+  const boton = document.getElementById("btn_leer_pdf");
+  const errorBox = document.getElementById("error");
+  errorBox.style.display = "none";
+  avisos.style.display = "none";
+  avisos.innerHTML = "";
+
+  const file = document.getElementById("pdf_pedido").files[0];
+  if (!file) { estado.textContent = "Elige primero un PDF."; return; }
+  if (file.size > 5 * 1024 * 1024) { estado.textContent = "El PDF pesa más de 5 MB."; return; }
+
+  boton.disabled = true;
+  estado.textContent = "Leyendo el PDF…";
+  try {
+    const pdf_base64 = await pdfABase64(file);
+    const { data, error } = await client.functions.invoke("leer-pdf-pedido", { body: { pdf_base64 } });
+    if (error) {
+      // si la función contestó con un mensaje propio, se enseña ese
+      let mensaje = "No se pudo leer el PDF.";
+      try { const cuerpo = await error.context.json(); if (cuerpo?.error) mensaje = cuerpo.error; } catch (_) {}
+      throw new Error(mensaje);
+    }
+
+    // solo se rellena lo que el PDF trae; lo que no trae se deja como estaba
+    const poner = (id, v) => { if (v) document.getElementById(id).value = v; };
+    poner("nombre_cli", data.nombre_cli);
+    poner("telefono_cli", data.telefono_cli);
+    poner("domicilio_cli", data.domicilio_cli);
+    poner("localidad_cli", data.localidad_cli);
+    poner("num_pedido", data.num_pedido);
+    if (data.material) {
+      lineasNuevoPedido = [{ articulo: ARTICULO_GENERICO_PDF, descripcion: data.material, cantidad: 1 }];
+      renderLineas();
+    }
+    estado.textContent = "Listo. Revisa los datos antes de crear el pedido.";
+    if (data.avisos && data.avisos.length) {
+      avisos.innerHTML = data.avisos.map(a => `<li>${esc(a)}</li>`).join("");
+      avisos.style.display = "block";
+    }
+  } catch (e) {
+    estado.textContent = "";
+    errorBox.textContent = e.message;
+    errorBox.style.display = "block";
+  } finally {
+    boton.disabled = false;
+  }
 }
 
 async function crearPedido() {
