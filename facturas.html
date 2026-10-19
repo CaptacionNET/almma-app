@@ -175,6 +175,7 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
   </div>
   <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:8px 24px;border-top:1px solid var(--border);margin-top:8px;">
     <button id="fp_emitir" onclick="abrirEmision()" disabled>Facturar lo marcado…</button>
+    <button class="secondary" onclick="abrirLibre()">Factura con conceptos propios…</button>
     <span class="meta">Al pulsar te pregunta con qué serie y te enseña el resumen (y un PDF de prueba) antes de emitir nada.</span>
   </div>
   <div id="fp_totales" style="padding:4px 24px 8px;font-size:14px;"></div>
@@ -187,6 +188,7 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
   <div class="leyenda-listado" style="padding-top:12px;">
     <span style="--c:#d97706">Un borrador no tiene número y no es definitivo. Imprímelo y revísalo: «Contabilizar» lo emite de verdad (número y fecha de hoy); «Cancelar» lo borra y devuelve sus líneas a Pendientes.</span>
   </div>
+  <div style="padding:0 24px 8px;"><button class="secondary" onclick="abrirLibre()">Factura con conceptos propios…</button></div>
   <div id="fb_resultado" style="display:none;margin:0 24px 10px;padding:12px;border:1px solid #16a34a;background:#f0fdf4;border-radius:8px;"></div>
   <div style="padding:0 24px 24px;"><div id="lista_borradores"></div></div>
 </div>
@@ -231,6 +233,28 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
     <button id="em_pdf" class="secondary" onclick="vistaPreviaPendientes()" disabled>Ver PDF de cómo quedará</button>
     <button id="em_ok" onclick="emitirPendientes()" disabled>Crear borrador</button>
     <button class="secondary" onclick="cerrarEmision()">Cancelar</button>
+  </div>
+</div></div>
+
+<!-- ventana de factura con conceptos propios (no son montajes) -->
+<div id="modal_libre" class="modal-f"><div class="caja">
+  <button class="secondary" style="float:right;" onclick="cerrarLibre()">✕</button>
+  <h3 style="margin-top:0;">Factura con conceptos propios</h3>
+  <p class="meta" style="margin-top:0;">Para facturar algo que no es un montaje. Con las series normales se guarda como BORRADOR (sin número) y lo contabilizas después desde la pestaña Borradores. Las proformas se emiten directamente.</p>
+  <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;">
+    <div><label class="lbl-f">Serie</label><select id="fl_serie" onchange="totalLibre()" style="min-width:260px;"></select></div>
+    <div><label class="lbl-f">Tienda (cliente)</label><input id="fl_tienda" list="fl_tiendas" placeholder="Escribe y elige" style="width:300px;" autocomplete="off"><datalist id="fl_tiendas"></datalist></div>
+    <div><label class="lbl-f">Forma de pago (vacío = la de la tienda)</label><input id="fl_forma" style="width:220px;"></div>
+  </div>
+  <table class="lineas-table" style="margin-top:12px;"><thead><tr><th>Concepto</th><th style="width:90px;">Cantidad</th><th style="width:120px;">Precio (€)</th><th style="width:110px;text-align:right;">Importe</th><th style="width:40px;"></th></tr></thead><tbody id="fl_lineas"></tbody></table>
+  <div style="margin:8px 0;"><button class="secondary btn-mini" onclick="anyadirConcepto()">+ Añadir concepto</button></div>
+  <div><label class="lbl-f">Notas (salen en la factura)</label><input id="fl_notas" style="width:100%;"></div>
+  <div id="fl_totales" style="margin-top:12px;font-size:15px;"></div>
+  <p id="fl_error" class="error" style="display:none;color:#dc2626;"></p>
+  <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
+    <button class="secondary" onclick="vistaPreviaLibre()">Ver PDF de cómo quedará</button>
+    <button id="fl_ok" onclick="crearBorradorLibre()">Crear borrador</button>
+    <button class="secondary" onclick="cerrarLibre()">Cancelar</button>
   </div>
 </div></div>
 
@@ -481,6 +505,89 @@ async function crearBorradores(s, gr) {
     (fallos.length ? `<p class="error" style="color:#dc2626;"><strong>No se pudieron crear:</strong><br>${fallos.map(esc).join("<br>")}</p>` : "");
   caja.style.borderColor = fallos.length ? "#dc2626" : "#16a34a";
   await cargarPendientes();
+}
+
+// ---------------------------------------------------------------- FACTURA CON CONCEPTOS PROPIOS
+let conceptos = [];
+const r2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+function abrirLibre() {
+  g("fl_serie").innerHTML = '<option value="">-- elige la serie --</option>' + Object.values(seriePorCodigo).filter(s => s.activa).map(s =>
+    `<option value="${s.codigo}">${s.codigo} · ${s.es_proforma ? "PROFORMA (sin IVA)" : esc(s.emisor_nombre || s.descripcion)}${s.codigo === 2 ? " (almacenaje)" : ""}</option>`).join("");
+  g("fl_tiendas").innerHTML = tiendasLista.map(t => `<option value="${esc((t.codigo ? t.codigo + " · " : "") + t.nombre)}"></option>`).join("");
+  g("fl_tienda").value = ""; g("fl_forma").value = ""; g("fl_notas").value = ""; g("fl_error").style.display = "none";
+  conceptos = [{ descripcion: "", cantidad: 1, precio: "" }];
+  pintarConceptos(); g("modal_libre").style.display = "flex";
+}
+function cerrarLibre() { g("modal_libre").style.display = "none"; }
+function pintarConceptos() {
+  g("fl_lineas").innerHTML = conceptos.map((c, i) => `<tr>
+    <td><input value="${esc(c.descripcion)}" style="width:100%;" oninput="conceptos[${i}].descripcion=this.value"></td>
+    <td><input type="number" step="any" value="${c.cantidad}" style="width:80px;" oninput="conceptos[${i}].cantidad=this.value;totalLibre()"></td>
+    <td><input type="number" step="0.01" value="${c.precio}" style="width:110px;" oninput="conceptos[${i}].precio=this.value;totalLibre()"></td>
+    <td id="fl_imp_${i}" style="text-align:right;"></td>
+    <td>${conceptos.length > 1 ? `<button class="secondary btn-mini" onclick="conceptos.splice(${i},1);pintarConceptos()">✕</button>` : ""}</td></tr>`).join("");
+  totalLibre();
+}
+function anyadirConcepto() { conceptos.push({ descripcion: "", cantidad: 1, precio: "" }); pintarConceptos(); }
+function totalLibre() {
+  let base = 0;
+  conceptos.forEach((c, i) => { const imp = r2(Number(c.cantidad || 0) * Number(c.precio || 0)); base += imp; const el = g("fl_imp_" + i); if (el) el.textContent = euros(imp); });
+  base = r2(base);
+  const s = seriePorCodigo[g("fl_serie").value], pct = s && s.con_iva ? Number(s.iva_pct) : 0, iva = r2(base * pct / 100);
+  g("fl_ok").textContent = s && s.es_proforma ? "Emitir proforma" : "Crear borrador";
+  g("fl_totales").innerHTML = `Base <strong>${euros(base)}</strong> · IVA ${pct} % <strong>${euros(iva)}</strong> · Total <strong>${euros(base + iva)}</strong>`;
+}
+// valida y devuelve { s, t, cab, lins, lineas } o null (con el error en pantalla)
+function datosLibre() {
+  const err = (m) => { g("fl_error").textContent = m; g("fl_error").style.display = "block"; return null; };
+  g("fl_error").style.display = "none";
+  const s = seriePorCodigo[g("fl_serie").value]; if (!s) return err("Elige la serie.");
+  const txt = g("fl_tienda").value.trim();
+  const t = tiendasLista.find(x => ((x.codigo ? x.codigo + " · " : "") + x.nombre) === txt);
+  if (!t) return err("Elige la tienda de la lista desplegable.");
+  if (conceptos.some(c => !c.descripcion.trim() || !Number(c.cantidad) || !Number(c.precio))) return err("Cada concepto necesita descripción, cantidad y precio (distintos de cero).");
+  const fecha = hoyISO(), pct = s.con_iva ? Number(s.iva_pct) : 0;
+  const lineas = conceptos.map(c => ({ descripcion: c.descripcion.trim(), cantidad: Number(c.cantidad), precio: Number(c.precio) }));
+  const base = r2(lineas.reduce((a, l) => a + r2(l.cantidad * l.precio), 0)), iva = r2(base * pct / 100);
+  const cab = { anyo: Number(fecha.slice(0, 4)), serie: s.codigo, factura: 1, previa: true, tienda_id: t.id, ffactura: fecha, tipo_factura: s.es_proforma ? "proforma" : "ordinaria",
+    impbruto: base, impiva: iva, impneto: base + iva, iva_pct: pct, forma_pago: g("fl_forma").value.trim() || t.forma_pago || null, notas: g("fl_notas").value.trim() || null,
+    emisor: { nombre: s.emisor_nombre, nif: s.emisor_nif, direccion: s.emisor_direccion, cp_localidad: s.emisor_cp_localidad, iban: s.emisor_iban, con_cabecera: s.con_cabecera },
+    receptor: { nombre: t.nombre, nombre_comercial: t.nombre_comercial, cif: t.cif, direccion: t.direccion, cp: t.cp, localidad: t.localidad, provincia: t.provincia } };
+  const lins = lineas.map((l, j) => ({ anyo: cab.anyo, serie: s.codigo, factura: 1, linea: j + 1, descripcion: l.descripcion, cantidad: l.cantidad, porcentaje: 100, importe: l.precio, importecobrar: r2(l.cantidad * l.precio) }));
+  return { s, t, cab, lins, lineas };
+}
+function vistaPreviaLibre() {
+  const d = datosLibre(); if (!d) return;
+  try { localStorage.setItem("almma_factura_previa", JSON.stringify({ cabs: [d.cab], lins: d.lins, series: [d.s] })); }
+  catch (e) { alert("El navegador no permite preparar la vista previa: " + e.message); return; }
+  window.open("factura_imprimir.html?previa=1", "_blank");
+}
+async function crearBorradorLibre() {
+  const d = datosLibre(); if (!d) return;
+  if (d.s.es_proforma) return emitirProformaLibre(d);
+  g("fl_ok").disabled = true;
+  const { data, error } = await client.rpc("crear_borrador_libre", { p_serie: d.s.codigo, p_tienda_id: d.t.id, p_lineas: d.lineas,
+    p_forma_pago: d.cab.forma_pago, p_notas: d.cab.notas, p_cab: d.cab, p_lins: d.lins });
+  g("fl_ok").disabled = false;
+  if (error) { g("fl_error").textContent = "No se pudo crear: " + error.message; g("fl_error").style.display = "block"; return; }
+  cerrarLibre();
+  cambiarTab("borrador");
+  const caja = g("fb_resultado"); caja.style.display = "block";
+  caja.innerHTML = `<strong>Borrador creado</strong> para ${esc(d.t.nombre)} (${euros(d.cab.impneto)}). Sin número hasta que lo contabilices. <button onclick="imprimirBorrador('${data}')">Imprimir borrador</button>`;
+}
+
+// Proforma con conceptos propios: se emite directamente (sin borrador), como el resto de proformas
+async function emitirProformaLibre(d) {
+  g("fl_ok").disabled = true;
+  const { data, error } = await client.rpc("emitir_factura_libre", { p_serie: d.s.codigo, p_tienda_id: d.t.id, p_lineas: d.lineas,
+    p_fecha: hoyISO(), p_forma_pago: d.cab.forma_pago, p_notas: d.cab.notas });
+  g("fl_ok").disabled = false;
+  if (error) { g("fl_error").textContent = "No se pudo emitir: " + error.message; g("fl_error").style.display = "block"; return; }
+  cerrarLibre();
+  const r = data[0];
+  cambiarTab("pendiente");
+  const caja = g("fp_resultado"); caja.style.display = "block"; caja.style.borderColor = "#16a34a";
+  caja.innerHTML = `<strong>Proforma ${esc(numeroFactura({ anyo: r.anyo, serie: r.serie, factura: r.factura, tipo_factura: "proforma" }, seriePorCodigo))} emitida</strong> para ${esc(d.t.nombre)} (${euros(d.cab.impbruto)}). <button onclick="imprimirUna('${r.anyo}-${r.serie}-${r.factura}')">Imprimir</button>`;
 }
 
 // ---------------------------------------------------------------- BORRADORES
