@@ -228,6 +228,10 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
     <label>Cliente</label>
     <input id="filtro_cliente" type="text" onkeydown="if(event.key==='Enter')cargarPedidos()">
   </div>
+  <div class="campo-mini" style="max-width:130px;">
+    <label>Teléfono</label>
+    <input id="filtro_telefono" type="text" inputmode="tel" onkeydown="if(event.key==='Enter')cargarPedidos()">
+  </div>
   <div class="campo-mini" style="max-width:140px;">
     <label>Referencia de pedido</label>
     <input id="filtro_num_pedido" type="text" onkeydown="if(event.key==='Enter')cargarPedidos()">
@@ -1078,12 +1082,13 @@ async function cargarPedidos() {
   const pedido = parseInt(document.getElementById("filtro_pedido").value, 10);
   const cliente = document.getElementById("filtro_cliente").value.trim();
   const numPedido = document.getElementById("filtro_num_pedido").value.trim();
+  const telefono = document.getElementById("filtro_telefono").value.replace(/\D/g, "");   // solo los dígitos
   const importe = parseFloat(document.getElementById("filtro_importe").value);
   const prevDesde = document.getElementById("prev_desde").value;
   const prevHasta = document.getElementById("prev_hasta").value;
 
   // De inicio no se carga nada: hay que buscar (por número de orden, cliente, fechas, etc.)
-  if (!estado && isNaN(anyoDesde) && isNaN(anyoHasta) && isNaN(pedido) && !cliente && !numPedido && isNaN(importe) && !prevDesde && !prevHasta) {
+  if (!estado && isNaN(anyoDesde) && isNaN(anyoHasta) && isNaN(pedido) && !cliente && !telefono && !numPedido && isNaN(importe) && !prevDesde && !prevHasta) {
     document.getElementById("aviso_carga").textContent = "Rellena algún filtro y pulsa \"Buscar\" para ver órdenes.";
     if (tabla) tabla.setData([]);
     return;
@@ -1112,6 +1117,9 @@ async function cargarPedidos() {
   if (!isNaN(pedido)) query = query.eq("orden", pedido);
   if (cliente) query = query.ilike("nombre_cli", `%${cliente}%`);
   if (numPedido) query = query.ilike("num_pedido", `%${numPedido}%`);
+  // Teléfono: se busca en el teléfono 1 y en el 2. Se intercala un comodín entre dígitos para que valga
+  // aunque esté guardado con espacios o guiones ("600 12 34 56" se encuentra escribiendo 600123456).
+  if (telefono) { const pat = "*" + telefono.split("").join("*") + "*"; query = query.or(`telefono_cli.ilike.${pat},telefono2_cli.ilike.${pat}`); }
   if (estado) query = query.eq("estado", estado);
   if (prevDesde) query = query.gte("fecha_prev_montaje", prevDesde);
   if (prevHasta) query = query.lte("fecha_prev_montaje", prevHasta + "T23:59:59");
@@ -1448,7 +1456,7 @@ async function cargarLineas() {
         <td>${l.ubicacion || ""} <button class="secondary btn-mini" onclick="editarUbicacion(${l.linea}, '${(l.ubicacion || '').replace(/'/g, "\\'")}')">✎</button></td>
         <td>${l.albaran || ""}</td>
         <td>${boton}</td>
-        <td><button class="secondary btn-mini" onclick="editarLinea(${l.linea})">Editar</button> <button class="secondary btn-mini" style="color:#dc2626;" onclick="borrarLinea(${l.linea}, '${(l.descripcion || l.articulo || "").replace(/'/g, "\\'").replace(/"/g, "&quot;")}')">Borrar</button></td>
+        <td><button class="secondary btn-mini" onclick="editarLinea(${l.linea})">Editar</button> <button class="secondary btn-mini" style="color:#dc2626;margin-left:22px;" onclick="borrarLinea(${l.linea}, '${(l.descripcion || l.articulo || "").replace(/'/g, "\\'").replace(/"/g, "&quot;")}')">Borrar</button></td>
       </tr>`;
     }).join("");
 
