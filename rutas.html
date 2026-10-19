@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - Listado de Rutas</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+:root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+button{background:var(--primary);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;}
+button.secondary{background:#dbeafe;color:#1e3a8a;border:1px solid #93c5fd;font-weight:600;}
+input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;}
+#toolbar{display:flex;gap:8px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center;}
+#toolbar .spacer{flex:1;} #toolbar b{color:#1e3a8a;font-size:15px;margin-right:8px;}
+.tabs{display:flex;gap:2px;padding:12px 24px 0;border-bottom:1px solid var(--border);background:var(--card);flex-wrap:wrap;}
+.tab{background:none;color:var(--muted);padding:10px 16px;font-weight:600;border-radius:0;border-bottom:2px solid transparent;}
+.tab.activa{color:var(--primary);border-bottom-color:var(--primary);}
+.panel{display:none;padding:20px 24px;} .panel.activa{display:block;}
+.tarjetas{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px;}
+.tarjeta{background:var(--card);border:1px solid #bfdbfe;border-left:5px solid #2563eb;border-radius:8px;padding:14px 16px;cursor:pointer;}
+.tarjeta .n{font-size:30px;font-weight:700;color:#1e3a8a;} .tarjeta .t{font-size:13px;color:var(--muted);}
+.tarjeta.aviso{border-left-color:#d97706;background:#fffbeb;} .tarjeta.ok{border-left-color:#16a34a;}
+.barra{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid #bfdbfe;border-radius:8px;overflow:hidden;font-size:13px;}
+th{background:#dbeafe;color:#1e3a8a;text-align:left;padding:9px 8px;} td{padding:8px;border-top:1px solid #dbeafe;vertical-align:top;}
+tr.sin td:first-child{border-left:5px solid #d97706;} tr.con td:first-child{border-left:5px solid #16a34a;}
+tr.dia th{background:#eff6ff;font-size:12px;}
+.chip{display:inline-block;background:#dbeafe;color:#1e3a8a;border-radius:12px;padding:2px 4px 2px 10px;margin:0 4px 4px 0;font-size:12px;}
+.chip button{background:none;color:#1e3a8a;padding:0 6px;font-size:14px;}
+.muted{color:var(--muted);font-size:13px;}
+tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.2);z-index:30;}
+#detalle{display:none;position:fixed;top:0;right:0;bottom:0;width:min(780px,100vw);background:var(--card);border-left:1px solid var(--border);box-shadow:-10px 0 30px -20px rgba(0,0,0,.3);z-index:31;padding:20px;overflow-y:auto;}
+.tarjeta{transition:box-shadow .1s;} .tarjeta:hover{box-shadow:0 4px 12px -6px rgba(30,64,175,.6);}
+.caja{background:var(--card);border:1px dashed #93c5fd;border-radius:8px;padding:16px;max-width:760px;line-height:1.5;}
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <b>ALMMA · Listado de Rutas</b>
+  <button class="secondary" onclick="location.href='pedidos.html'">Órdenes</button>
+  <button class="secondary" onclick="location.href='admin.html'">Administración</button>
+  <div class="spacer"></div>
+  <span id="quien" class="muted"></span>
+  <button class="secondary" onclick="logout()">Salir</button>
+</div>
+
+<div class="panel activa" id="p_montajes">
+  <div class="barra">
+    <button class="secondary" onclick="moverSemana(-1)">&larr; Semana anterior</button>
+    <b id="rango_semana"></b>
+    <button class="secondary" onclick="moverSemana(1)">Semana siguiente &rarr;</button>
+    <button class="secondary" onclick="moverSemana(0)">Hoy</button>
+    <select id="f_dia" onchange="pintarMontajes()"><option value="">Todos los días</option></select>
+    <select id="f_eq" onchange="pintarMontajes()"><option value="">Todos los equipos</option></select>
+    <label class="muted" id="l_mios" style="display:none"><input type="checkbox" id="solo_mios" onchange="pintarMontajes()"> <b>Solo mis montajes</b></label>
+    <label class="muted"><input type="checkbox" id="solo_sin" onchange="pintarMontajes()"> Solo sin montador</label>
+  </div>
+  <div id="hoja_msg" class="muted" style="margin-bottom:10px"></div>
+  <div id="montajes_tabla"><span class="muted">Cargando...</span></div>
+</div>
+
+<script>
+const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
+let miMontador = null, montadores = [], semanaIni = lunes(new Date()), ordenesSemana = [];
+
+function lunes(d){ d = new Date(d.getFullYear(), d.getMonth(), d.getDate()); const w = (d.getDay()+6)%7; d.setDate(d.getDate()-w); return d; }
+function iso(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function esc(t){ return String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+async function logout(){ await client.auth.signOut(); location.href = "login.html"; }
+
+async function iniciar(){
+  const { data:{ user } } = await client.auth.getUser();
+  if (!user) { location.href = "login.html"; return; }
+  const { data: st } = await client.from("staff").select("nombre, solo_deca, solo_montajes").eq("user_id", user.id).maybeSingle();
+  if (!st || st.solo_deca || st.solo_montajes) { location.href = "login.html"; return; }
+  document.getElementById("quien").textContent = st.nombre || user.email;
+  const r = await client.from("montadores").select("id, nombre, activo, especial, staff_user_id").eq("activo", true).order("especial").order("nombre");
+  montadores = r.data || [];
+  miMontador = (montadores.find(m => m.staff_user_id === user.id) || {}).id || null;
+  if (miMontador) document.getElementById("l_mios").style.display = "";
+  cargarMontajes();
+}
+
+/* ---------- Montajes de la semana ---------- */
+function moverSemana(n){ semanaIni = n === 0 ? lunes(new Date()) : new Date(semanaIni.getFullYear(), semanaIni.getMonth(), semanaIni.getDate() + 7*n); cargarMontajes(); }
+async function cargarMontajes(){
+  const fin = new Date(semanaIni.getFullYear(), semanaIni.getMonth(), semanaIni.getDate()+7);
+  document.getElementById("rango_semana").textContent = semanaIni.toLocaleDateString("es-ES") + " – " + new Date(+fin-864e5).toLocaleDateString("es-ES");
+  const { data, error } = await client.from("ordenes")
+    .select("anyo, orden, nombre_cli, localidad_cli, estado, fecha_prev_montaje, horamont, ordenes_montadores(montador_id)")
+    .gte("fecha_prev_montaje", iso(semanaIni)).lt("fecha_prev_montaje", iso(fin)).order("fecha_prev_montaje");
+  if (error) { document.getElementById("montajes_tabla").innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
+  ordenesSemana = data || []; rellenarFiltros(); pintarMontajes();
+}
+const SIN_EQ = "SIN MONTADOR";
+function rellenarFiltros(){
+  const fd = document.getElementById("f_dia"), fe = document.getElementById("f_eq"), antD = fd.value, antE = fe.value;
+  const dias = [...new Set(ordenesSemana.map(o => String(o.fecha_prev_montaje).slice(0,10)))].sort();
+  const eqs = [...new Set(ordenesSemana.map(claveEquipo))].sort((a,b) => (a === SIN_EQ) - (b === SIN_EQ) || a.localeCompare(b));
+  fd.innerHTML = '<option value="">Todos los días</option>' + dias.map(d => '<option value="'+d+'">'+new Date(d+"T12:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"})+'</option>').join("");
+  fe.innerHTML = '<option value="">Todos los equipos</option>' + eqs.map(e => '<option value="'+esc(e)+'">'+esc(e)+'</option>').join("");
+  if (dias.includes(antD)) fd.value = antD; if (eqs.includes(antE)) fe.value = antE;
+}
+function claveEquipo(o){
+  const nom = Object.fromEntries(montadores.map(m => [m.id, m.nombre]));
+  const n = o.ordenes_montadores.map(a => (nom[a.montador_id] || "?").toUpperCase()).sort();
+  return n.length ? n.join("/") : SIN_EQ;
+}
+const porHora = (a,b) => (a.horamont || "99").localeCompare(b.horamont || "99") || a.orden - b.orden;
+function pintarMontajes(){
+  const soloSin = document.getElementById("solo_sin").checked, nom = Object.fromEntries(montadores.map(m => [m.id, m.nombre]));
+  const fDia = document.getElementById("f_dia").value, fEq = document.getElementById("f_eq").value;
+  const soloMios = document.getElementById("solo_mios").checked;
+  const filas = ordenesSemana.filter(o => (!soloSin || !o.ordenes_montadores.length) && (!soloMios || o.ordenes_montadores.some(a => a.montador_id === miMontador)) && (!fDia || String(o.fecha_prev_montaje).slice(0,10) === fDia) && (!fEq || claveEquipo(o) === fEq));
+  if (!filas.length) { document.getElementById("montajes_tabla").innerHTML = '<span class="muted">No hay montajes con esos criterios.</span>'; return; }
+  const dias = [...new Set(filas.map(o => String(o.fecha_prev_montaje).slice(0,10)))].sort();
+  let h = '<table><tr><th>Hora</th><th>Orden</th><th>Cliente</th><th>Localidad</th><th>Estado</th><th>Montadores</th><th>Añadir</th></tr>';
+  for (const d of dias) {
+    h += '<tr class="dia"><th colspan="7">'+new Date(d+"T12:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"})+'</th></tr>';
+    const delDia = filas.filter(o => String(o.fecha_prev_montaje).slice(0,10) === d);
+    const equipos = [...new Set(delDia.map(claveEquipo))].sort((a,b) => (a === SIN_EQ) - (b === SIN_EQ) || a.localeCompare(b));
+    for (const eq of equipos) {
+      const delEq = delDia.filter(o => claveEquipo(o) === eq).sort(porHora);
+      h += '<tr class="eq"><td colspan="7"><b>'+esc(eq)+'</b> <span class="muted">· '+delEq.length+' montaje'+(delEq.length>1?'s':'')+'</span> '+
+        (eq !== SIN_EQ ? '<button class="secondary" onclick="imprimirHoja(\''+d+'\',\''+eq.replace(/'/g,"")+'\',this)">Imprimir hoja (PDF con QR)</button>' : '')+'</td></tr>';
+      for (const o of delEq) {
+        const asig = o.ordenes_montadores.map(a => '<span class="chip">'+esc(nom[a.montador_id] || "?")+'<button title="Quitar" onclick="quitar('+o.anyo+','+o.orden+',\''+a.montador_id+'\')">×</button></span>').join("");
+        const opts = montadores.filter(m => !o.ordenes_montadores.some(a => a.montador_id === m.id)).map(m => '<option value="'+m.id+'">'+esc(m.nombre)+'</option>').join("");
+        h += '<tr class="'+(o.ordenes_montadores.length?'con':'sin')+'"><td><b>'+esc(o.horamont || "—")+'</b></td><td><a href="pedidos.html?anyo='+o.anyo+'&orden='+o.orden+'">'+o.anyo+'/'+o.orden+'</a></td><td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.localidad_cli)+'</td><td>'+esc(o.estado)+'</td><td>'+(asig||'<span class="muted">Sin montador</span>')+'</td><td><select onchange="anadir('+o.anyo+','+o.orden+',this)"><option value="">Elegir...</option>'+opts+'</select></td></tr>';
+      }
+    }
+  }
+  document.getElementById("montajes_tabla").innerHTML = h + '</table>';
+}
+async function anadir(anyo, orden, sel){
+  if (!sel.value) return;
+  const { data:{ user } } = await client.auth.getUser();
+  const { error } = await client.from("ordenes_montadores").insert({ anyo, orden, montador_id: sel.value, asignado_por: user.id });
+  if (error) alert("No se pudo asignar: " + error.message); else cargarMontajes();
+}
+async function quitar(anyo, orden, mid){
+  const { error } = await client.from("ordenes_montadores").delete().eq("anyo", anyo).eq("orden", orden).eq("montador_id", mid);
+  if (error) alert("No se pudo quitar: " + error.message); else cargarMontajes();
+}
+
+/* ---------- Hoja de reparto de un equipo (PDF con QR, se guarda como los DeCA) ---------- */
+function generarQrDataUrl(texto, tamano){
+  const c = document.createElement("div"); c.style.display = "none"; document.body.appendChild(c);
+  new QRCode(c, { text: texto, width: tamano, height: tamano, correctLevel: QRCode.CorrectLevel.M });
+  const url = c.querySelector("canvas").toDataURL("image/png"); document.body.removeChild(c); return url;
+}
+const limpiar = t => String(t ?? "").replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/[–—]/g,"-").replace(/\s+/g," ").trim().replace(/[^\x20-\x7E\xA0-\xFF]/g,"?");
+function envolver(font, size, texto, ancho){
+  const out = []; let cur = "";
+  for (const w of limpiar(texto).split(" ")) {
+    const t = cur ? cur + " " + w : w;
+    if (font.widthOfTextAtSize(t, size) <= ancho || !cur) cur = t; else { out.push(cur); cur = w; }
+  }
+  if (cur) out.push(cur); return out.length ? out : [""];
+}
+async function imprimirHoja(dia, equipo, btn){
+  const txtBtn = btn.textContent; btn.disabled = true; btn.textContent = "Generando...";
+  try {
+    const ords = ordenesSemana.filter(o => String(o.fecha_prev_montaje).slice(0,10) === dia && claveEquipo(o) === equipo).sort(porHora);
+    const porAnyo = {}; ords.forEach(o => (porAnyo[o.anyo] ||= []).push(o.orden));
+    let det = [];
+    for (const [a, lst] of Object.entries(porAnyo)) {
+      const { data, error } = await client.from("ordenes")
+        .select("anyo, orden, nombre_cli, telefono_cli, telefono2_cli, domicilio_cli, localidad_cli, num_pedido, horamont, obs_albaran, observaciones, tiendas(nombre), linorden(linea, tipolinea, descripcion, cantidad, ubicacion, bultos, proveedor)")
+        .eq("anyo", +a).in("orden", lst);
+      if (error) throw error; det.push(...data);
+    }
+    det.sort(porHora);
+    const codigos = [...new Set(det.flatMap(o => o.linorden.map(l => l.proveedor)).filter(Boolean))];
+    const fab = {};
+    if (codigos.length) { const { data } = await client.from("fabricantes").select("codigo, nombre").in("codigo", codigos); (data||[]).forEach(f => fab[f.codigo] = f.nombre); }
+
+    const { data:{ user } } = await client.auth.getUser();
+    const ruta = Date.now() + "-HOJA_" + equipo.replace(/[^A-Za-z0-9._-]/g, "_") + "_" + dia + ".pdf";
+    const urlPublica = client.storage.from("deca-documentos").getPublicUrl(ruta).data.publicUrl;
+
+    const { PDFDocument, StandardFonts, rgb } = PDFLib, doc = await PDFDocument.create();
+    const F = await doc.embedFont(StandardFonts.Helvetica), B = await doc.embedFont(StandardFonts.HelveticaBold);
+    const qr = await doc.embedPng(await fetch(generarQrDataUrl(urlPublica, 300)).then(r => r.arrayBuffer()));
+    const W = 842, H = 595, M = 30, fechaLarga = new Date(dia + "T12:00").toLocaleDateString("es-ES", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
+    const COL = { hora:M, orden:66, pedido:118, cli:222, tel:460, prov:548 }, L = { bul:66, ubi:100, desc:178, cant:500, fab:540 };
+    let page, y;
+    const t = (s, x, yy, sz = 8.5, f = F) => page.drawText(limpiar(s), { x, y: yy, size: sz, font: f, color: rgb(0,0,0) });
+    const nueva = () => {
+      page = doc.addPage([W, H]);
+      t("C/.San Isidro 73 - 46133 - Meliana - Valencia   CIF: E98819030", M, H-30, 8);
+      t("ALBARANES DIARIOS", M, H-48, 14, B); t("muebles almma", M+160, H-48, 10);
+      t(fechaLarga, M, H-64, 10); t(equipo, M, H-82, 13, B);
+      page.drawImage(qr, { x: W-M-70, y: H-M-60, width: 70, height: 70 });
+      y = H-104;
+      page.drawRectangle({ x: M, y: y-4, width: W-2*M, height: 14, color: rgb(.86,.92,.99) });
+      [["HORA",COL.hora],["ORDEN",COL.orden],["PEDIDO",COL.pedido],["CLIENTE / DIRECCIÓN",COL.cli],["TELÉFONO",COL.tel],["PROVEEDOR",COL.prov]].forEach(([s,x]) => t(s, x, y, 8, B));
+      y -= 15;
+      page.drawRectangle({ x: M, y: y-4, width: W-2*M, height: 13, color: rgb(.93,.96,1) });
+      [["BULTOS",L.bul],["UBICACIÓN",L.ubi],["DESCRIPCIÓN",L.desc],["CANT",L.cant],["FÁBRICA",L.fab]].forEach(([s,x]) => t(s, x, y, 7.5, B));
+      y -= 16;
+    };
+    nueva();
+    for (const o of det) {
+      const nom = envolver(B, 9, o.nombre_cli || "", 232), ped = envolver(F, 8.5, o.num_pedido || "", 98);
+      const dir = envolver(F, 8.5, [o.domicilio_cli, o.localidad_cli].filter(Boolean).join(" - "), 232);
+      const obs = o.obs_albaran || o.observaciones ? envolver(F, 8.5, "Observaciones: " + (o.obs_albaran || o.observaciones), 232) : [];
+      const lineas = o.linorden.filter(l => l.tipolinea !== 4).sort((a,b) => a.linea - b.linea).map(l => ({ ubi: l.ubicacion || "", desc: envolver(F, 8.5, l.descripcion || "", 320), cant: l.cantidad ?? "", fab: envolver(F, 8.5, fab[l.proveedor] || "", 210), bul: l.bultos ?? "" }));
+      const hCab = 12 + (nom.length + dir.length + obs.length) * 10.5, hLin = lineas.reduce((s,l) => s + Math.max(l.desc.length, l.fab.length) * 10.5, 0);
+      if (y - (hCab + hLin) < 36 && y < H-130) nueva();
+      t(o.horamont || "-", COL.hora, y, 9, B); t(o.anyo + "/" + o.orden, COL.orden, y, 9, B);
+      ped.forEach((s,i) => t(s, COL.pedido, y - i*10.5, 8.5));
+      nom.forEach((s,i) => t(s, COL.cli, y - i*10.5, 9, B));
+      [o.telefono_cli, o.telefono2_cli].filter(Boolean).forEach((s,i) => t(s, COL.tel, y - i*10.5, 8.5));
+      envolver(F, 8.5, o.tiendas?.nombre || "", 245).slice(0,2).forEach((s,i) => t(s, COL.prov, y - i*10.5, 8.5));
+      let yy = y - nom.length * 10.5 - 1; [...dir, ...obs].forEach((s,i) => { t(s, COL.cli, yy, 8.5, i >= dir.length ? B : F); yy -= 10.5; });
+      y = Math.min(yy, y - Math.max(ped.length, 2) * 10.5 - 2);
+      for (const l of lineas) {
+        if (y < 40) nueva();
+        t(String(l.bul), L.bul, y); t(l.ubi, L.ubi, y); t(String(l.cant), L.cant, y);
+        l.desc.forEach((s,i) => t(s, L.desc, y - i*10.5)); l.fab.forEach((s,i) => t(s, L.fab, y - i*10.5));
+        y -= Math.max(l.desc.length, l.fab.length) * 10.5;
+      }
+      page.drawLine({ start:{x:M,y:y+3}, end:{x:W-M,y:y+3}, thickness:.5, color:rgb(.6,.6,.6) }); y -= 10;
+    }
+    const pags = doc.getPages(); pags.forEach((p,i) => p.drawText("Página "+(i+1)+" de "+pags.length, { x: W-M-150, y: H-M-72, size: 8, font: F }));
+    const bytes = await doc.save();
+    const { error: eu } = await client.storage.from("deca-documentos").upload(ruta, new Blob([bytes], { type:"application/pdf" }), { contentType:"application/pdf" });
+    if (eu) throw eu;
+    const { error: ef } = await client.from("deca_documentos").insert({ nombre: "Hoja " + equipo + " " + new Date(dia+"T12:00").toLocaleDateString("es-ES"), pdf_path: ruta, subido_por: user.id, fecha_documento: dia });
+    if (ef) throw ef;
+    window.open(urlPublica, "_blank");
+    document.getElementById("hoja_msg").innerHTML = 'Hoja de <b>'+esc(equipo)+'</b> lista: <a href="'+urlPublica+'" target="_blank">abrir PDF</a> (también está en la pantalla DeCA).';
+  } catch (e) { alert("No se pudo generar la hoja: " + (e.message || e)); }
+  btn.disabled = false; btn.textContent = txtBtn;
+}
+
+iniciar();
+</script>
+</body>
+</html>
