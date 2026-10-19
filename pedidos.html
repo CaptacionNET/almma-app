@@ -1447,7 +1447,7 @@ async function cargarLineas() {
         <td>${l.ubicacion || ""} <button class="secondary btn-mini" onclick="editarUbicacion(${l.linea}, '${(l.ubicacion || '').replace(/'/g, "\\'")}')">✎</button></td>
         <td>${l.albaran || ""}</td>
         <td>${boton}</td>
-        <td><button class="secondary btn-mini" onclick="editarLinea(${l.linea})">Editar</button></td>
+        <td><button class="secondary btn-mini" onclick="editarLinea(${l.linea})">Editar</button> <button class="secondary btn-mini" style="color:#dc2626;" onclick="borrarLinea(${l.linea}, '${(l.descripcion || l.articulo || "").replace(/'/g, "\\'").replace(/"/g, "&quot;")}')">Borrar</button></td>
       </tr>`;
     }).join("");
 
@@ -1532,6 +1532,15 @@ document.getElementById("ln_fabricante_sugerencias").addEventListener("click", (
   document.getElementById("ln_fabricante_buscar").value = fila.dataset.nom;
   document.getElementById("ln_fabricante_sugerencias").style.display = "none";
 });
+
+async function borrarLinea(linea, nombre) {
+  if (!confirm(`¿Borrar la línea ${linea}${nombre ? " (" + nombre + ")" : ""} de la orden ${pedidoActivo.anyo}/${pedidoActivo.orden}?\n\nNo se puede deshacer.`)) return;
+  const { error } = await client.from("linorden").delete()
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).eq("linea", linea);
+  if (error) { alert("No se pudo borrar la línea: " + error.message); return; }
+  if (lineaEditando === linea) mostrarNuevaLinea(false);
+  await cargarLineas();
+}
 
 let lineaEditando = null;   // nº de línea que se está editando; null = se está creando una nueva
 
