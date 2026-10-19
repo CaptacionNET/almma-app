@@ -40,6 +40,8 @@ td.num,th.num{text-align:right;white-space:nowrap;}
 .totales div{display:flex;justify-content:space-between;padding:4px 0;}
 .totales .total{border-top:2px solid var(--text);margin-top:4px;padding-top:8px;font-size:16px;font-weight:800;}
 .rect{margin-top:12px;padding:8px 12px;background:#fff5f5;border:1px solid #fecaca;border-radius:6px;}
+.aviso-login{background:#1e3a8a;color:#fff;padding:12px 20px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:14px;}
+.aviso-login a{background:#fff;color:#1e3a8a;text-decoration:none;font-weight:700;padding:7px 14px;border-radius:6px;}
 .qr{display:flex;gap:10px;align-items:center;margin-top:14px;font-size:11px;color:var(--muted);line-height:1.4;}
 .qr svg{width:24mm;height:24mm;flex:none;border:1px solid var(--line);}
 .pie{margin-top:auto;padding-top:18px;color:var(--muted);line-height:1.5;border-top:1px solid #e6eaf2;font-size:12px;}
@@ -47,7 +49,7 @@ td.num,th.num{text-align:right;white-space:nowrap;}
 @page{size:A4;margin:0;}
 @media print{
   body{background:#fff;}
-  #barra{display:none;}
+  #barra,.aviso-login{display:none;}
   .hoja{margin:0;box-shadow:none;width:auto;min-height:0;height:auto;page-break-after:always;break-after:page;}
   .hoja:last-child{page-break-after:auto;break-after:auto;}
 }
@@ -57,6 +59,7 @@ body.previa .hoja::after{content:attr(data-marca);position:absolute;top:45%;left
 </style>
 </head>
 <body>
+<div id="aviso_login" class="aviso-login" style="display:none"><span>¿Quieres ver más cosas, como todas tus facturas y pedidos? Inicia sesión con tu usuario de ALMMA.</span><a href="login.html">Iniciar sesión</a></div>
 <div id="barra"><button onclick="window.print()">Imprimir</button><button class="sec" onclick="window.close()">Cerrar</button><span id="estado"></span></div>
 <div id="hojas"></div>
 <script>
@@ -72,6 +75,21 @@ function numeroFactura(c, ss) {
 }
 
 async function iniciar() {
+  const params0 = new URLSearchParams(location.search);
+  if (params0.get("t")) {   // consulta por el código del QR: no hace falta sesión
+    const token = params0.get("t");
+    const { data: d, error } = await client.rpc("factura_publica", { p_token: token });
+    if (error || !d) { document.getElementById("estado").textContent = "Este enlace de factura no es válido."; return; }
+    const ss = { [d.cab.serie]: d.serie || {} };
+    const ordenPorClave = {}; (d.ordenes || []).forEach(o => { ordenPorClave[`${o.anyo}/${o.orden}`] = o; });
+    document.getElementById("hojas").innerHTML = hoja(d.cab, d.lins, ss, d.original ? [d.original] : [], { [d.cab.tienda_id]: d.tienda }, ordenPorClave);
+    document.getElementById("estado").textContent = "Factura " + numeroFactura(d.cab, ss);
+    document.title = "Factura " + numeroFactura(d.cab, ss);
+    const { data: { user: u } } = await client.auth.getUser();
+    if (!u) document.getElementById("aviso_login").style.display = "flex";
+    await rellenarQr(token);
+    return;
+  }
   const { data: { user } } = await client.auth.getUser();
   if (!user) { window.location.href = "login.html?volver=" + encodeURIComponent(location.pathname.split("/").pop() + location.search); return; }
   const params = new URLSearchParams(location.search);
@@ -136,19 +154,29 @@ async function iniciar() {
   document.getElementById("hojas").innerHTML = orden.map(c => hoja(c, (lins || []).filter(l => l.anyo === c.anyo && l.serie === c.serie && l.factura === c.factura), ss, originales, tiendaPorId, ordenPorClave)).join("");
   document.getElementById("estado").textContent = `${orden.length} factura(s) lista(s) para imprimir. Elige "Guardar como PDF" en el cuadro de impresión si prefieres un fichero.`;
   document.title = orden.length === 1 ? "Factura " + numeroFactura(orden[0], ss) : `Facturas (${orden.length})`;
+  await rellenarQr();
   if (params.get("auto") === "1") setTimeout(() => window.print(), 600);
 }
 
 const FORMAS_COBRO = { "00": "Pago fca.", BZ: "Bizum", C: "Contado", CH: "Cheque-talón", DA: "Datáfono", E: "Efectivo", FI: "Financiado", IN: "Ingreso banco", J: "Caja", NO: "", TI: "Tienda", T: "Transferencia", N: "" };
 const formaCobroTexto = (v) => { const s = String(v ?? "").trim(); return Object.prototype.hasOwnProperty.call(FORMAS_COBRO, s.toUpperCase()) ? FORMAS_COBRO[s.toUpperCase()] : s; };
 
-// QR de consulta: lleva a esta misma factura en almma.es (pide iniciar sesión; cada tienda solo ve las suyas)
-function qrConsulta(c) {
-  if (c.previa || c.borrador || typeof qrcode === "undefined") return "";
-  try {
-    const q = qrcode(0, "M"); q.addData(`https://almma.es/factura_imprimir.html?ids=${c.anyo}-${c.serie}-${c.factura}`); q.make();
-    return `<div class="qr">${q.createSvgTag({ cellSize: 3, margin: 0, scalable: true })}<div><strong>Consulta esta factura en línea</strong><br>Escanea el código e inicia sesión en almma.es con tu usuario.</div></div>`;
-  } catch (e) { return ""; }
+// QR de consulta: lleva a esta factura en almma.es SIN iniciar sesión, con un código largo imposible de adivinar
+// (migracion/68_facturas_enlace_publico.sql). Cada hoja deja un hueco y se rellena después, cuando se tiene el código.
+function qrHueco(c) {
+  if (c.previa || c.borrador || c.tipo_factura === "proforma" || c.serie === 5) return "";
+  return `<div class="qr-hueco" data-a="${c.anyo}" data-s="${c.serie}" data-f="${c.factura}"></div>`;
+}
+async function rellenarQr(tokenFijo) {
+  if (typeof qrcode === "undefined") return;
+  for (const h of document.querySelectorAll(".qr-hueco")) {
+    try {
+      let token = tokenFijo;
+      if (!token) { const { data, error } = await client.rpc("token_factura", { p_anyo: +h.dataset.a, p_serie: +h.dataset.s, p_factura: +h.dataset.f }); if (error) continue; token = data; }
+      const q = qrcode(0, "M"); q.addData(`https://almma.es/factura_imprimir.html?t=${token}`); q.make();
+      h.innerHTML = `<div class="qr">${q.createSvgTag({ cellSize: 3, margin: 0, scalable: true })}<div><strong>Consulta esta factura en línea</strong><br>Escanea el código con el móvil; no hace falta iniciar sesión.</div></div>`;
+    } catch (e) {}
+  }
 }
 
 function hoja(c, lineas, ss, originales, tiendaPorId, ordenPorClave) {
@@ -204,7 +232,7 @@ function hoja(c, lineas, ss, originales, tiendaPorId, ordenPorClave) {
       <div><span>Base imponible</span><span>${euros(c.impbruto)}</span></div>
       ${proforma ? "" : `<div><span>IVA ${pct} %</span><span>${euros(c.impiva)}</span></div><div class="total"><span>TOTAL</span><span>${euros(c.impneto)}</span></div>`}
     </div>
-    ${qrConsulta(c)}
+    ${qrHueco(c)}
     ${proforma ? "" : `<div class="pie">${c.forma_pago ? `Forma de pago: <b>${esc(c.forma_pago)}</b><br>` : ""}${emisor.iban ? `Pago por transferencia a: <b>${esc(emisor.iban)}</b> (${esc(emisor.nombre)})<br>` : ""}${c.notas ? esc(c.notas) : ""}</div>`}
   </section>`;
 }
