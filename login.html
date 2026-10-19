@@ -70,6 +70,26 @@ button:disabled{opacity:.6;cursor:default;}
       errorBox.style.display = "block";
     }
 
+    // Redirige según el rol de la sesión abierta; devuelve false si la cuenta no tiene acceso
+    async function entrarSegunRol() {
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) return;
+
+      const { data: staffRow } = await client.from("staff").select("user_id, solo_deca, solo_montajes").eq("user_id", user.id).maybeSingle();
+      if (staffRow) { window.location.href = destino(staffRow.solo_deca ? "deca.html" : staffRow.solo_montajes ? "mi-dia.html" : "pedidos.html"); return; }
+
+      const { data: depRow } = await client.from("dependientes").select("id, es_admin_tienda").eq("user_id", user.id).maybeSingle();
+      if (depRow) { window.location.href = destino(depRow.es_admin_tienda ? "tienda.html" : "mis-pedidos.html"); return; }
+
+      await client.auth.signOut();
+      mostrarError("Esta cuenta no tiene acceso a la app de ALMMA.");
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Entrar";
+    }
+
+    // Si ya hay una sesión guardada (p. ej. al abrir la app instalada), entra directo sin pedir la contraseña
+    client.auth.getSession().then(({ data }) => { if (data.session) entrarSegunRol(); });
+
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       errorBox.style.display = "none";
@@ -89,18 +109,7 @@ button:disabled{opacity:.6;cursor:default;}
         return;
       }
 
-      const { data: { user } } = await client.auth.getUser();
-
-      const { data: staffRow } = await client.from("staff").select("user_id, solo_deca, solo_montajes").eq("user_id", user.id).maybeSingle();
-      if (staffRow) { window.location.href = destino(staffRow.solo_deca ? "deca.html" : staffRow.solo_montajes ? "mi-dia.html" : "pedidos.html"); return; }
-
-      const { data: depRow } = await client.from("dependientes").select("id, es_admin_tienda").eq("user_id", user.id).maybeSingle();
-      if (depRow) { window.location.href = destino(depRow.es_admin_tienda ? "tienda.html" : "mis-pedidos.html"); return; }
-
-      await client.auth.signOut();
-      mostrarError("Esta cuenta no tiene acceso a la app de ALMMA.");
-      submitBtn.disabled = false;
-      submitBtn.textContent = "Entrar";
+      await entrarSegunRol();
     });
   </script>
 </body>
