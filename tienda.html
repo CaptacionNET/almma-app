@@ -27,6 +27,14 @@ table{width:100%;border-collapse:collapse;background:var(--card);border:1px soli
 th{background:#dbeafe;color:#1e3a8a;text-align:left;padding:9px 8px;} td{padding:8px;border-top:1px solid #dbeafe;}
 tr.bloq td:first-child{border-left:5px solid #d97706;}
 .muted{color:var(--muted);font-size:13px;}
+button.on{background:#1e40af;color:#fff;border:1px solid #1e3a8a;font-weight:600;}
+tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.2);z-index:30;}
+#det{display:none;position:fixed;top:0;right:0;bottom:0;width:min(640px,100vw);background:var(--card);border-left:1px solid var(--border);z-index:31;padding:20px;overflow-y:auto;}
+.k{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;} .v{font-size:14px;margin:2px 0 10px;}
+.fotos{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;}
+.fotos img,.firma img{width:100%;border:1px solid var(--border);border-radius:6px;background:#fafbfe;}
+.ok{color:#15803d;font-weight:700;}
 .caja{background:var(--card);border:1px dashed #93c5fd;border-radius:8px;padding:14px;margin-bottom:14px;}
 </style>
 </head>
@@ -40,37 +48,37 @@ tr.bloq td:first-child{border-left:5px solid #d97706;}
   <button class="secondary" onclick="logout()">Salir</button>
 </div>
 <div class="tabs">
-  <button class="tab activa" data-t="resumen">Resumen</button>
-  <button class="tab" data-t="ordenes">Órdenes de la tienda</button>
+  <button class="tab activa" data-t="ordenes">Órdenes de la tienda</button>
   <button class="tab" data-t="facturas">Facturas</button>
+  <button class="tab" data-t="montajes">Montajes</button>
   <button class="tab" data-t="equipo">Mi equipo</button>
-  <button class="tab" onclick="location.href='montajes_tienda.html'" style="margin-left:auto">Montajes &rarr;</button>
 </div>
 
-<div class="panel activa" id="p_resumen">
-  <div class="barra">
-    <select id="r_periodo" onchange="cargarResumen()">
-      <option value="sem">Esta semana</option><option value="sem_ant">Semana pasada</option>
-      <option value="tri">Este trimestre</option><option value="tri_ant">Trimestre anterior</option>
-      <option value="anyo">Este año</option><option value="otro">Fechas...</option></select>
-    <span id="r_fechas_otro" style="display:none"><input type="date" id="r_d" onchange="cargarResumen()"> – <input type="date" id="r_h" onchange="cargarResumen()"></span>
-    <b id="r_rango"></b>
-  </div>
-  <div class="tarjetas" id="r_tarjetas"><span class="muted">Cargando...</span></div>
-  <h3>Pedidos por dependiente en el periodo</h3>
-  <div id="r_dep"></div>
-</div>
-
-<div class="panel" id="p_ordenes">
+<div class="panel activa" id="p_ordenes">
   <div class="barra"><input id="o_buscar" placeholder="Buscar cliente, referencia, nº..." oninput="pintarOrdenes()" style="width:320px">
-  <label class="muted"><input type="checkbox" id="o_antiguas" onchange="cargarOrdenes()"> Incluir años anteriores</label></div>
+  <label class="muted"><input type="checkbox" id="o_antiguas" onchange="cargarOrdenes()"> Incluir años anteriores</label>
+  <span class="muted">Desde</span> <input type="date" id="o_d" onchange="cargarOrdenes()"> <span class="muted">hasta</span> <input type="date" id="o_h" onchange="cargarOrdenes()"> <button class="secondary" onclick="limpiarFechas('o')">Quitar fechas</button></div>
   <div id="o_tabla"><span class="muted">Cargando...</span></div>
 </div>
 
 <div class="panel" id="p_facturas">
-  <div class="muted" style="margin-bottom:10px">Facturas emitidas a nombre de tu tienda.</div>
+  <div class="barra"><input id="f_buscar" placeholder="Buscar nº de factura..." oninput="pintarFacturas()" style="width:260px">
+  <span class="muted">Desde</span> <input type="date" id="f_d" onchange="cargarFacturas()"> <span class="muted">hasta</span> <input type="date" id="f_h" onchange="cargarFacturas()"> <button class="secondary" onclick="limpiarFechas('f')">Quitar fechas</button></div>
   <div id="f_tabla"><span class="muted">Cargando...</span></div>
 </div>
+
+<div class="panel" id="p_montajes">
+  <div class="barra">
+    <button id="m_b_prox" class="on" onclick="modoMontajes('prox')">Próximos montajes</button>
+    <button id="m_b_pas" class="secondary" onclick="modoMontajes('pas')">Montajes realizados</button>
+    <input id="m_buscar" placeholder="Buscar cliente, referencia, localidad..." oninput="pintarMontajes()" style="width:300px">
+    <span class="muted">Desde</span> <input type="date" id="m_d" onchange="cargarMontajes()"> <span class="muted">hasta</span> <input type="date" id="m_h" onchange="cargarMontajes()"> <button class="secondary" onclick="limpiarFechas('m')">Quitar fechas</button>
+    <label class="muted" id="m_l_ant" style="display:none"><input type="checkbox" id="m_ant" onchange="cargarMontajes()"> Incluir años anteriores</label>
+  </div>
+  <div id="m_tabla"><span class="muted">Cargando...</span></div>
+</div>
+<div id="overlay" onclick="cerrarMontaje()"></div>
+<div id="det"><div class="barra"><b id="det_t" style="font-size:16px"></b><span style="flex:1"></span><button class="secondary" onclick="cerrarMontaje()">Cerrar</button></div><div id="det_c"></div></div>
 
 <div class="panel" id="p_equipo">
   <div class="caja"><b>Nuevo dependiente</b>
@@ -108,35 +116,15 @@ async function iniciar(){
     sel.innerHTML = '<option value="">Todas mis tiendas</option>' + misTiendas.map(t => '<option value="'+t.id+'">'+esc(t.nombre)+'</option>').join("");
   }
   document.getElementById("quien").textContent = d.nombre || user.email;
-  cargarResumen(); cargarOrdenes(); cargarFacturas(); cargarEquipo();
+  cargarOrdenes(); cargarFacturas(); cargarMontajes(); cargarEquipo();
 }
-function cambiaTienda(){ tiendaSel = document.getElementById("t_sel").value; cargarResumen(); cargarOrdenes(); cargarFacturas(); cargarEquipo(); }
+function cambiaTienda(){ tiendaSel = document.getElementById("t_sel").value; cargarOrdenes(); cargarFacturas(); cargarMontajes(); cargarEquipo(); }
 const multi = () => misTiendas.length > 1;
 
-/* Resumen */
-function rango(p){
-  const h = new Date(), y = h.getFullYear(), m = h.getMonth(), w = (h.getDay()+6)%7;
-  const lun = new Date(y, m, h.getDate()-w), qi = Math.floor(m/3)*3;
-  if (p==="sem") return [lun, new Date(+lun+6*864e5)];
-  if (p==="sem_ant") return [new Date(+lun-7*864e5), new Date(+lun-864e5)];
-  if (p==="tri") return [new Date(y,qi,1), new Date(y,qi+3,0)];
-  if (p==="tri_ant") return [new Date(y,qi-3,1), new Date(y,qi,0)];
-  if (p==="anyo") return [new Date(y,0,1), new Date(y,11,31)];
-  return [new Date(document.getElementById("r_d").value||h), new Date(document.getElementById("r_h").value||h)];
-}
-async function cargarResumen(){
-  const p = document.getElementById("r_periodo").value;
-  document.getElementById("r_fechas_otro").style.display = p==="otro" ? "" : "none";
-  const [d,h] = rango(p);
-  document.getElementById("r_rango").textContent = d.toLocaleDateString("es-ES")+" – "+h.toLocaleDateString("es-ES");
-  const { data, error } = await client.rpc("resumen_tienda", { p_desde: iso(d), p_hasta: iso(h), p_tienda: tiendaSel || null });
-  if (error) { document.getElementById("r_tarjetas").innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
-  const t = [["Pedidos creados",data.ordenes_creadas,""],["Montajes completados",data.montadas,""],["Facturas emitidas",data.facturas,""],["Facturado (sin IVA)",eur(data.facturado),""],["Pedidos pendientes ahora",data.pendientes_ahora,""],["Con incidencia",data.con_incidencia,data.con_incidencia?"aviso":""]];
-  document.getElementById("r_tarjetas").innerHTML = t.map(x => '<div class="tarjeta '+x[2]+'"><div class="n">'+x[1]+'</div><div class="t">'+x[0]+'</div></div>').join("");
-  document.getElementById("r_dep").innerHTML = data.por_dependiente.length
-    ? '<table><tr><th>Dependiente</th><th>Pedidos</th></tr>'+data.por_dependiente.map(x => '<tr><td>'+esc(x.nombre||"(sin dependiente anotado)")+'</td><td>'+x.ordenes+'</td></tr>').join("")+'</table>'
-    : '<span class="muted">Sin pedidos en el periodo.</span>';
-}
+/* Fechas de los buscadores: p = "o" (órdenes), "f" (facturas), "m" (montajes) */
+function fechas(p){ return [document.getElementById(p+"_d").value, document.getElementById(p+"_h").value]; }
+function sumaDia(f){ const d = new Date(f+"T00:00:00"); d.setDate(d.getDate()+1); return iso(d); }
+function limpiarFechas(p){ document.getElementById(p+"_d").value = ""; document.getElementById(p+"_h").value = ""; ({o:cargarOrdenes,f:cargarFacturas,m:cargarMontajes})[p](); }
 
 /* Órdenes */
 let conMensaje = new Set();
@@ -150,7 +138,10 @@ async function cargarOrdenes(){
   let q = client.from("ordenes").select("anyo, orden, nombre_cli, num_pedido, estado, fecha_creacion, tiendas(nombre)")
     .order("anyo",{ascending:false}).order("orden",{ascending:false}).limit(1000);
   if (tiendaSel) q = q.eq("tienda_id", tiendaSel);
-  if (!document.getElementById("o_antiguas").checked) q = q.gte("anyo", new Date().getFullYear()-3);
+  const [od, oh] = fechas("o");
+  if (od) q = q.gte("fecha_creacion", od);
+  if (oh) q = q.lt("fecha_creacion", sumaDia(oh));
+  if (!od && !oh && !document.getElementById("o_antiguas").checked) q = q.gte("anyo", new Date().getFullYear()-3);
   const [{ data, error }] = await Promise.all([q, cargarConMensaje()]);
   if (error) { document.getElementById("o_tabla").innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
   ordenes = data; pintarOrdenes();
@@ -164,15 +155,83 @@ function pintarOrdenes(){
 }
 
 /* Facturas */
+let facturas = [];
 async function cargarFacturas(){
   let q = client.from("cabfacturas").select("anyo, serie, factura, ffactura, impbruto, impiva, impneto, tiendas!tienda_id(nombre)")
-    .order("ffactura",{ascending:false}).limit(500);
+    .order("ffactura",{ascending:false}).limit(1000);
   if (tiendaSel) q = q.eq("tienda_id", tiendaSel);
+  const [fd_, fh] = fechas("f");
+  if (fd_) q = q.gte("ffactura", fd_);
+  if (fh) q = q.lt("ffactura", sumaDia(fh));
   const { data, error } = await q;
   if (error) { document.getElementById("f_tabla").innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
+  facturas = data; pintarFacturas();
+}
+function pintarFacturas(){
+  const b = document.getElementById("f_buscar").value.trim().toLowerCase();
+  const data = facturas.filter(f => !b || (f.serie+"-"+f.anyo+"/"+f.factura).toLowerCase().includes(b)).slice(0,500);
   document.getElementById("f_tabla").innerHTML = data.length ? '<table><tr><th>Factura</th>'+(multi()?'<th>Tienda</th>':'')+'<th>Fecha</th><th>Base</th><th>IVA</th><th>Total</th><th></th></tr>'+
     data.map(f => { const n = f.anyo+'-'+f.serie+'-'+f.factura; return '<tr><td>'+f.serie+'-'+f.anyo+'/'+f.factura+'</td>'+(multi()?'<td>'+esc(f.tiendas?.nombre)+'</td>':'')+'<td>'+(f.ffactura?new Date(f.ffactura).toLocaleDateString("es-ES"):"")+'</td><td>'+eur(f.impbruto)+'</td><td>'+eur(f.impiva)+'</td><td>'+eur(f.impneto)+'</td><td><a href="factura_imprimir.html?ids='+n+'" target="_blank">Ver / imprimir</a></td></tr>'; }).join("")+'</table>'
-    : '<span class="muted">Todavía no hay facturas.</span>';
+    : '<span class="muted">No hay facturas'+(facturas.length?' con ese filtro':' todavía')+'.</span>';
+}
+
+/* Montajes (antes en montajes_tienda.html) */
+let montajes = [], vistaM = "prox";
+const fdM = d => d ? new Date(d).toLocaleDateString("es-ES") : "—";
+function modoMontajes(m){
+  vistaM = m;
+  document.getElementById("m_b_prox").className = m==="prox" ? "on" : "secondary";
+  document.getElementById("m_b_pas").className = m==="pas" ? "on" : "secondary";
+  document.getElementById("m_l_ant").style.display = m==="pas" ? "" : "none";
+  cargarMontajes();
+}
+async function cargarMontajes(){
+  const cont = document.getElementById("m_tabla"); cont.innerHTML = '<span class="muted">Cargando...</span>';
+  let q = client.from("ordenes").select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, num_pedido, estado, fecha_prev_montaje, horamont, fecha_montaje, tiendas(nombre)").limit(500);
+  if (tiendaSel) q = q.eq("tienda_id", tiendaSel);
+  const [md, mh] = fechas("m");
+  if (vistaM === "prox") {
+    q = q.neq("estado", "completado").order("fecha_prev_montaje");
+    q = q.gte("fecha_prev_montaje", md || new Date().toISOString().slice(0,10));
+    if (mh) q = q.lte("fecha_prev_montaje", mh);
+  } else {
+    q = q.not("fecha_montaje", "is", null).order("fecha_montaje", { ascending:false });
+    if (md) q = q.gte("fecha_montaje", md);
+    if (mh) q = q.lt("fecha_montaje", sumaDia(mh));
+    if (!md && !mh && !document.getElementById("m_ant").checked) q = q.gte("anyo", new Date().getFullYear() - 3);
+  }
+  const { data, error } = await q;
+  if (error) { cont.innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
+  montajes = data; pintarMontajes();
+}
+function pintarMontajes(){
+  const b = document.getElementById("m_buscar").value.trim().toLowerCase();
+  const l = montajes.filter(o => !b || [o.nombre_cli,o.num_pedido,o.localidad_cli,o.anyo+"/"+o.orden].join(" ").toLowerCase().includes(b));
+  const fecha = vistaM === "prox" ? "Montaje previsto" : "Montaje realizado";
+  document.getElementById("m_tabla").innerHTML = l.length ? '<table><tr><th>'+fecha+'</th><th>Orden</th>'+(multi()?'<th>Tienda</th>':'')+'<th>Cliente</th><th>Localidad</th><th>Referencia</th><th>Estado</th></tr>'+
+    l.map(o => '<tr class="fila" onclick="abrirMontaje('+montajes.indexOf(o)+')"><td><b>'+(vistaM==="prox" ? fdM(o.fecha_prev_montaje) + (o.horamont ? " · "+esc(o.horamont) : "") : new Date(o.fecha_montaje).toLocaleString("es-ES"))+'</b></td><td>'+o.anyo+'/'+o.orden+'</td>'+(multi()?'<td>'+esc(o.tiendas?.nombre)+'</td>':'')+'<td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.localidad_cli)+'</td><td>'+esc(o.num_pedido)+'</td><td>'+esc((o.estado||"").replace(/_/g," "))+'</td></tr>').join("")+'</table>'
+    : '<span class="muted">'+(vistaM==="prox" ? "No hay montajes próximos." : "No hay montajes realizados con ese filtro.")+'</span>';
+}
+function cerrarMontaje(){ document.getElementById("det").style.display = "none"; document.getElementById("overlay").style.display = "none"; }
+async function urlAdjunto(path){ const { data } = await client.storage.from("ordenes-adjuntos").createSignedUrl(path, 600); return data?.signedUrl || ""; }
+async function abrirMontaje(i){
+  const o = montajes[i]; document.getElementById("det").style.display = "block"; document.getElementById("overlay").style.display = "block";
+  document.getElementById("det_t").textContent = "Orden " + o.anyo + "/" + o.orden;
+  const c = document.getElementById("det_c"); c.innerHTML = '<span class="muted">Cargando...</span>';
+  const [en, fo, li] = await Promise.all([
+    client.from("entregas").select("firmante_nombre, firmado_at, firma_storage_path, observaciones").eq("anyo", o.anyo).eq("orden", o.orden).order("firmado_at", { ascending:false }),
+    client.from("fotos_orden").select("storage_path, categoria, comentario, created_at").eq("anyo", o.anyo).eq("orden", o.orden).order("created_at"),
+    client.from("linorden").select("linea, tipolinea, descripcion, cantidad").neq("tipolinea", 4).eq("anyo", o.anyo).eq("orden", o.orden).order("linea")
+  ]);
+  const ents = await Promise.all((en.data || []).map(async e => ({ ...e, u: await urlAdjunto(e.firma_storage_path) })));
+  const fots = await Promise.all((fo.data || []).map(async f => ({ ...f, u: await urlAdjunto(f.storage_path) })));
+  const k = (a,b) => '<div class="k">'+a+'</div><div class="v">'+(b || "—")+'</div>';
+  c.innerHTML = k("Cliente", esc(o.nombre_cli)) + k("Dirección", esc([o.domicilio_cli,o.localidad_cli].filter(Boolean).join(" - "))) +
+    k("Montaje previsto", fdM(o.fecha_prev_montaje) + (o.horamont ? " · " + esc(o.horamont) : "")) +
+    k("Montaje realizado", o.fecha_montaje ? '<span class="ok">'+new Date(o.fecha_montaje).toLocaleString("es-ES")+'</span>' : "Aún no realizado") +
+    '<div class="k">Artículos</div><div class="v">'+((li.data||[]).map(l => (l.cantidad ?? "")+" × "+esc(l.descripcion)).join("<br>") || "—")+'</div>' +
+    '<div class="k">Firma del cliente</div>' + (ents.length ? ents.map(e => '<div class="firma v">'+(e.u ? '<img src="'+e.u+'" alt="Firma" style="max-width:360px">' : '')+'<div class="muted">'+esc(e.firmante_nombre || "")+' · '+new Date(e.firmado_at).toLocaleString("es-ES")+(e.observaciones ? '<br>'+esc(e.observaciones) : '')+'</div></div>').join("") : '<div class="v muted">Sin firma todavía.</div>') +
+    '<div class="k">Fotos</div>' + (fots.length ? '<div class="fotos">'+fots.map(f => '<a href="'+f.u+'" target="_blank"><img src="'+f.u+'" alt="'+esc(f.categoria||"foto")+'"><div class="muted">'+esc(f.categoria||"")+' '+esc(f.comentario||"")+'</div></a>').join("")+'</div>' : '<div class="v muted">Sin fotos.</div>');
 }
 
 /* Mi equipo (usa la función admin-usuarios, limitada a tu tienda) */

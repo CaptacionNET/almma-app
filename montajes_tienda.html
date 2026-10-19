@@ -94,7 +94,7 @@ async function abrir(i){
   if (!user) { location.href = "login.html"; return; }
   const { data: dep } = await client.from("dependientes").select("es_admin_tienda").eq("user_id", user.id).maybeSingle();
   if (!dep) { location.href = "login.html"; return; }
-  if (dep.es_admin_tienda) { destino = "tienda.html"; document.getElementById("t_ped").textContent = "Resumen y órdenes"; }
+  if (dep.es_admin_tienda) { location.href = "tienda.html"; return; }  // los administradores ven Montajes dentro de tienda.html
   const { count } = await client.from("tiendas").select("id", { count:"exact", head:true }); multi = count > 1;
   cargar();
 })();
