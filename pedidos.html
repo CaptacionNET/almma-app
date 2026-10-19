@@ -468,7 +468,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
       <button id="btn_nueva_linea" onclick="mostrarNuevaLinea(true)">+ Nueva línea</button>
     </div>
     <div id="caja_nueva_linea" style="display:none;margin-top:10px;padding:14px;border:1px solid #93c5fd;border-radius:10px;background:#f5f9ff;">
-    <h4 style="margin-top:0;">Nueva línea</h4>
+    <h4 style="margin-top:0;" id="ln_titulo">Nueva línea</h4>
     <div class="linea-form">
       <div class="campo lf-4">
         <label>Tipo de línea</label>
@@ -497,7 +497,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
       <div class="campo lf-2"><label>Bultos</label><input id="ln_bultos" type="number" value="0"></div>
       <div class="campo lf-2" style="align-self:end;"><label style="display:flex;gap:6px;align-items:center;margin:0 0 8px;"><input id="ln_control_stock" type="checkbox" style="width:auto;"> Control de stock</label></div>
     </div>
-    <button class="btn-mini" style="font-size:14px;padding:8px 16px;" onclick="anyadirLineaOrden()">+ Añadir línea</button>
+    <button class="btn-mini" style="font-size:14px;padding:8px 16px;" id="ln_btn_guardar" onclick="anyadirLineaOrden()">+ Añadir línea</button>
     <button class="secondary btn-mini" style="font-size:14px;padding:8px 16px;" onclick="mostrarNuevaLinea(false)">Cancelar</button>
     </div>
 
@@ -1447,7 +1447,7 @@ async function cargarLineas() {
         <td>${l.ubicacion || ""} <button class="secondary btn-mini" onclick="editarUbicacion(${l.linea}, '${(l.ubicacion || '').replace(/'/g, "\\'")}')">✎</button></td>
         <td>${l.albaran || ""}</td>
         <td>${boton}</td>
-        <td></td>
+        <td><button class="secondary btn-mini" onclick="editarLinea(${l.linea})">Editar</button></td>
       </tr>`;
     }).join("");
 
@@ -1533,7 +1533,58 @@ document.getElementById("ln_fabricante_sugerencias").addEventListener("click", (
   document.getElementById("ln_fabricante_sugerencias").style.display = "none";
 });
 
+let lineaEditando = null;   // nº de línea que se está editando; null = se está creando una nueva
+
+function limpiarFormularioLinea() {
+  ["ln_fabricante_buscar","ln_articulo_buscar","ln_descripcion","ln_importe","ln_importe_cobrar","ln_albaran","ln_ubicacion"].forEach(id => { document.getElementById(id).value = ""; });
+  document.getElementById("ln_porcentaje").value = "100";
+  document.getElementById("ln_cantidad").value = "1";
+  document.getElementById("ln_bultos").value = "0";
+  document.getElementById("ln_control_stock").checked = false;
+  fabricanteSeleccionado = null;
+  articuloSeleccionado = null;
+}
+
+async function editarLinea(linea) {
+  const { data: l, error } = await client.from("linorden")
+    .select("linea, tipolinea, proveedor, articulo, descripcion, cantidad, importe, porcentaje, albaran, ubicacion, bultos, control_stock")
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).eq("linea", linea).maybeSingle();
+  if (error || !l) { alert("No se pudo cargar la línea: " + (error?.message || "no existe")); return; }
+  limpiarFormularioLinea();
+  lineaEditando = linea;
+  document.getElementById("ln_tipo").value = String(l.tipolinea);
+  document.getElementById("campo_fabricante").style.display = l.tipolinea === 4 ? "none" : "";
+  document.getElementById("label_articulo").textContent = l.tipolinea === 4 ? "Código de servicio de esta tienda" : etiquetaArticulo();
+  if (l.articulo) {
+    articuloSeleccionado = { articulo: l.articulo, descripcion: l.descripcion || "" };
+    document.getElementById("ln_articulo_buscar").value = l.articulo;
+  }
+  if (l.proveedor !== null && l.proveedor !== undefined) {
+    const { data: f } = await client.from("fabricantes").select("codigo, nombre").eq("codigo", l.proveedor).maybeSingle();
+    fabricanteSeleccionado = { codigo: String(l.proveedor), nombre: f?.nombre || String(l.proveedor) };
+    document.getElementById("ln_fabricante_buscar").value = f?.nombre || String(l.proveedor);
+  }
+  document.getElementById("ln_descripcion").value = l.descripcion || "";
+  document.getElementById("ln_cantidad").value = l.cantidad ?? 1;
+  document.getElementById("ln_importe").value = l.importe ?? "";
+  document.getElementById("ln_porcentaje").value = l.porcentaje !== null && l.porcentaje !== undefined ? Math.round(l.porcentaje * 100) / 100 : 100;
+  document.getElementById("ln_albaran").value = l.albaran || "";
+  document.getElementById("ln_ubicacion").value = l.ubicacion || "";
+  document.getElementById("ln_bultos").value = l.bultos ?? 0;
+  document.getElementById("ln_control_stock").checked = l.control_stock === "S";
+  recalcularACobrar();
+  mostrarNuevaLinea(true);
+  document.getElementById("ln_titulo").textContent = `Editar línea ${linea}`;
+  document.getElementById("ln_btn_guardar").textContent = "Guardar cambios";
+  document.getElementById("caja_nueva_linea").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
 function mostrarNuevaLinea(mostrar) {
+  if (!mostrar || lineaEditando === null) {
+    document.getElementById("ln_titulo").textContent = "Nueva línea";
+    document.getElementById("ln_btn_guardar").textContent = "+ Añadir línea";
+  }
+  if (!mostrar && lineaEditando !== null) { lineaEditando = null; limpiarFormularioLinea(); }
   document.getElementById("caja_nueva_linea").style.display = mostrar ? "block" : "none";
   document.getElementById("btn_nueva_linea").style.display = mostrar ? "none" : "inline-block";
   if (mostrar) document.getElementById("ln_articulo_buscar").focus();
@@ -1558,6 +1609,24 @@ async function anyadirLineaOrden() {
   const descripcionManual = document.getElementById("ln_descripcion").value.trim();
 
   if (tipolinea === 1 && !articuloSeleccionado) { alert("Busca y selecciona un artículo para una línea normal."); return; }
+
+  if (lineaEditando !== null) {
+    const { error: errEd } = await client.from("linorden").update({
+      tipolinea,
+      proveedor: fabricanteSeleccionado ? parseInt(fabricanteSeleccionado.codigo, 10) : null,
+      articulo: articuloSeleccionado?.articulo || null,
+      descripcion: descripcionManual || articuloSeleccionado?.descripcion || null,
+      cantidad, importe, albaran, ubicacion, bultos, control_stock,
+      porcentaje: isNaN(porcentaje) ? null : porcentaje,
+      importe_cobrar: (importe === null || isNaN(porcentaje)) ? null : Math.round(importe * porcentaje) / 100,
+    }).eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).eq("linea", lineaEditando);
+    if (errEd) { alert("No se pudo guardar la línea: " + errEd.message); return; }
+    lineaEditando = null;
+    limpiarFormularioLinea();
+    mostrarNuevaLinea(false);
+    await cargarLineas();
+    return;
+  }
 
   const { data: ultima } = await client.from("linorden").select("linea")
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).order("linea", { ascending: false }).limit(1).maybeSingle();
