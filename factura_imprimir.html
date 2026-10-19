@@ -28,7 +28,7 @@ table{width:100%;border-collapse:collapse;margin-top:14px;}
 thead{display:table-header-group;}
 tbody.orden{break-inside:avoid;page-break-inside:avoid;}
 tr.og td{background:#eef4ff;border-bottom:1px solid #cfdcf5;border-top:2px solid #cfdcf5;padding:6px 8px;}
-tr.og .cobro{float:right;font-weight:700;color:#166534;}
+tr.cobrado td{background:#f0fdf4;color:#166534;border-bottom:1px solid #cfe8d6;}
 tr.og .sub{color:var(--muted);}
 .resumen{display:flex;gap:26px;margin-top:10px;font-size:14px;flex-wrap:wrap;}
 .resumen b{font-size:15px;}
@@ -49,7 +49,8 @@ td.num,th.num{text-align:right;white-space:nowrap;}
   .hoja:last-child{page-break-after:auto;break-after:auto;}
 }
 body.previa .hoja{position:relative;}
-body.previa .hoja::after{content:"VISTA PREVIA";position:absolute;top:45%;left:12%;font-size:90px;font-weight:800;color:rgba(220,38,38,.13);transform:rotate(-25deg);pointer-events:none;}
+body.previa{--x:0;}
+body.previa .hoja::after{content:attr(data-marca);position:absolute;top:45%;left:12%;font-size:90px;font-weight:800;color:rgba(220,38,38,.13);transform:rotate(-25deg);pointer-events:none;}
 </style>
 </head>
 <body>
@@ -62,6 +63,7 @@ const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").
 const fechaES = (v) => v ? String(v).slice(8, 10) + "/" + String(v).slice(5, 7) + "/" + String(v).slice(0, 4) : "";
 const TITULOS = { ordinaria: "FACTURA", rectificativa: "FACTURA RECTIFICATIVA", adicional: "FACTURA ADICIONAL", proforma: "PROFORMA" };
 function numeroFactura(c, ss) {
+  if (c.borrador) return "(borrador: sin número)";
   if (c.previa) return "(sin número: VISTA PREVIA)";
   return `${c.serie}-${c.anyo}/${c.factura}`;   // la serie manda: 1-2026/118, 5-2026/32 (proforma)
 }
@@ -79,6 +81,21 @@ async function iniciar() {
     document.getElementById("estado").innerHTML = `<strong style="color:#dc2626;">VISTA PREVIA — todavía NO se ha emitido nada.</strong> ${p.cabs.length} hoja(s). Puedes imprimir o guardar como PDF para revisarlas.`;
     document.title = "Vista previa de facturas";
     document.body.classList.add("previa");
+    document.querySelectorAll(".hoja").forEach(h => h.setAttribute("data-marca", "VISTA PREVIA"));
+    return;
+  }
+  if (params.get("borrador")) {   // borradores guardados: sin número, con la marca BORRADOR
+    const bids = params.get("borrador").split(",").filter(Boolean);
+    const [{ data: bs, error: eb }, { data: series }] = await Promise.all([
+      client.from("facturas_borrador").select("id, cab, lins").in("id", bids), client.from("series").select("*")]);
+    if (eb || !bs || !bs.length) { document.getElementById("estado").textContent = "No se encuentran esos borradores (¿ya contabilizados o cancelados?)."; return; }
+    const ss = Object.fromEntries((series || []).map(s => [s.codigo, s]));
+    document.getElementById("hojas").innerHTML = bs.map(b => hoja({ ...b.cab, borrador: true }, b.lins, ss, [], { [b.cab.tienda_id]: b.cab.receptor }, {})).join("");
+    document.querySelectorAll(".hoja").forEach(h => h.setAttribute("data-marca", "BORRADOR"));
+    document.getElementById("estado").innerHTML = `<strong style="color:#d97706;">BORRADOR — sin número, no es definitivo.</strong> ${bs.length} hoja(s).`;
+    document.title = "Borrador de factura";
+    document.body.classList.add("previa");
+    if (params.get("auto") === "1") setTimeout(() => window.print(), 600);
     return;
   }
   const ids = (params.get("ids") || "").split(",").filter(Boolean).map(x => x.split("-").map(Number)).filter(a => a.length === 3 && a.every(n => !isNaN(n)));
@@ -118,7 +135,7 @@ async function iniciar() {
   if (params.get("auto") === "1") setTimeout(() => window.print(), 600);
 }
 
-const FORMAS_COBRO = { "00": "Pago fca.", BZ: "Bizum", C: "Contado", CH: "Cheque-talón", DA: "Datáfono", E: "Efectivo", FI: "Financiado", IN: "Ingreso banco", J: "Caja", NO: "", TI: "Tienda", N: "" };
+const FORMAS_COBRO = { "00": "Pago fca.", BZ: "Bizum", C: "Contado", CH: "Cheque-talón", DA: "Datáfono", E: "Efectivo", FI: "Financiado", IN: "Ingreso banco", J: "Caja", NO: "", TI: "Tienda", T: "Transferencia", N: "" };
 const formaCobroTexto = (v) => { const s = String(v ?? "").trim(); return Object.prototype.hasOwnProperty.call(FORMAS_COBRO, s.toUpperCase()) ? FORMAS_COBRO[s.toUpperCase()] : s; };
 
 function hoja(c, lineas, ss, originales, tiendaPorId, ordenPorClave) {
@@ -150,14 +167,14 @@ function hoja(c, lineas, ss, originales, tiendaPorId, ordenPorClave) {
 
   const cuerpo = grupos.map(g => {
     const cobrado = Number(g.cobrado || 0), forma = formaCobroTexto(g.forma);
-    const cab = g.orden ? `<tr class="og"><td colspan="5">
+    const cab = g.orden ? `<tr class="og"><td colspan="4">
         ${g.fecha ? `<strong>${fechaES(g.fecha)}</strong> &nbsp;·&nbsp; ` : ""}Orden <strong>${esc(g.orden)}</strong> &nbsp;·&nbsp; ${g.ref ? `Ref. <strong>${esc(g.ref)}</strong> &nbsp;·&nbsp; ` : ""}<span class="sub">Cliente:</span> ${esc(g.cli)}
-        ${cobrado > 0 ? `<span class="cobro">Cobrado por nosotros: ${euros(cobrado)}${forma ? " (" + esc(forma) + ")" : ""}</span>` : ""}
       </td></tr>` : "";
     return `<tbody class="orden">${cab}` + g.lineas.map(l => `<tr>
       <td class="num" style="width:12mm;">${Number(l.cantidad || 1).toLocaleString("es-ES")}</td><td>${esc(l.descripcion)}</td>
-      <td class="num">${euros(l.importe)}</td><td class="num">${l.porcentaje !== null && l.porcentaje !== undefined ? Math.round(l.porcentaje * 100) / 100 + " %" : ""}</td>
-      <td class="num"><strong>${euros(l.importecobrar)}</strong></td></tr>`).join("") + "</tbody>";
+      <td class="num">${euros(l.importe)}</td>
+      <td class="num"><strong>${euros(l.importecobrar)}</strong></td></tr>`).join("") +
+      (cobrado > 0 ? `<tr class="cobrado"><td></td><td colspan="3"><strong>Cobrado: ${euros(cobrado)}</strong>${forma ? " &nbsp;·&nbsp; " + esc(forma) : ""}</td></tr>` : "") + "</tbody>";
   }).join("");
 
   return `<section class="hoja">
@@ -169,7 +186,7 @@ function hoja(c, lineas, ss, originales, tiendaPorId, ordenPorClave) {
     <div class="cliente"><div class="et">Cliente</div><strong>${esc(r.nombre)}</strong>${r.nombre_comercial && r.nombre_comercial !== r.nombre ? ` (${esc(r.nombre_comercial)})` : ""}<br>${r.cif ? "NIF/CIF: " + esc(r.cif) + "<br>" : ""}${esc(r.direccion)}${r.direccion ? "<br>" : ""}${[r.cp, r.localidad].filter(Boolean).map(esc).join(" ")}${r.provincia ? " (" + esc(r.provincia) + ")" : ""}</div>
     <div class="resumen"><span>Base imponible <b>${euros(c.impbruto)}</b></span>${proforma ? "" : `<span>IVA ${pct} % <b>${euros(c.impiva)}</b></span><span>Total <b>${euros(c.impneto)}</b></span>`}</div>
     ${c.rectifica_factura ? `<div class="rect"><strong>${c.tipo_factura === "rectificativa" ? "Rectifica" : "Amplía"} la factura ${esc(numeroFactura({ anyo: c.rectifica_anyo, serie: c.rectifica_serie, factura: c.rectifica_factura, tipo_factura: "ordinaria" }, ss))}${orig ? " de fecha " + fechaES(orig.ffactura) : ""}.</strong>${c.motivo ? "<br>Motivo: " + esc(c.motivo) : ""}</div>` : ""}
-    <table><thead><tr><th class="num">Cant.</th><th>Concepto</th><th class="num">Base</th><th class="num">%</th><th class="num">Importe</th></tr></thead>${cuerpo}</table>
+    <table><thead><tr><th class="num">Cant.</th><th>Concepto</th><th class="num">Base</th><th class="num">Importe</th></tr></thead>${cuerpo}</table>
     <div class="totales">
       <div><span>Base imponible</span><span>${euros(c.impbruto)}</span></div>
       ${proforma ? "" : `<div><span>IVA ${pct} %</span><span>${euros(c.impiva)}</span></div><div class="total"><span>TOTAL</span><span>${euros(c.impneto)}</span></div>`}

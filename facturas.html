@@ -156,6 +156,7 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
 
 <div class="pestanas" style="display:flex;gap:2px;padding:0 24px;margin-top:14px;border-bottom:1px solid var(--border);">
   <button id="tab_pendiente" class="tab-origen activa" onclick="cambiarTab('pendiente')">PENDIENTES</button>
+  <button id="tab_borrador" class="tab-origen" onclick="cambiarTab('borrador')">BORRADORES</button>
   <button id="tab_web" class="tab-origen" onclick="cambiarTab('web')">EMITIDAS</button>
   <button id="tab_antiguo" class="tab-origen" onclick="cambiarTab('programa_antiguo')">Anteriores (programa antiguo)</button>
 </div>
@@ -179,6 +180,15 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
   <div id="fp_totales" style="padding:4px 24px 8px;font-size:14px;"></div>
   <div id="fp_resultado" style="display:none;margin:0 24px 10px;padding:12px;border:1px solid #16a34a;background:#f0fdf4;border-radius:8px;"></div>
   <div class="tabla-scroll" style="margin:0 24px 24px;"><div id="tabla_pend"></div></div>
+</div>
+
+<!-- ============ BORRADORES: facturas preparadas, aún sin número ni efecto ============ -->
+<div id="vista_borrador" style="display:none;">
+  <div class="leyenda-listado" style="padding-top:12px;">
+    <span style="--c:#d97706">Un borrador no tiene número y no es definitivo. Imprímelo y revísalo: «Contabilizar» lo emite de verdad (número y fecha de hoy); «Cancelar» lo borra y devuelve sus líneas a Pendientes.</span>
+  </div>
+  <div id="fb_resultado" style="display:none;margin:0 24px 10px;padding:12px;border:1px solid #16a34a;background:#f0fdf4;border-radius:8px;"></div>
+  <div style="padding:0 24px 24px;"><div id="lista_borradores"></div></div>
 </div>
 
 <!-- ============ EMITIDAS / ANTERIORES ============ -->
@@ -209,7 +219,7 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
 <!-- ventana de emisión de facturas pendientes -->
 <div id="modal_em" class="modal-f"><div class="caja">
   <button class="secondary" style="float:right;" onclick="cerrarEmision()">✕</button>
-  <h3 style="margin-top:0;">Emitir facturas</h3>
+  <h3 style="margin-top:0;">Preparar facturas</h3>
   <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;">
     <div><label class="lbl-f">¿Con qué serie se factura?</label><select id="fp_serie" onchange="resumenEmision()" style="min-width:260px;"></select></div>
     <div><label class="lbl-f">Fecha de la factura</label><input id="fp_fecha" type="date" readonly style="background:#f3f4f6;" title="La factura lleva siempre la fecha del día en que se emite"></div>
@@ -219,7 +229,7 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
   <div id="em_resumen" style="margin-top:14px;"></div>
   <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
     <button id="em_pdf" class="secondary" onclick="vistaPreviaPendientes()" disabled>Ver PDF de cómo quedará</button>
-    <button id="em_ok" onclick="emitirPendientes()" disabled>Emitir</button>
+    <button id="em_ok" onclick="emitirPendientes()" disabled>Crear borrador</button>
     <button class="secondary" onclick="cerrarEmision()">Cancelar</button>
   </div>
 </div></div>
@@ -300,18 +310,21 @@ async function iniciar() {
     `<option value="${s.codigo}">${s.codigo} · ${s.es_proforma ? "PROFORMA (sin IVA)" : esc(s.emisor_nombre || s.descripcion)}${s.codigo === 2 ? " (almacenaje)" : ""}</option>`).join("");
   g("fp_fecha").value = hoyISO();
   const pedida = new URLSearchParams(location.search).get("tab");
-  cambiarTab(["web", "programa_antiguo"].includes(pedida) ? pedida : "pendiente");
+  cambiarTab(["web", "programa_antiguo", "borrador"].includes(pedida) ? pedida : "pendiente");
 }
 // PENDIENTES (por defecto) | EMITIDAS (las de esta web) | Anteriores (las del programa antiguo, aparte para que no molesten)
 function cambiarTab(p) {
   pestana = p;
   g("tab_pendiente").classList.toggle("activa", p === "pendiente");
+  g("tab_borrador").classList.toggle("activa", p === "borrador");
   g("tab_web").classList.toggle("activa", p === "web");
   g("tab_antiguo").classList.toggle("activa", p === "programa_antiguo");
   g("vista_pendiente").style.display = p === "pendiente" ? "block" : "none";
-  g("vista_emitidas").style.display = p === "pendiente" ? "none" : "block";
+  g("vista_borrador").style.display = p === "borrador" ? "block" : "none";
+  g("vista_emitidas").style.display = (p === "pendiente" || p === "borrador") ? "none" : "block";
   document.querySelectorAll('.menu-drop a[href^="facturas.html?tab="]').forEach(a => a.classList.toggle("activo-link", a.getAttribute("href").endsWith(p === "pendiente" ? "pendiente" : "web") && p !== "programa_antiguo"));
   if (p === "pendiente") { cargarPendientes(); return; }
+  if (p === "borrador") { cargarBorradores(); return; }
   origenActual = p;
   seleccion = new Set();
   g("caja_anyo").style.display = p === "web" ? "none" : "block";
@@ -414,12 +427,12 @@ function resumenEmision() {
       <span class="meta">Fecha de factura ${fechaES(g("fp_fecha").value)} · ${gr.length} ${s.es_proforma ? "proformas" : "facturas"} · IVA ${pct ? pct + " %" : "no se aplica"}</span></div>
     <table class="lineas-table"><tr><th>Tienda (una factura cada una)</th><th style="text-align:right;">Líneas</th><th style="text-align:right;">Base</th>${s.es_proforma ? "" : '<th style="text-align:right;">IVA</th><th style="text-align:right;">Total</th>'}</tr>${filas}
     <tr><td><strong>TOTAL</strong></td><td style="text-align:right;"><strong>${gr.reduce((a, x) => a + x.ls.length, 0)}</strong></td><td style="text-align:right;"><strong>${euros(tb)}</strong></td>${s.es_proforma ? "" : `<td style="text-align:right;"><strong>${euros(ti)}</strong></td><td style="text-align:right;"><strong>${euros(tb + ti)}</strong></td>`}</tr></table>
-    <p class="meta" style="margin:8px 0 0;">${s.es_proforma ? "" : "Una factura emitida no se puede modificar ni borrar: solo se corrige con una rectificativa. "}Pulsa «Ver PDF» para revisar cómo quedará antes de emitir.</p>`;
+    <p class="meta" style="margin:8px 0 0;">${s.es_proforma ? "Las proformas se emiten directamente." : "Se guardará como BORRADOR: sin número y sin efecto. Podrás imprimirlo y, si está bien, contabilizarlo; si no, cancelarlo y las líneas vuelven a Pendientes."} Pulsa «Ver PDF» para revisar cómo quedará.</p>`;
+  g("em_ok").textContent = s.es_proforma ? "Emitir proforma" : "Crear borrador";
   g("em_ok").disabled = !gr.length; g("em_pdf").disabled = !gr.length;
 }
 // PDF de prueba: se prepara en este navegador con los mismos datos y el mismo formato, SIN emitir nada ni gastar número
-function vistaPreviaPendientes() {
-  const s = seriePorCodigo[g("fp_serie").value]; if (!s) return;
+function payloadPrevia(s) {
   const pct = s.con_iva ? Number(s.iva_pct) : 0, fecha = g("fp_fecha").value, cabs = [], lins = [];
   grupoSeleccion().forEach((x, i) => {
     const iva = Math.round(x.base * pct) / 100;
@@ -432,13 +445,79 @@ function vistaPreviaPendientes() {
       importe: l.importe_base, importecobrar: l.importe, anyoord: l.anyo, numeroord: l.orden, referencia_pedido: l.num_pedido, cliente_final: l.nombre_cli,
       fecha_montaje: (l.fecha_montaje || "").slice(0, 10) || null, cobrado: l.cobrado, forma_cobro: l.forma_cobro }));
   });
+  return { cabs, lins };
+}
+// PDF de prueba: se prepara en este navegador con los mismos datos y el mismo formato, SIN emitir nada ni gastar número
+function vistaPreviaPendientes() {
+  const s = seriePorCodigo[g("fp_serie").value]; if (!s) return;
+  const { cabs, lins } = payloadPrevia(s);
   try { localStorage.setItem("almma_factura_previa", JSON.stringify({ cabs, lins, series: [s] })); }
   catch (e) { alert("El navegador no permite preparar la vista previa: " + e.message); return; }
   window.open("factura_imprimir.html?previa=1", "_blank");
 }
+// Series normales: se guarda un BORRADOR por tienda (sin número). Proformas: se emiten directamente.
 async function emitirPendientes() {
   const s = seriePorCodigo[g("fp_serie").value], gr = grupoSeleccion();
   if (!s || !gr.length) return;
+  if (!s.es_proforma) return crearBorradores(s, gr);
+  return emitirDirecto(s, gr);
+}
+async function crearBorradores(s, gr) {
+  g("em_ok").disabled = true; g("em_pdf").disabled = true;
+  const { cabs, lins } = payloadPrevia(s);
+  const hechos = [], fallos = [];
+  for (let i = 0; i < gr.length; i++) {
+    const x = gr[i], cab = cabs[i], ls = lins.filter(l => l.factura === cab.factura).map(l => ({ ...l, factura: 1 }));
+    const { data, error } = await client.rpc("crear_borrador", {
+      p_serie: s.codigo, p_tienda_id: x.tid, p_lineas: x.ls.map(l => ({ anyo: l.anyo, orden: l.orden, linea: l.linea })),
+      p_forma_pago: cab.forma_pago, p_notas: cab.notas, p_cab: { ...cab, factura: 1 }, p_lins: ls });
+    if (error) fallos.push(`${x.t.nombre}: ${error.message}`); else hechos.push({ id: data, t: x.t, n: x.ls.length, base: x.base });
+  }
+  cerrarEmision();
+  const caja = g("fp_resultado"); caja.style.display = "block";
+  caja.innerHTML = (hechos.length ? `<strong>${hechos.length} borradores creados</strong> (sin número, nada es definitivo todavía):<ul style="margin:6px 0;">` +
+      hechos.map(h => `<li>${esc(h.t.nombre)} · ${h.n} líneas · ${euros(h.base)}</li>`).join("") + "</ul>" +
+      `<button onclick="window.open('factura_imprimir.html?borrador=${hechos.map(h => h.id).join(",")}&auto=1','_blank')">Imprimir borradores</button> <button class="secondary" onclick="cambiarTab('borrador')">Ir a Borradores</button>` : "") +
+    (fallos.length ? `<p class="error" style="color:#dc2626;"><strong>No se pudieron crear:</strong><br>${fallos.map(esc).join("<br>")}</p>` : "");
+  caja.style.borderColor = fallos.length ? "#dc2626" : "#16a34a";
+  await cargarPendientes();
+}
+
+// ---------------------------------------------------------------- BORRADORES
+let borradores = [];
+async function cargarBorradores() {
+  const { data, error } = await client.from("facturas_borrador").select("id, serie, forma_pago, creada_at, cab").order("creada_at", { ascending: false });
+  if (error) { g("lista_borradores").innerHTML = `<p style="color:#dc2626;">Error: ${esc(error.message)}</p>`; return; }
+  borradores = data || [];
+  g("lista_borradores").innerHTML = borradores.length
+    ? `<table class="lineas-table"><tr><th>Creado</th><th>Serie</th><th>Tienda</th><th style="text-align:right;">Base</th><th style="text-align:right;">Total</th><th></th></tr>` +
+      borradores.map(b => `<tr><td>${fechaES(b.creada_at)}</td><td>${b.serie}</td><td>${esc(b.cab.receptor?.nombre)}</td>
+        <td style="text-align:right;">${euros(b.cab.impbruto)}</td><td style="text-align:right;"><strong>${euros(b.cab.impneto)}</strong></td>
+        <td><button class="btn-mini" onclick="imprimirBorrador('${b.id}')">Imprimir</button>
+        <button class="btn-mini" onclick="contabilizarBorrador('${b.id}')">Contabilizar</button>
+        <button class="secondary btn-mini" onclick="cancelarBorrador('${b.id}')">Cancelar</button></td></tr>`).join("") + "</table>"
+    : '<p class="meta">No hay borradores.</p>';
+}
+function imprimirBorrador(id) { window.open(`factura_imprimir.html?borrador=${id}&auto=1`, "_blank"); }
+async function contabilizarBorrador(id) {
+  const b = borradores.find(x => x.id === id); if (!b) return;
+  if (!confirm(`Contabilizar el borrador de ${b.cab.receptor?.nombre} (${euros(b.cab.impneto)}).\n\nSe emite de verdad: recibe número y la fecha de HOY, y ya no se podrá modificar ni borrar (solo rectificar).\n\n¿Seguro?`)) return;
+  const { data, error } = await client.rpc("contabilizar_borrador", { p_id: id });
+  if (error) { alert("No se pudo contabilizar: " + error.message); return; }
+  const r = data[0], n = numeroFactura({ anyo: r.anyo, serie: r.serie, factura: r.factura, tipo_factura: "ordinaria" }, seriePorCodigo);
+  const caja = g("fb_resultado"); caja.style.display = "block";
+  caja.innerHTML = `<strong>Factura ${esc(n)} emitida.</strong> <button onclick="imprimirUna('${r.anyo}-${r.serie}-${r.factura}')">Imprimir factura definitiva</button>`;
+  await cargarBorradores();
+}
+async function cancelarBorrador(id) {
+  const b = borradores.find(x => x.id === id); if (!b) return;
+  if (!confirm(`Cancelar el borrador de ${b.cab.receptor?.nombre} (${euros(b.cab.impneto)}).\n\nSe borra y sus líneas vuelven a Pendientes de facturar. No se gasta ningún número.`)) return;
+  const { error } = await client.rpc("cancelar_borrador", { p_id: id });
+  if (error) { alert("No se pudo cancelar: " + error.message); return; }
+  g("fb_resultado").style.display = "none";
+  await cargarBorradores();
+}
+async function emitirDirecto(s, gr) {
   g("em_ok").disabled = true; g("em_pdf").disabled = true;
   const hechas = [], fallos = [];
   for (const x of gr) {
