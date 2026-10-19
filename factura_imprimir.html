@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ALMMA - Imprimir facturas</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <style>
 :root{--text:#1f2430;--muted:#6b7280;--line:#cfd6e4;}
 *{box-sizing:border-box;}
@@ -39,6 +40,8 @@ td.num,th.num{text-align:right;white-space:nowrap;}
 .totales div{display:flex;justify-content:space-between;padding:4px 0;}
 .totales .total{border-top:2px solid var(--text);margin-top:4px;padding-top:8px;font-size:16px;font-weight:800;}
 .rect{margin-top:12px;padding:8px 12px;background:#fff5f5;border:1px solid #fecaca;border-radius:6px;}
+.qr{display:flex;gap:10px;align-items:center;margin-top:14px;font-size:11px;color:var(--muted);line-height:1.4;}
+.qr svg{width:24mm;height:24mm;flex:none;border:1px solid var(--line);}
 .pie{margin-top:auto;padding-top:18px;color:var(--muted);line-height:1.5;border-top:1px solid #e6eaf2;font-size:12px;}
 .pie b{color:var(--text);}
 @page{size:A4;margin:0;}
@@ -70,7 +73,7 @@ function numeroFactura(c, ss) {
 
 async function iniciar() {
   const { data: { user } } = await client.auth.getUser();
-  if (!user) { window.location.href = "login.html"; return; }
+  if (!user) { window.location.href = "login.html?volver=" + encodeURIComponent(location.pathname.split("/").pop() + location.search); return; }
   const params = new URLSearchParams(location.search);
   if (params.get("previa") === "1") {   // vista previa de facturas aún sin emitir: los datos los deja preparados la pantalla de facturación
     let p; try { p = JSON.parse(localStorage.getItem("almma_factura_previa")); } catch (e) {}
@@ -128,6 +131,7 @@ async function iniciar() {
     .or(g.map(c => { const [a, o] = c.split("/"); return `and(anyo.eq.${a},orden.eq.${o})`; }).join(","))));
   resp.forEach(r => (r.data || []).forEach(o => { ordenPorClave[`${o.anyo}/${o.orden}`] = o; }));
 
+  if (!(cabs || []).length) { document.getElementById("estado").textContent = "No se encuentra esa factura con este usuario (solo puedes ver las de tu tienda)."; return; }
   const orden = ids.map(([a, s, f]) => (cabs || []).find(c => c.anyo === a && c.serie === s && c.factura === f)).filter(Boolean);
   document.getElementById("hojas").innerHTML = orden.map(c => hoja(c, (lins || []).filter(l => l.anyo === c.anyo && l.serie === c.serie && l.factura === c.factura), ss, originales, tiendaPorId, ordenPorClave)).join("");
   document.getElementById("estado").textContent = `${orden.length} factura(s) lista(s) para imprimir. Elige "Guardar como PDF" en el cuadro de impresión si prefieres un fichero.`;
@@ -137,6 +141,15 @@ async function iniciar() {
 
 const FORMAS_COBRO = { "00": "Pago fca.", BZ: "Bizum", C: "Contado", CH: "Cheque-talón", DA: "Datáfono", E: "Efectivo", FI: "Financiado", IN: "Ingreso banco", J: "Caja", NO: "", TI: "Tienda", T: "Transferencia", N: "" };
 const formaCobroTexto = (v) => { const s = String(v ?? "").trim(); return Object.prototype.hasOwnProperty.call(FORMAS_COBRO, s.toUpperCase()) ? FORMAS_COBRO[s.toUpperCase()] : s; };
+
+// QR de consulta: lleva a esta misma factura en almma.es (pide iniciar sesión; cada tienda solo ve las suyas)
+function qrConsulta(c) {
+  if (c.previa || c.borrador || typeof qrcode === "undefined") return "";
+  try {
+    const q = qrcode(0, "M"); q.addData(`https://almma.es/factura_imprimir.html?ids=${c.anyo}-${c.serie}-${c.factura}`); q.make();
+    return `<div class="qr">${q.createSvgTag({ cellSize: 3, margin: 0, scalable: true })}<div><strong>Consulta esta factura en línea</strong><br>Escanea el código e inicia sesión en almma.es con tu usuario.</div></div>`;
+  } catch (e) { return ""; }
+}
 
 function hoja(c, lineas, ss, originales, tiendaPorId, ordenPorClave) {
   const s = ss[c.serie] || {};
@@ -191,6 +204,7 @@ function hoja(c, lineas, ss, originales, tiendaPorId, ordenPorClave) {
       <div><span>Base imponible</span><span>${euros(c.impbruto)}</span></div>
       ${proforma ? "" : `<div><span>IVA ${pct} %</span><span>${euros(c.impiva)}</span></div><div class="total"><span>TOTAL</span><span>${euros(c.impneto)}</span></div>`}
     </div>
+    ${qrConsulta(c)}
     ${proforma ? "" : `<div class="pie">${c.forma_pago ? `Forma de pago: <b>${esc(c.forma_pago)}</b><br>` : ""}${emisor.iban ? `Pago por transferencia a: <b>${esc(emisor.iban)}</b> (${esc(emisor.nombre)})<br>` : ""}${c.notas ? esc(c.notas) : ""}</div>`}
   </section>`;
 }
