@@ -1,12 +1,12 @@
 {
-  "name": "ALMMA Montajes",
+  "name": "ALMMA",
   "short_name": "ALMMA",
-  "description": "Montajes del día para los montadores de ALMMA",
-  "start_url": "mi-dia.html",
+  "description": "Pedidos, almacén y montaje",
+  "start_url": "login.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#f5f6fa",
+  "background_color": "#2c1721",
   "theme_color": "#1e40af",
   "lang": "es",
   "icons": [
