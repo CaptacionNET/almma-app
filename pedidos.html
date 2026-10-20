@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ALMMA - Pedidos</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
 <style>
@@ -44,7 +45,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .estado-incidencia{background:#fef2f2;color:#dc2626;}
 
 #overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.15);z-index:30;}
-#panel_detalle{display:none;position:fixed;top:0;right:0;bottom:0;width:min(820px,100vw);background:var(--card);border-left:1px solid var(--border);box-shadow:-10px 0 30px -20px rgba(0,0,0,.3);z-index:31;flex-direction:column;}
+#panel_detalle{display:none;position:fixed;top:0;right:0;bottom:0;width:min(1000px,100vw);background:var(--card);border-left:1px solid var(--border);box-shadow:-10px 0 30px -20px rgba(0,0,0,.3);z-index:31;flex-direction:column;}
 #panel_detalle .panel-head{padding:18px 24px 0;}
 #panel_detalle .panel-head h3{margin:0 0 4px;}
 #panel_detalle .tabs{display:flex;gap:2px;padding:0 24px;border-bottom:1px solid var(--border);flex-wrap:wrap;}
@@ -522,7 +523,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
     <div class="meta" style="margin-bottom:8px;">El PDF o la foto con la que se creó la orden, más lo que quieras añadir. Marca "Visible para el montador" en los que deba ver al hacer el montaje.</div>
     <div id="ch_lista_documentos" class="mini-list"></div>
     <div class="form-inline" style="margin-top:8px;">
-      <input type="file" id="doc_archivo" accept="application/pdf,image/*">
+      <input type="file" id="doc_archivo" accept="application/pdf,image/*" multiple>
       <label style="display:flex;gap:6px;align-items:center;"><input type="checkbox" id="doc_visible_montador"> Visible para el montador</label>
     </div>
     <button class="secondary btn-mini" style="margin-top:8px;" onclick="subirDocumentoOrden()">+ Adjuntar documento</button>
@@ -1410,28 +1411,59 @@ async function cargarDocumentosOrden() {
     .order("created_at", { ascending: false });
   const cont = document.getElementById("ch_lista_documentos");
   cont.innerHTML = (data || []).map(d => `
-    <div class="item">
+    <div class="item" style="display:flex;gap:12px;align-items:flex-start;">
+      <div class="miniatura" data-ruta="${escMont(d.storage_path)}" onclick="verFotoMontaje('${escMont(d.storage_path)}')" style="width:90px;height:120px;flex:none;border:1px solid var(--border);border-radius:6px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;font-size:11px;color:var(--muted);">…</div>
+      <div>
       <strong>${escMont(d.nombre || "documento")}</strong>
       <div class="meta">${new Date(d.created_at).toLocaleString("es-ES")} — <a href="#" onclick="verFotoMontaje('${escMont(d.storage_path)}');return false;">abrir</a></div>
       <label class="meta" style="display:flex;gap:6px;align-items:center;"><input type="checkbox" ${d.visible_montador ? "checked" : ""} onchange="marcarDocumentoMontador('${d.id}', this.checked)"> Visible para el montador</label>
       <button class="secondary btn-mini" style="color:#dc2626;" onclick="borrarDocumentoOrden('${d.id}', '${escMont(d.storage_path)}')">Borrar</button>
+      </div>
     </div>`).join("") || '<div class="meta">Sin documentos adjuntos.</div>';
+  cont.querySelectorAll(".miniatura").forEach(pintarMiniatura);
+}
+
+// Miniatura: foto tal cual; PDF, su primera página dibujada con pdf.js
+async function pintarMiniatura(el) {
+  const ruta = el.dataset.ruta;
+  try {
+    const { data, error } = await client.storage.from("ordenes-adjuntos").createSignedUrl(ruta, 300);
+    if (error) throw error;
+    if (/\.pdf$/i.test(ruta)) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+      const pdf = await pdfjsLib.getDocument(data.signedUrl).promise;
+      const pag = await pdf.getPage(1);
+      const vp0 = pag.getViewport({ scale: 1 });
+      const vp = pag.getViewport({ scale: 240 / vp0.width });
+      const lienzo = document.createElement("canvas");
+      lienzo.width = vp.width; lienzo.height = vp.height;
+      lienzo.style.cssText = "width:100%;height:auto;";
+      await pag.render({ canvasContext: lienzo.getContext("2d"), viewport: vp }).promise;
+      el.textContent = ""; el.appendChild(lienzo);
+    } else {
+      el.innerHTML = `<img src="${data.signedUrl}" alt="" style="width:100%;height:100%;object-fit:cover;">`;
+    }
+  } catch (_) { el.textContent = /\.pdf$/i.test(ruta) ? "PDF" : "foto"; }
 }
 
 async function subirDocumentoOrden() {
   const input = document.getElementById("doc_archivo");
-  if (!input.files[0]) { alert("Elige un PDF o una foto primero."); return; }
-  let archivo;
-  try { archivo = await prepararArchivo(input.files[0]); } catch (e) { alert(e.message); return; }
+  const originales = [...input.files];
+  if (!originales.length) { alert("Elige uno o varios PDF o fotos primero."); return; }
   const { anyo, orden } = pedidoActivo;
-  const ruta = `${anyo}/${orden}/documentos/${Date.now()}_${nombreSeguroArchivo(archivo)}`;
-  const { error: e1 } = await client.storage.from("ordenes-adjuntos").upload(ruta, archivo, { contentType: archivo.type });
-  if (e1) { alert("No se pudo subir el fichero: " + e1.message); return; }
-  const { error: e2 } = await client.from("documentos_orden").insert({
-    anyo, orden, storage_path: ruta, nombre: input.files[0].name,
-    visible_montador: document.getElementById("doc_visible_montador").checked,
-  });
-  if (e2) { alert("El fichero se subió pero no se pudo anotar: " + e2.message); return; }
+  const visible = document.getElementById("doc_visible_montador").checked;
+  const fallos = [];
+  for (const [n, original] of originales.entries()) {
+    try {
+      const archivo = await prepararArchivo(original);
+      const ruta = `${anyo}/${orden}/documentos/${Date.now()}_${n}_${nombreSeguroArchivo(archivo)}`;
+      const { error: e1 } = await client.storage.from("ordenes-adjuntos").upload(ruta, archivo, { contentType: archivo.type });
+      if (e1) throw new Error(e1.message);
+      const { error: e2 } = await client.from("documentos_orden").insert({ anyo, orden, storage_path: ruta, nombre: original.name, visible_montador: visible });
+      if (e2) throw new Error(e2.message);
+    } catch (e) { fallos.push(original.name + ": " + e.message); }
+  }
+  if (fallos.length) alert("No se pudieron subir:\n" + fallos.join("\n"));
   input.value = ""; document.getElementById("doc_visible_montador").checked = false;
   await cargarDocumentosOrden();
 }

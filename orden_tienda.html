@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ALMMA - Detalle de la orden</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <style>
 :root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
 *{box-sizing:border-box;}
@@ -29,7 +30,7 @@ table{width:100%;border-collapse:collapse;font-size:13px;} th{background:#dbeafe
 <link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="ALMMA"><script src="pwa.js" defer></script>
 </head>
 <body>
-<div id="toolbar"><button onclick="volver()">&larr; Volver</button><b id="titulo" style="color:#1e3a8a">Orden</b><span style="flex:1"></span><span class="muted">Solo consulta</span></div>
+<div id="toolbar"><button onclick="volver()">&larr; Volver</button><b id="titulo" style="color:#1e3a8a">Orden</b><span style="flex:1"></span><span class="muted">Consulta (puedes adjuntar documentos)</span></div>
 <div class="wrap" id="cont"><span class="muted">Cargando...</span></div>
 <script>
 const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
@@ -81,11 +82,91 @@ function volver(){ location.href = destino; }
     '<div class="card"><b>Artículos</b><table style="margin-top:8px"><tr><th>Artículo</th><th>Descripción</th><th>Cant.</th><th>Recibido</th></tr>'+
       (lineas.map(l => '<tr><td>'+esc(l.articulo)+'</td><td>'+esc(l.descripcion)+'</td><td>'+(l.cantidad ?? "")+'</td><td>'+(l.recibido === "S" ? "Sí" : "No")+'</td></tr>').join("") || '<tr><td colspan="4" class="muted">Sin líneas.</td></tr>')+'</table></div>'+
     ((ci.data || []).length ? '<div class="card"><b>Citas de montaje</b><table style="margin-top:8px"><tr><th>Fecha y hora</th><th>Estado</th></tr>'+ci.data.map(c => '<tr><td>'+new Date(c.fecha_hora).toLocaleString("es-ES")+'</td><td>'+esc(c.estado)+'</td></tr>').join("")+'</table></div>' : "") +
+    '<div class="card"><b>Documentos adjuntos</b><div class="muted" style="margin:4px 0 10px">El PDF o las fotos de esta orden. Puedes añadir más (varios a la vez).</div><div id="docs_lista"></div>'+
+    '<div style="margin-top:10px"><input type="file" id="docs_archivo" accept="application/pdf,image/*" multiple> <button id="docs_subir">Adjuntar</button></div></div>'+
     '<div class="card"><b>Chat con ALMMA</b><div class="muted" style="margin:4px 0 10px">Escribe aquí comentarios sobre esta orden; el personal de ALMMA te responderá.</div><div class="chat" id="chat_lista"></div>'+
     '<div class="chat-form"><textarea id="chat_texto" maxlength="2000" placeholder="Escribe un mensaje..."></textarea><button id="chat_enviar">Enviar</button></div></div>';
   document.getElementById("chat_enviar").onclick = () => enviarChat(anyo, orden, "tienda");
   await cargarChat(anyo, orden, "tienda");
+  document.getElementById("docs_subir").onclick = () => subirDocumentos(anyo, orden);
+  await cargarDocumentos(anyo, orden);
 })();
+
+// --- documentos de la orden (migracion/64 y 65: la tienda puede ver y subir PDF o foto a sus órdenes) ---
+async function cargarDocumentos(anyo, orden) {
+  const { data } = await client.from("documentos_orden").select("storage_path, nombre, created_at").eq("anyo", anyo).eq("orden", orden).order("created_at", { ascending: false });
+  const cont = document.getElementById("docs_lista");
+  cont.innerHTML = (data || []).map(d =>
+    '<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:10px">'+
+      '<div class="miniatura" data-ruta="'+esc(d.storage_path)+'" style="width:90px;height:120px;flex:none;border:1px solid var(--border);border-radius:6px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;font-size:11px;color:var(--muted)">…</div>'+
+      '<div><b>'+esc(d.nombre || "documento")+'</b><div class="muted">'+new Date(d.created_at).toLocaleString("es-ES")+'</div></div></div>'
+  ).join("") || '<div class="muted">Sin documentos.</div>';
+  cont.querySelectorAll(".miniatura").forEach(el => { el.onclick = () => abrirDocumento(el.dataset.ruta); pintarMiniatura(el); });
+}
+async function abrirDocumento(ruta) {
+  const { data, error } = await client.storage.from("ordenes-adjuntos").createSignedUrl(ruta, 300);
+  if (error) { alert("No se pudo abrir: " + error.message); return; }
+  window.open(data.signedUrl, "_blank");
+}
+async function pintarMiniatura(el) {
+  const ruta = el.dataset.ruta;
+  try {
+    const { data, error } = await client.storage.from("ordenes-adjuntos").createSignedUrl(ruta, 300);
+    if (error) throw error;
+    if (/\.pdf$/i.test(ruta)) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+      const pag = await (await pdfjsLib.getDocument(data.signedUrl).promise).getPage(1);
+      const vp = pag.getViewport({ scale: 240 / pag.getViewport({ scale: 1 }).width });
+      const lienzo = document.createElement("canvas");
+      lienzo.width = vp.width; lienzo.height = vp.height; lienzo.style.cssText = "width:100%;height:auto;";
+      await pag.render({ canvasContext: lienzo.getContext("2d"), viewport: vp }).promise;
+      el.textContent = ""; el.appendChild(lienzo);
+    } else el.innerHTML = '<img src="'+data.signedUrl+'" alt="" style="width:100%;height:100%;object-fit:cover">';
+  } catch (_) { el.textContent = /\.pdf$/i.test(ruta) ? "PDF" : "foto"; }
+}
+// un PDF se sube tal cual (máx. 5 MB); una foto se reduce a 2000 px y se pasa a JPG
+async function prepararArchivo(file) {
+  if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)) {
+    if (file.size > 5 * 1024 * 1024) throw new Error("El PDF pesa más de 5 MB.");
+    return file;
+  }
+  if (!file.type.startsWith("image/")) throw new Error("Solo se pueden subir PDF o fotos.");
+  let bmp;
+  try { bmp = await createImageBitmap(file); }
+  catch (_) { throw new Error("No se pudo abrir la foto. Si es de iPhone (HEIC), guárdala como JPG."); }
+  const k = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+  const lienzo = document.createElement("canvas");
+  lienzo.width = Math.round(bmp.width * k); lienzo.height = Math.round(bmp.height * k);
+  lienzo.getContext("2d").drawImage(bmp, 0, 0, lienzo.width, lienzo.height);
+  const blob = await new Promise(ok => lienzo.toBlob(ok, "image/jpeg", 0.85));
+  if (!blob) throw new Error("No se pudo preparar la foto.");
+  return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+}
+function nombreSeguroArchivo(file) {
+  const base = file.name.replace(/\.(pdf|jpe?g|png|webp|gif)$/i, "").normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 60) || "documento";
+  return base + (file.type === "application/pdf" ? ".pdf" : ".jpg");
+}
+async function subirDocumentos(anyo, orden) {
+  const input = document.getElementById("docs_archivo"), btn = document.getElementById("docs_subir");
+  const originales = [...input.files];
+  if (!originales.length) { alert("Elige uno o varios PDF o fotos primero."); return; }
+  btn.disabled = true; btn.textContent = "Subiendo...";
+  const fallos = [];
+  for (const [n, original] of originales.entries()) {
+    try {
+      const archivo = await prepararArchivo(original);
+      const ruta = anyo + "/" + orden + "/documentos/" + Date.now() + "_" + n + "_" + nombreSeguroArchivo(archivo);
+      const { error: e1 } = await client.storage.from("ordenes-adjuntos").upload(ruta, archivo, { contentType: archivo.type });
+      if (e1) throw new Error(e1.message);
+      const { error: e2 } = await client.from("documentos_orden").insert({ anyo, orden, storage_path: ruta, nombre: original.name });
+      if (e2) throw new Error(e2.message);
+    } catch (e) { fallos.push(original.name + ": " + e.message); }
+  }
+  btn.disabled = false; btn.textContent = "Adjuntar"; input.value = "";
+  if (fallos.length) alert("No se pudieron subir:\n" + fallos.join("\n"));
+  await cargarDocumentos(anyo, orden);
+}
 
 // --- banner de mensajes sin leer (migracion/61_chat_ordenes_sin_leer.sql) ---
 (function () {
