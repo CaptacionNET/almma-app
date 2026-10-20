@@ -365,7 +365,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
     <button class="tab-btn activa" data-tab="tab_cabecera" onclick="cambiarTab('tab_cabecera')">Cabecera</button>
     <button class="tab-btn" data-tab="tab_lineas" onclick="cambiarTab('tab_lineas')">Líneas</button>
     <button class="tab-btn" data-tab="tab_observaciones" onclick="cambiarTab('tab_observaciones')">Observaciones</button>
-    <button class="tab-btn" data-tab="tab_citas" onclick="cambiarTab('tab_citas')">Citas</button>
+    <button class="tab-btn" data-tab="tab_documentos" onclick="cambiarTab('tab_documentos')">Documentos adjuntos</button>
     <button class="tab-btn" data-tab="tab_incidencias" onclick="cambiarTab('tab_incidencias')">Incidencias</button>
     <button class="tab-btn" data-tab="tab_historial" onclick="cambiarTab('tab_historial')">Historial</button>
     <button class="tab-btn" data-tab="tab_llamadas" onclick="cambiarTab('tab_llamadas')">Llamadas</button>
@@ -450,9 +450,6 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
       <button class="secondary" onclick="consultarFacturas()">Consulta facturas emitidas</button>
     </div>
 
-    <h4>Documentos del pedido (PDF o foto de la tienda)</h4>
-    <div id="ch_lista_documentos" class="mini-list"></div>
-
     <h4>Detalles del montaje</h4>
     <div id="ch_lista_fotos_montaje" class="mini-list"></div>
     <div id="ch_firma_montaje"></div>
@@ -520,20 +517,15 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
     <button onclick="guardarObservaciones()">Guardar observaciones</button>
   </div>
 
-  <!-- CITAS -->
-  <div class="tab-panel" id="tab_citas">
-    <div id="lista_citas" class="mini-list"></div>
-    <div class="form-inline">
-      <input id="cita_fecha" type="datetime-local">
-      <select id="cita_canal">
-        <option value="telefono">Teléfono</option>
-        <option value="whatsapp">WhatsApp</option>
-        <option value="email">Email</option>
-        <option value="presencial">Presencial</option>
-      </select>
+  <!-- DOCUMENTOS ADJUNTOS -->
+  <div class="tab-panel" id="tab_documentos">
+    <div class="meta" style="margin-bottom:8px;">El PDF o la foto con la que se creó la orden, más lo que quieras añadir. Marca "Visible para el montador" en los que deba ver al hacer el montaje.</div>
+    <div id="ch_lista_documentos" class="mini-list"></div>
+    <div class="form-inline" style="margin-top:8px;">
+      <input type="file" id="doc_archivo" accept="application/pdf,image/*">
+      <label style="display:flex;gap:6px;align-items:center;"><input type="checkbox" id="doc_visible_montador"> Visible para el montador</label>
     </div>
-    <textarea id="cita_notas" rows="2" placeholder="Notas (opcional)" style="margin-top:8px;"></textarea>
-    <button class="secondary btn-mini" style="margin-top:8px;" onclick="agendarCita()">+ Agendar cita</button>
+    <button class="secondary btn-mini" style="margin-top:8px;" onclick="subirDocumentoOrden()">+ Adjuntar documento</button>
   </div>
 
   <!-- INCIDENCIAS -->
@@ -543,7 +535,8 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
       <input id="inc_tipo" placeholder="Tipo (rotura, defecto...)">
     </div>
     <textarea id="inc_descripcion" rows="2" placeholder="Descripción de la incidencia" style="margin-top:8px;"></textarea>
-    <button class="secondary btn-mini" style="margin-top:8px;" onclick="crearIncidencia()">+ Registrar incidencia</button>
+    <button class="secondary btn-mini" style="margin-top:8px;" onclick="crearIncidencia(false)">+ Registrar incidencia</button>
+    <button class="btn-mini" style="margin-top:8px;" onclick="crearIncidencia(true)">+ Registrar y avisar a la tienda</button>
   </div>
 
   <!-- HISTORIAL -->
@@ -1246,7 +1239,6 @@ async function abrirPanel(orden) {
   await pintarMontadores(o);
 
   await cargarLineas();
-  await cargarCitas();
   await cargarIncidencias();
   await cargarHistorial(o);
   await cargarLlamadas();
@@ -1413,7 +1405,7 @@ async function cargarDetallesMontaje() {
 
 async function cargarDocumentosOrden() {
   const { data } = await client.from("documentos_orden")
-    .select("id, storage_path, nombre, created_at")
+    .select("id, storage_path, nombre, created_at, visible_montador")
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden)
     .order("created_at", { ascending: false });
   const cont = document.getElementById("ch_lista_documentos");
@@ -1421,7 +1413,41 @@ async function cargarDocumentosOrden() {
     <div class="item">
       <strong>${escMont(d.nombre || "documento")}</strong>
       <div class="meta">${new Date(d.created_at).toLocaleString("es-ES")} — <a href="#" onclick="verFotoMontaje('${escMont(d.storage_path)}');return false;">abrir</a></div>
+      <label class="meta" style="display:flex;gap:6px;align-items:center;"><input type="checkbox" ${d.visible_montador ? "checked" : ""} onchange="marcarDocumentoMontador('${d.id}', this.checked)"> Visible para el montador</label>
+      <button class="secondary btn-mini" style="color:#dc2626;" onclick="borrarDocumentoOrden('${d.id}', '${escMont(d.storage_path)}')">Borrar</button>
     </div>`).join("") || '<div class="meta">Sin documentos adjuntos.</div>';
+}
+
+async function subirDocumentoOrden() {
+  const input = document.getElementById("doc_archivo");
+  if (!input.files[0]) { alert("Elige un PDF o una foto primero."); return; }
+  let archivo;
+  try { archivo = await prepararArchivo(input.files[0]); } catch (e) { alert(e.message); return; }
+  const { anyo, orden } = pedidoActivo;
+  const ruta = `${anyo}/${orden}/documentos/${Date.now()}_${nombreSeguroArchivo(archivo)}`;
+  const { error: e1 } = await client.storage.from("ordenes-adjuntos").upload(ruta, archivo, { contentType: archivo.type });
+  if (e1) { alert("No se pudo subir el fichero: " + e1.message); return; }
+  const { error: e2 } = await client.from("documentos_orden").insert({
+    anyo, orden, storage_path: ruta, nombre: input.files[0].name,
+    visible_montador: document.getElementById("doc_visible_montador").checked,
+  });
+  if (e2) { alert("El fichero se subió pero no se pudo anotar: " + e2.message); return; }
+  input.value = ""; document.getElementById("doc_visible_montador").checked = false;
+  await cargarDocumentosOrden();
+}
+
+async function marcarDocumentoMontador(id, visible) {
+  const { error } = await client.from("documentos_orden").update({ visible_montador: visible }).eq("id", id);
+  if (error) alert("No se pudo cambiar: " + error.message + "\n\n¿Has pegado ya el SQL 69 en Supabase?");
+  await cargarDocumentosOrden();
+}
+
+async function borrarDocumentoOrden(id, ruta) {
+  if (!confirm("¿Borrar este documento?\n\nNo se puede deshacer.")) return;
+  const { error } = await client.from("documentos_orden").delete().eq("id", id);
+  if (error) { alert("No se pudo borrar: " + error.message); return; }
+  await client.storage.from("ordenes-adjuntos").remove([ruta]);
+  await cargarDocumentosOrden();
 }
 
 async function verFotoMontaje(path) {
@@ -1438,7 +1464,7 @@ async function cargarLineas() {
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).order("linea");
 
   const tbody = document.getElementById("tabla_lineas");
-  tbody.innerHTML = "<tr><th>Artículo</th><th>Cant.</th><th>Importe</th><th>%</th><th>A cobrar</th><th>Ubicación</th><th>Albarán prov.</th><th>Recibido</th><th></th></tr>" +
+  tbody.innerHTML = "<tr><th></th><th>Artículo</th><th>Cant.</th><th>Importe</th><th>%</th><th>A cobrar</th><th>Ubicación</th><th>Albarán prov.</th><th>Recibido</th><th></th></tr>" +
     (lineas || []).map(l => {
       const recibida = !!l.recibido_at;
       const boton = l.tipolinea === 4 ? ""   // las líneas de importes no se reciben: no llevan botón
@@ -1448,6 +1474,7 @@ async function cargarLineas() {
       const claseTipo = [1, 2, 3, 4].includes(l.tipolinea) ? `lin-t${l.tipolinea}` : "";
       const pendiente = l.tipolinea !== 4 && !l.recibido_at && l.recibido !== "S";
       return `<tr class="${claseTipo} ${pendiente ? "lin-pendiente" : ""}">
+        <td><button class="secondary btn-mini" style="color:#dc2626;" onclick="borrarLinea(${l.linea}, '${(l.descripcion || l.articulo || "").replace(/'/g, "\\'").replace(/"/g, "&quot;")}')">Borrar</button></td>
         <td>${l.descripcion || l.articulo || ""}${l.control_stock === 'S' ? ' <span class="meta" style="color:var(--muted);font-size:11px;">(stock)</span>' : ''}</td>
         <td>${l.cantidad ?? ""}</td>
         <td>${l.importe ?? ""}</td>
@@ -1456,7 +1483,7 @@ async function cargarLineas() {
         <td>${l.ubicacion || ""} <button class="secondary btn-mini" onclick="editarUbicacion(${l.linea}, '${(l.ubicacion || '').replace(/'/g, "\\'")}')">✎</button></td>
         <td>${l.albaran || ""}</td>
         <td>${boton}</td>
-        <td><button class="secondary btn-mini" onclick="editarLinea(${l.linea})">Editar</button> <button class="secondary btn-mini" style="color:#dc2626;margin-left:22px;" onclick="borrarLinea(${l.linea}, '${(l.descripcion || l.articulo || "").replace(/'/g, "\\'").replace(/"/g, "&quot;")}')">Borrar</button></td>
+        <td><button class="secondary btn-mini" onclick="editarLinea(${l.linea})">Editar</button></td>
       </tr>`;
     }).join("");
 
@@ -1719,43 +1746,6 @@ async function confirmarTraspaso() {
   await cargarHistorial({ anyo: pedidoActivo.anyo, orden: pedidoActivo.orden });
 }
 
-// --- citas ---
-
-async function cargarCitas() {
-  const { data } = await client.from("citas_montaje")
-    .select("id, fecha_hora, canal, estado, notas")
-    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden)
-    .order("fecha_hora", { ascending: false });
-
-  const cont = document.getElementById("lista_citas");
-  cont.innerHTML = (data || []).map(c => `
-    <div class="item">
-      <strong>${new Date(c.fecha_hora).toLocaleString("es-ES")}</strong> — ${c.canal || ""} (${c.estado})
-      ${c.notas ? `<div class="meta">${c.notas}</div>` : ""}
-    </div>`).join("") || '<div class="meta">Sin citas todavía.</div>';
-}
-
-async function agendarCita() {
-  const fecha = document.getElementById("cita_fecha").value;
-  if (!fecha) { alert("Elige fecha y hora."); return; }
-  const canal = document.getElementById("cita_canal").value;
-  const notas = document.getElementById("cita_notas").value.trim();
-
-  const { error } = await client.from("citas_montaje").insert({
-    anyo: pedidoActivo.anyo, orden: pedidoActivo.orden,
-    fecha_hora: new Date(fecha).toISOString(), canal, notas: notas || null,
-    creado_por: staffUserId,
-  });
-  if (error) { alert("No se pudo agendar: " + error.message); return; }
-
-  document.getElementById("cita_fecha").value = "";
-  document.getElementById("cita_notas").value = "";
-  await cargarCitas();
-  const { data: ord } = await client.from("ordenes").select("estado").eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).maybeSingle();
-  if (ord) document.getElementById("ch_estado").value = ord.estado;
-  cargarPedidos();
-}
-
 // --- incidencias ---
 
 async function cargarIncidencias() {
@@ -1767,13 +1757,51 @@ async function cargarIncidencias() {
   const cont = document.getElementById("lista_incidencias");
   cont.innerHTML = (data || []).map(i => `
     <div class="item">
-      <strong>${i.tipo || "Incidencia"}</strong> — ${i.estado}
-      <div class="meta">${i.descripcion || ""}</div>
+      <strong>${escMont(i.tipo) || "Incidencia"}</strong> —
+      <select onchange="cambiarEstadoIncidencia('${i.id}', this.value)">
+        ${[["abierta", "Abierta"], ["en_proceso", "En proceso"], ["resuelta", "Resuelta"]].map(([v, t]) => `<option value="${v}" ${i.estado === v ? "selected" : ""}>${t}</option>`).join("")}
+      </select>
+      <div class="meta">${escMont(i.descripcion)}</div>
       <div class="meta">${new Date(i.created_at).toLocaleString("es-ES")}</div>
+      <button class="secondary btn-mini" onclick="editarIncidencia('${i.id}')">Editar</button>
+      <button class="secondary btn-mini" style="color:#dc2626;" onclick="borrarIncidencia('${i.id}')">Borrar</button>
     </div>`).join("") || '<div class="meta">Sin incidencias.</div>';
+  incidenciasCargadas = data || [];
+}
+let incidenciasCargadas = [];
+
+async function cambiarEstadoIncidencia(id, estado) {
+  const { error } = await client.from("incidencias").update({ estado, resuelto_at: estado === "resuelta" ? new Date().toISOString() : null }).eq("id", id);
+  if (error) alert("No se pudo cambiar el estado: " + error.message);
+  await cargarIncidencias();
 }
 
-async function crearIncidencia() {
+async function editarIncidencia(id) {
+  const i = incidenciasCargadas.find(x => x.id === id);
+  if (!i) return;
+  const tipo = prompt("Tipo de incidencia (rotura, defecto...):", i.tipo || "");
+  if (tipo === null) return;
+  const descripcion = prompt("Descripción de la incidencia:", i.descripcion || "");
+  if (descripcion === null) return;
+  if (!descripcion.trim()) { alert("La descripción no puede quedar vacía."); return; }
+  const { error } = await client.from("incidencias").update({ tipo: tipo.trim() || null, descripcion: descripcion.trim() }).eq("id", id);
+  if (error) { alert("No se pudo guardar: " + error.message); return; }
+  await cargarIncidencias();
+}
+
+async function borrarIncidencia(id) {
+  if (!confirm("¿Borrar esta incidencia?\n\nNo se puede deshacer. La orden NO cambia de estado: si ya no tiene incidencias, cámbialo a mano en Cabecera.")) return;
+  const { error } = await client.from("incidencias").delete().eq("id", id);
+  if (error) {
+    alert(error.message.includes("fotos_orden")
+      ? "No se puede borrar: tiene fotos asociadas (las subió el montador)."
+      : "No se pudo borrar: " + error.message);
+    return;
+  }
+  await cargarIncidencias();
+}
+
+async function crearIncidencia(avisarTienda) {
   const tipo = document.getElementById("inc_tipo").value.trim();
   const descripcion = document.getElementById("inc_descripcion").value.trim();
   if (!descripcion) { alert("Describe la incidencia."); return; }
@@ -1789,6 +1817,13 @@ async function crearIncidencia() {
   await cargarIncidencias();
   document.getElementById("ch_estado").value = "incidencia";
   cargarPedidos();
+
+  if (avisarTienda) {
+    const texto = `⚠️ Incidencia registrada${tipo ? " (" + tipo + ")" : ""}: ${descripcion}`.slice(0, 2000);
+    const { error: errChat } = await client.from("mensajes_orden").insert({ anyo: pedidoActivo.anyo, orden: pedidoActivo.orden, texto });
+    if (errChat) alert("La incidencia se registró, pero no se pudo avisar a la tienda: " + errChat.message);
+    else alert("Incidencia registrada y aviso enviado a la tienda en el chat de la orden.");
+  }
 }
 
 // --- historial ---

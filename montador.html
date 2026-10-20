@@ -183,6 +183,9 @@ canvas#firma_canvas{border:1px solid var(--border);border-radius:8px;width:100%;
     <table class="lineas-table" id="tabla_lineas"></table>
   </div>
 
+  <h4>Documentos de la orden</h4>
+  <div id="lista_documentos" class="mini-list"></div>
+
   <h4>Fotos</h4>
   <div id="lista_fotos" class="mini-list"></div>
   <select id="foto_categoria">
@@ -373,6 +376,7 @@ async function abrirPanel(orden) {
 
   await cargarLineas();
   await cargarFotos();
+  await cargarDocumentos();
   await cargarEntregaPrevia();
   limpiarFirma();
 
@@ -401,6 +405,19 @@ async function cargarLineas() {
         : '<span class="pill-pendiente">pendiente</span>';
       return `<tr><td>${l.descripcion || l.articulo || ""}</td><td>${l.cantidad ?? ""}</td><td>${pill}</td></tr>`;
     }).join("");
+}
+
+async function cargarDocumentos() {
+  const { data } = await client.from("documentos_orden")
+    .select("storage_path, nombre, created_at")
+    .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden)
+    .order("created_at", { ascending: false });
+  const cont = document.getElementById("lista_documentos");
+  cont.innerHTML = (data || []).map(d => `
+    <div class="item">
+      <strong>${String(d.nombre || "documento").replace(/&/g, "&amp;").replace(/</g, "&lt;")}</strong>
+      <div class="meta"><a href="#" onclick="verFoto('${d.storage_path.replace(/'/g, "\\'")}');return false;">abrir</a></div>
+    </div>`).join("") || '<div class="meta">Sin documentos.</div>';
 }
 
 async function cargarFotos() {
