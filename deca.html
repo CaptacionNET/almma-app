@@ -88,7 +88,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 <div id="toolbar">
   <button id="btn_nav_ordenes" class="secondary" onclick="window.location.href='pedidos.html'">Ordenes</button>
   <button id="btn_nav_recepcion" class="secondary" onclick="window.location.href='recepcion.html'">Entradas Almacén</button>
-  <button id="btn_nav_montador" class="secondary" onclick="window.location.href='montador.html'">Mis montajes</button>
+  <button id="btn_nav_montador" class="secondary" style="display:none" onclick="window.location.href='mi-dia.html'">📱 Modo montador</button>
   <button class="secondary" onclick="window.location.href='deca.html'">DeCA</button>
   <button class="secondary" onclick="window.location.href='facturas.html'">Facturación</button>
   <button class="secondary" id="btn_admin" style="display:none" onclick="window.location.href='admin.html'">Administración</button>
@@ -156,6 +156,7 @@ async function comprobarSesion() {
   const { data: staffRow } = await client.from("staff").select("user_id, solo_deca").eq("user_id", user.id).maybeSingle();
   if (!staffRow) { await client.auth.signOut(); window.location.href = "login.html"; return; }
   staffUserId = staffRow.user_id;
+  window.soloDeca = !!staffRow.solo_deca;
   if (staffRow.solo_deca) {
     ["btn_nav_ordenes", "btn_nav_recepcion", "btn_nav_montador", "menu_sistema", "menu_ordenes"].forEach(id => {
       const el = document.getElementById(id);
@@ -410,8 +411,8 @@ comprobarSesion();
 <script>
 /* Botón Administración: solo lo ven los administradores (staff.es_admin; ver migracion/54) */
 (async()=>{try{const{data:{user}}=await client.auth.getUser();if(!user)return;
-const{data}=await client.from("staff").select("es_admin").eq("user_id",user.id).maybeSingle();
-if(data&&data.es_admin)document.getElementById("btn_admin").style.display="";}catch(e){}})();
+const{data}=await client.from("staff").select("es_admin, es_montador").eq("user_id",user.id).maybeSingle();
+if(data&&data.es_admin)document.getElementById("btn_admin").style.display="";if(data&&data.es_montador&&!(window.soloDeca))document.getElementById("btn_nav_montador").style.display="";}catch(e){}})();
 </script>
 </body>
 </html>

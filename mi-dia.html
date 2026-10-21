@@ -69,6 +69,7 @@ header .quien{font-size:.8rem;opacity:.85;flex:1;white-space:nowrap;overflow:hid
 <body>
 <header>
   <span class="marca">ALMMA</span><span class="quien" id="quien"></span>
+  <button id="btn_oficina" style="display:none;border:none;border-radius:10px;padding:8px 12px;font-weight:700;background:#334155;color:#fff" onclick="location.href='pedidos.html'">🏢 Oficina</button>
   <button id="estado" class="sin" onclick="abrirPendientes()">…</button>
 </header>
 <div id="aviso_instalar"></div>
@@ -171,6 +172,8 @@ async function iniciar(){
     if (error && navigator.onLine && !/fetch|network|timeout/i.test(String(error.message))) { location.href = "login.html"; return; }
   }
   if (!uid) { mensaje("📵 Sin cobertura y sin haber entrado nunca en este móvil.<br>Conéctate una vez para entrar."); return; }
+  try { const { data: st } = await client.from("staff").select("solo_montajes, solo_deca").eq("user_id", uid).maybeSingle();
+    if (st && !st.solo_montajes && !st.solo_deca) document.getElementById("btn_oficina").style.display = ""; } catch(_){}
   nombreMontador = (await kvGet("nombre")) || "";
   document.getElementById("quien").textContent = nombreMontador;
   paquete = await kvGet("paquete");

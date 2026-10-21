@@ -122,7 +122,7 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
 <div id="toolbar">
   <button class="secondary" onclick="window.location.href='pedidos.html'">Ordenes</button>
   <button class="secondary" onclick="window.location.href='recepcion.html'">Entradas Almacén</button>
-  <button class="secondary" onclick="window.location.href='montador.html'">Mis montajes</button>
+  <button class="secondary" id="btn_modo_mont" style="display:none" onclick="window.location.href='mi-dia.html'">📱 Modo montador</button>
   <button class="secondary" onclick="window.location.href='deca.html'">DeCA</button>
   <button class="secondary" onclick="window.location.href='facturas.html'">Facturación</button>
   <button class="secondary" id="btn_admin" style="display:none" onclick="window.location.href='admin.html'">Administración</button>
@@ -686,8 +686,8 @@ comprobarSesion();
 <script>
 /* Botón Administración: solo lo ven los administradores (staff.es_admin; ver migracion/54) */
 (async()=>{try{const{data:{user}}=await client.auth.getUser();if(!user)return;
-const{data}=await client.from("staff").select("es_admin").eq("user_id",user.id).maybeSingle();
-if(data&&data.es_admin)document.getElementById("btn_admin").style.display="";}catch(e){}})();
+const{data}=await client.from("staff").select("es_admin, es_montador").eq("user_id",user.id).maybeSingle();
+if(data&&data.es_admin)document.getElementById("btn_admin").style.display="";if(data&&data.es_montador){const bm=document.getElementById("btn_modo_mont");if(bm)bm.style.display="";}}catch(e){}})();
 </script>
 </body>
 </html>
