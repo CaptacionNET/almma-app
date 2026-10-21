@@ -269,7 +269,7 @@ async function cargarPaquete(){
     else { document.getElementById("quien").textContent = "Oficina"; if (!verTodos) verEquipos(true); }
     // los montadores solo reciben lo suyo (lo decide la seguridad de la base de datos); el administrador recibe todos los equipos
     const { data, error } = await client.from("ordenes")
-      .select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, telefono2_cli, num_pedido, estado, con_incidencia, fecha_prev_montaje, horamont, obs_albaran, equipo:ordenes_montadores(montador_id, montadores(nombre)), entregas(id), fotos:fotos_orden(id, storage_path, categoria, comentario, created_at)")
+      .select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, telefono2_cli, num_pedido, estado, con_incidencia, fecha_prev_montaje, horamont, obs_albaran, equipo:ordenes_montadores(montador_id, montadores(nombre)), entregas(id, firmante_nombre, firmado_at, firma_storage_path), fotos:fotos_orden(id, storage_path, categoria, comentario, created_at)")
       .gte("fecha_prev_montaje", diaN(0)).lt("fecha_prev_montaje", diaN(2)).order("fecha_prev_montaje");
     if (error) throw error;
     const lineas = {}, docs = {};
@@ -290,6 +290,7 @@ async function cargarPaquete(){
       equipo:(o.equipo || []).map(e => e.montadores?.nombre).filter(Boolean),
       mio:!!yo && (o.equipo || []).some(e => e.montador_id === yo.id),
       hecho:(o.entregas || []).length > 0,
+      firmas:(o.entregas || []).filter(e => e.firma_storage_path).sort((a,b) => String(a.firmado_at).localeCompare(String(b.firmado_at))).map(e => ({ ruta:e.firma_storage_path, nombre:e.firmante_nombre, cuando:e.firmado_at })),
       fotos:(o.fotos || []).sort((a,b) => String(a.created_at).localeCompare(String(b.created_at))),
       docs:docs[o.anyo + "/" + o.orden] || [], lineas:lineas[o.anyo + "/" + o.orden] || []
     }));
@@ -367,7 +368,7 @@ async function abrirDetalle(k){
   detalleK = k; document.getElementById("p_detalle").style.display = "block"; document.getElementById("p_detalle").scrollTop = 0;
   pintarDetalle();
   const o = buscar(k); if (!o) return;
-  await pedirUrls([...o.docs.map(d => d.storage_path), ...o.fotos.map(f => f.storage_path)]);
+  await pedirUrls([...o.docs.map(d => d.storage_path), ...o.fotos.map(f => f.storage_path), ...(o.firmas || []).map(f => f.ruta)]);
   if (detalleK === k) pintarDetalle();
 }
 function cerrarDetalle(){ detalleK = null; cerrarPantalla("p_detalle"); }
@@ -380,6 +381,12 @@ function tiraFotos(lista, cola_){
   }).join("");
   const pend = cola_.map(c => '<div class="mini"><div class="im">⏳<br>por enviar</div>' + (c.comentario ? '<div class="pie_m">' + esc(c.comentario) + '</div>' : "") + '</div>').join("");
   return '<div class="tira">' + mini + pend + '</div>';
+}
+function bloqueFirma(o){
+  const f = (o.firmas || [])[(o.firmas || []).length - 1], pend = enCola(o, "firma").length;
+  const img = f ? (urls[f.ruta] ? '<img src="' + urls[f.ruta] + '" alt="Firma" style="width:100%;max-height:200px;object-fit:contain;background:#fff;border:1px solid #cbd5e1;border-radius:12px">' : '<div style="color:var(--gris)">' + (navigator.onLine ? "Cargando firma…" : "Firma sin cobertura") + '</div>') : "";
+  return '<div class="sec"><h3>✍ Firma del cliente</h3>' + (f ? '<div class="dato"><b>Firmó</b><span>' + esc(f.nombre) + (f.cuando ? " · " + new Date(f.cuando).toLocaleString("es-ES", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }) : "") + '</span></div>' + img : "") +
+    (pend ? '<div style="color:#92400e;font-weight:700;margin-top:6px">⏳ ' + pend + (pend === 1 ? " firma" : " firmas") + ' por enviar</div>' : "") + '</div>';
 }
 function pintarDetalle(){
   const o = detalleK && buscar(detalleK); if (!o) return;
@@ -415,9 +422,11 @@ function pintarDetalle(){
       (fotos.length || fotosCola.length ? tiraFotos(fotos, fotosCola) : '<div style="color:var(--gris);margin-bottom:8px">Todavía no has enviado fotos.</div>') +
       '<div class="botones"><button class="btn az" onclick="hacerFoto(\'' + k + '\',true)">📷 Cámara</button>' +
       '<button class="btn az" onclick="hacerFoto(\'' + k + '\',false)">🖼 Fototeca</button></div></div>' +
+    (hecho ? bloqueFirma(o) : "") +
     '<div class="botones">' +
       '<button class="btn na" onclick="abrirIncidencia(\'' + k + '\')">⚠ Problema</button>' +
-      (hecho ? "" : '<button class="btn gr" onclick="abrirFirma(\'' + k + '\')"><span>✔ TERMINADO<br><small style="font-weight:600">(firma del cliente)</small></span></button>') +
+      (hecho ? '<button class="btn az" onclick="abrirFirma(\'' + k + '\')">✍ Repetir la firma</button>'
+             : '<button class="btn gr" onclick="abrirFirma(\'' + k + '\')"><span>✔ TERMINADO<br><small style="font-weight:600">(firma del cliente)</small></span></button>') +
     '</div>';
 }
 
