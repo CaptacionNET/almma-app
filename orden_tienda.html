@@ -63,7 +63,7 @@ function volver(){ location.href = destino; }
   const { data: dep } = await client.from("dependientes").select("es_admin_tienda").eq("user_id", user.id).maybeSingle();
   if (!dep) { location.href = "login.html"; return; }
   if (dep.es_admin_tienda) destino = "tienda.html";
-  const { data: o, error } = await client.from("ordenes").select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, telefono2_cli, num_pedido, estado, fecha_creacion, fecha_prev_recepcion, fecha_recepcion, fecha_prev_montaje, horamont, fecha_montaje, tiendas(nombre)").eq("anyo", anyo).eq("orden", orden).maybeSingle();
+  const { data: o, error } = await client.from("ordenes").select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, telefono2_cli, num_pedido, estado, fecha_creacion, fecha_prev_recepcion, fecha_recepcion, fecha_prev_montaje, horamont, fecha_montaje, con_incidencia, tiendas(nombre)").eq("anyo", anyo).eq("orden", orden).maybeSingle();
   if (error || !o) { document.getElementById("cont").innerHTML = '<span class="muted">No se encuentra esa orden o no tienes acceso a ella.</span>'; return; }
   document.getElementById("titulo").textContent = "Orden " + o.anyo + "/" + o.orden;
   const [li, ci] = await Promise.all([
@@ -73,7 +73,7 @@ function volver(){ location.href = destino; }
   const k = (a,b) => '<div><div class="k">'+a+'</div><div class="v">'+(b || "—")+'</div></div>';
   const lineas = (li.data || []).filter(l => l.tipolinea !== 4);
   document.getElementById("cont").innerHTML =
-    '<div class="card"><div style="margin-bottom:10px"><span class="est">'+esc((o.estado||"").replace(/_/g," "))+'</span></div><div class="grid">'+
+    '<div class="card"><div style="margin-bottom:10px"><span class="est">'+esc(o.estado === "completado" && o.con_incidencia ? "completado con incidencias" : (o.estado||"").replace(/_/g," "))+'</span></div><div class="grid">'+
       k("Cliente", esc(o.nombre_cli))+k("Dirección", esc([o.domicilio_cli, o.localidad_cli].filter(Boolean).join(" - ")))+
       k("Teléfono", esc([o.telefono_cli, o.telefono2_cli].filter(Boolean).join(" / ")))+k("Referencia de pedido", esc(o.num_pedido))+
       k("Creada", f(o.fecha_creacion))+k("Recepción prevista", f(o.fecha_prev_recepcion))+k("Recibida en almacén", f(o.fecha_recepcion))+
@@ -82,6 +82,7 @@ function volver(){ location.href = destino; }
     '<div class="card"><b>Artículos</b><table style="margin-top:8px"><tr><th>Artículo</th><th>Descripción</th><th>Cant.</th><th>Recibido</th></tr>'+
       (lineas.map(l => '<tr><td>'+esc(l.articulo)+'</td><td>'+esc(l.descripcion)+'</td><td>'+(l.cantidad ?? "")+'</td><td>'+(l.recibido === "S" ? "Sí" : "No")+'</td></tr>').join("") || '<tr><td colspan="4" class="muted">Sin líneas.</td></tr>')+'</table></div>'+
     ((ci.data || []).length ? '<div class="card"><b>Citas de montaje</b><table style="margin-top:8px"><tr><th>Fecha y hora</th><th>Estado</th></tr>'+ci.data.map(c => '<tr><td>'+new Date(c.fecha_hora).toLocaleString("es-ES")+'</td><td>'+esc(c.estado)+'</td></tr>').join("")+'</table></div>' : "") +
+    '<div class="card"><b>Montaje</b><div id="montaje_cont" class="muted" style="margin-top:8px">Cargando…</div></div>'+
     '<div class="card"><b>Documentos adjuntos</b><div class="muted" style="margin:4px 0 10px">El PDF o las fotos de esta orden. Puedes añadir más (varios a la vez).</div><div id="docs_lista"></div>'+
     '<div style="margin-top:10px"><input type="file" id="docs_archivo" accept="application/pdf,image/*" multiple> <button id="docs_subir">Adjuntar</button></div></div>'+
     '<div class="card"><b>Chat con ALMMA</b><div class="muted" style="margin:4px 0 10px">Escribe aquí comentarios sobre esta orden; el personal de ALMMA te responderá.</div><div class="chat" id="chat_lista"></div>'+
@@ -90,6 +91,20 @@ function volver(){ location.href = destino; }
   await cargarChat(anyo, orden, "tienda");
   document.getElementById("docs_subir").onclick = () => subirDocumentos(anyo, orden);
   await cargarDocumentos(anyo, orden);
+  // fotos y firma del montaje (solo lectura)
+  try {
+    const [fo, en] = await Promise.all([
+      client.from("fotos_orden").select("storage_path, comentario, created_at").eq("anyo", anyo).eq("orden", orden).order("created_at"),
+      client.from("entregas").select("firmante_nombre, firmado_at, firma_storage_path").eq("anyo", anyo).eq("orden", orden)
+    ]);
+    const rutas = [...(fo.data || []).map(x => x.storage_path), ...(en.data || []).map(x => x.firma_storage_path)].filter(Boolean);
+    const urls = {};
+    if (rutas.length) { const { data } = await client.storage.from("ordenes-adjuntos").createSignedUrls(rutas, 3600); (data || []).forEach(d => urls[d.path] = d.signedUrl); }
+    const img = (r, t) => urls[r] ? '<a href="'+urls[r]+'" target="_blank"><div style="display:inline-block;width:120px;margin:0 8px 8px 0;vertical-align:top"><img src="'+urls[r]+'" style="width:120px;height:120px;object-fit:cover;border-radius:8px;border:1px solid #cbd5e1">'+(t ? '<div style="font-size:11px">'+esc(t)+'</div>' : "")+'</div></a>' : "";
+    const firmas = (en.data || []).map(x => '<div style="margin-bottom:8px">Firmado por <b>'+esc(x.firmante_nombre)+'</b> · '+(x.firmado_at ? new Date(x.firmado_at).toLocaleString("es-ES") : "")+'<br>'+img(x.firma_storage_path)+'</div>').join("");
+    const fotos = (fo.data || []).map(x => img(x.storage_path, x.comentario)).join("");
+    document.getElementById("montaje_cont").innerHTML = (firmas || fotos) ? firmas + fotos : "Todavía no hay fotos ni firma del montaje.";
+  } catch (_) { document.getElementById("montaje_cont").textContent = "No se pudo cargar."; }
 })();
 
 // --- documentos de la orden (migracion/64 y 65: la tienda puede ver y subir PDF o foto a sus órdenes) ---

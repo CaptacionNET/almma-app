@@ -66,6 +66,8 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .leyenda-listado span{border-left:5px solid var(--c,#94a3b8);padding-left:6px;}
 .mini-list .item{border-left:5px solid #2563eb;background:#f9fbff;border-color:#bfdbfe;border-left-color:#2563eb;}
 .estado-terminado_incidencia{background:#fff7ed;color:#9a3412;}
+.tabulator .tabulator-row.fila-conincid,.tabulator .tabulator-row.tabulator-row-even.fila-conincid{background:#fecaca !important;}
+.tabulator .tabulator-row.fila-conincid .tabulator-cell:first-child{border-left-color:#991b1b;}
 /* color de toda la fila según el estado: verde suave = montada y finalizada, naranja suave = completa sin montar, blanco = en proceso */
 #tabla_pedidos .tabulator-row.tabulator-row-even,#tabla_montajes .tabulator-row.tabulator-row-even{background:#fff;}
 .tabulator .tabulator-row.fila-finalizada,.tabulator .tabulator-row.tabulator-row-even.fila-finalizada{background:#dcfce7 !important;}
@@ -210,7 +212,7 @@ const globo = (a, o) => conMensaje.has(a + "/" + o) ? ' <span title="Mensaje sin
 async function cargarPedidos() {
   await cargarConMensaje();
   const { data, error } = await client.from("ordenes")
-    .select("anyo, orden, nombre_cli, num_pedido, estado, fecha_creacion")
+    .select("anyo, orden, nombre_cli, num_pedido, estado, con_incidencia, fecha_creacion")
     .eq("tienda_id", dependiente.tienda_id)
     .order("anyo", { ascending: false })
     .order("orden", { ascending: false })
@@ -220,16 +222,17 @@ async function cargarPedidos() {
   const columnas = [
     { title: "Año", field: "anyo", width: 70 },
     { title: "Orden", field: "orden", width: 110, formatter: (c) => { const d = c.getData(); return `<a href="orden_tienda.html?anyo=${d.anyo}&orden=${d.orden}">${d.orden}</a>${globo(d.anyo, d.orden)}`; } },
-    { title: "Cliente", field: "nombre_cli" },
+    { title: "Cliente", field: "nombre_cli", minWidth: 220 },
     { title: "Referencia de pedido", field: "num_pedido", minWidth: 170 },
-    { title: "Estado", field: "estado", minWidth: 170, formatter: (cell) => {
+    { title: "Estado", field: "estado", minWidth: 200, formatter: (cell) => {
+        if (cell.getValue() === "completado" && cell.getData().con_incidencia) return "Completado con incidencias";
         const v = (cell.getValue() || "en_proceso").replace(/_/g, " ");
         return v.charAt(0).toUpperCase() + v.slice(1);   // solo texto, sin "globo"
       } },
   ];
 
   if (!tabla) {
-    tabla = new Tabulator("#tabla_pedidos", { data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 110px)", rowFormatter: (row) => { const e = row.getData().estado; if (e === "completado") row.getElement().classList.add("fila-finalizada"); else if (e === "recepcionado_total") row.getElement().classList.add("fila-completa"); else if (e === "agendado") row.getElement().classList.add("fila-agendada"); }, });
+    tabla = new Tabulator("#tabla_pedidos", { data, columns: columnas, layout: "fitColumns", height: "calc(100vh - 110px)", rowFormatter: (row) => { const e = row.getData().estado; if (e === "completado" && row.getData().con_incidencia) row.getElement().classList.add("fila-conincid"); else if (e === "completado") row.getElement().classList.add("fila-finalizada"); else if (e === "recepcionado_total") row.getElement().classList.add("fila-completa"); else if (e === "agendado") row.getElement().classList.add("fila-agendada"); }, });
   } else {
     tabla.setData(data);
   }

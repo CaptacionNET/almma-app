@@ -64,6 +64,38 @@ header .quien{font-size:.8rem;opacity:.85;flex:1;white-space:nowrap;overflow:hid
 #aviso_instalar{margin:12px 16px 0;background:#e0f2fe;border-radius:14px;padding:14px;font-size:.9rem;display:none;}
 #aviso_instalar button{margin-top:8px;border:none;background:var(--azul);color:#fff;border-radius:10px;padding:10px 16px;font-weight:700;font-size:.9rem;}
 #mensaje{padding:40px 24px;text-align:center;font-size:1.1rem;display:none;}
+/* inicio con tarjetas: toda la tarjeta es un botón que abre el detalle */
+.tarjeta.tocable{cursor:pointer;} .tarjeta.tocable:active{transform:scale(.99);}
+.tarjeta.conincid{border-left-color:#991b1b;background:#fef2f2;}
+.nord{font-size:.85rem;font-weight:800;color:var(--gris);}
+.ver{margin-top:10px;font-size:.9rem;font-weight:800;color:var(--azul);text-align:right;}
+.filtro{display:none;gap:8px;padding:4px 16px 0;} .filtro button{flex:1;border:2px solid #475569;background:#fff;color:#334155;border-radius:12px;padding:10px 6px;font-size:.9rem;font-weight:800;}
+.filtro button.on{background:#334155;color:#fff;}
+.grupo{margin:18px 2px 0;font-size:.85rem;font-weight:800;color:#334155;text-transform:uppercase;letter-spacing:.4px;}
+/* detalle del montaje */
+#p_detalle{z-index:40;padding:0;}
+.det_top{position:sticky;top:0;z-index:5;background:var(--azul);color:#fff;padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top));display:flex;align-items:center;gap:12px;}
+.det_top button{border:none;border-radius:10px;padding:10px 14px;font-weight:800;font-size:1rem;background:#fff;color:var(--azul);}
+.det_top b{font-size:1.05rem;}
+#det_cuerpo{padding:12px 16px 40px;}
+.sec{background:#fff;border-radius:16px;padding:14px;margin:12px 0;box-shadow:0 2px 8px rgba(15,23,42,.06);}
+.sec h3{margin:0 0 8px;font-size:1rem;}
+.tira{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:6px;-webkit-overflow-scrolling:touch;}
+.mini{flex:none;width:130px;scroll-snap-align:start;}
+.mini .im{width:130px;height:130px;border-radius:12px;background:#e2e8f0;display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:.8rem;color:var(--gris);text-align:center;border:1px solid #cbd5e1;}
+.mini .im img{width:100%;height:100%;object-fit:cover;}
+.mini .pie_m{font-size:.75rem;color:#334155;margin-top:4px;line-height:1.2;word-break:break-word;}
+.mini .pend_m{font-size:.7rem;color:#92400e;font-weight:800;}
+.dato{display:flex;gap:8px;margin:4px 0;font-size:.95rem;} .dato b{min-width:84px;color:var(--gris);font-weight:700;}
+/* visor de fotos: pasa de una a otra con el dedo o con las flechas */
+#p_visor{z-index:90;background:#000;padding:0;}
+#v_img{position:absolute;inset:0 0 90px 0;display:flex;align-items:center;justify-content:center;}
+#v_img img{max-width:100%;max-height:100%;object-fit:contain;}
+.v_btn{position:absolute;top:50%;transform:translateY(-50%);border:none;background:rgba(255,255,255,.25);color:#fff;font-size:2rem;border-radius:50%;width:52px;height:52px;z-index:2;}
+#v_cerrar{position:absolute;top:calc(10px + env(safe-area-inset-top));right:12px;border:none;background:rgba(255,255,255,.3);color:#fff;font-size:1.1rem;font-weight:800;border-radius:12px;padding:10px 16px;z-index:3;}
+#v_pie{position:absolute;left:0;right:0;bottom:0;height:90px;color:#fff;padding:10px 16px calc(10px + env(safe-area-inset-bottom));text-align:center;font-size:.95rem;overflow:auto;}
+#p_foto img{width:100%;max-height:300px;object-fit:contain;border-radius:12px;background:#e2e8f0;}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;} .chips button{border:2px solid #cbd5e1;background:#fff;border-radius:20px;padding:8px 14px;font-size:.9rem;font-weight:700;}
 </style>
 </head>
 <body>
@@ -77,11 +109,44 @@ header .quien{font-size:.8rem;opacity:.85;flex:1;white-space:nowrap;overflow:hid
   <button id="d0" class="on" onclick="verDia(0)">HOY<small id="n0"></small></button>
   <button id="d1" onclick="verDia(1)">MAÑANA<small id="n1"></small></button>
 </div>
+<div class="filtro" id="filtro">
+  <button id="f_mios" class="on" onclick="verEquipos(false)">Solo los míos</button>
+  <button id="f_todos" onclick="verEquipos(true)">Todos los equipos</button>
+</div>
 <div id="mensaje"></div>
 <div id="lista"></div>
 <div class="pie" id="pie">…</div>
 <div id="toast"></div>
 <input type="file" id="cam" accept="image/*" capture="environment" style="display:none">
+<input type="file" id="galeria" accept="image/*" multiple style="display:none">
+<input type="file" id="cam_inc" accept="image/*" capture="environment" style="display:none">
+<input type="file" id="gal_inc" accept="image/*" multiple style="display:none">
+
+<div class="pantalla" id="p_detalle">
+  <div class="det_top"><button onclick="cerrarDetalle()">← Volver</button><b id="det_titulo"></b></div>
+  <div id="det_cuerpo"></div>
+</div>
+
+<div class="pantalla" id="p_visor">
+  <button id="v_cerrar" onclick="cerrarVisor()">✕ Cerrar</button>
+  <button class="v_btn" style="left:8px" onclick="visorMover(-1)">‹</button>
+  <div id="v_img"></div>
+  <button class="v_btn" style="right:8px" onclick="visorMover(1)">›</button>
+  <div id="v_pie"></div>
+</div>
+
+<div class="pantalla" id="p_foto">
+  <h2>Foto</h2>
+  <img id="pf_img" alt="">
+  <label for="pf_desc">¿Qué se ve en la foto? (opcional)</label>
+  <input type="text" id="pf_desc" autocomplete="off" placeholder="Ej.: mueble de comedor">
+  <div class="chips" id="pf_chips"></div>
+  <div style="color:var(--gris);font-size:.85rem" id="pf_resto"></div>
+  <div class="botones" style="margin-top:18px">
+    <button class="btn pl" onclick="descartarFoto()">Descartar</button>
+    <button class="btn gr" style="grid-column:auto" onclick="guardarFotoPend()">✔ GUARDAR FOTO</button>
+  </div>
+</div>
 
 <div class="pantalla" id="p_firma">
   <h2>Firma del cliente</h2>
@@ -105,11 +170,17 @@ header .quien{font-size:.8rem;opacity:.85;flex:1;white-space:nowrap;overflow:hid
   <div class="opciones" id="i_opciones"></div>
   <label for="i_texto">Cuéntalo con tus palabras (opcional)</label>
   <textarea id="i_texto" rows="3"></textarea>
+  <label>Fotos del problema (opcional)</label>
+  <div class="botones" style="margin-top:0">
+    <button class="btn az" onclick="document.getElementById('cam_inc').value='';document.getElementById('cam_inc').click()">📷 Cámara</button>
+    <button class="btn az" onclick="document.getElementById('gal_inc').value='';document.getElementById('gal_inc').click()">🖼 Fototeca</button>
+  </div>
+  <div class="tira" id="i_fotos" style="margin-top:10px"></div>
   <div class="botones" style="margin-top:18px">
     <button class="btn pl" onclick="cerrarPantalla('p_incid')">Atrás</button>
     <button class="btn rj" onclick="guardarIncidencia()">ENVIAR AVISO</button>
   </div>
-  <p style="color:var(--gris);font-size:.88rem">Después puedes hacer fotos del problema con el botón «Foto» de ese montaje.</p>
+  <p style="color:var(--gris);font-size:.88rem">El aviso llega a la oficina con las fotos que añadas.</p>
 </div>
 
 <div class="pantalla" id="p_pend">
@@ -146,6 +217,8 @@ const colaPut = async it => req2p((await st("cola","readwrite")).put(it));
 const colaDel = async id => req2p((await st("cola","readwrite")).delete(id));
 
 let uid = null, nombreMontador = "", paquete = null, cola = [], diaVista = 0, sincronizando = false;
+let esAdmin = false, verTodos = false, detalleK = null;
+const urls = {};   // enlaces temporales de fotos y documentos (solo con cobertura)
 
 /* ---------- Avisos ---------- */
 let tToast;
@@ -173,7 +246,10 @@ async function iniciar(){
   }
   if (!uid) { mensaje("📵 Sin cobertura y sin haber entrado nunca en este móvil.<br>Conéctate una vez para entrar."); return; }
   try { const { data: st } = await client.from("staff").select("solo_montajes, solo_deca").eq("user_id", uid).maybeSingle();
-    if (st && !st.solo_montajes && !st.solo_deca) document.getElementById("btn_oficina").style.display = ""; } catch(_){}
+    if (st && !st.solo_montajes && !st.solo_deca) { esAdmin = true; document.getElementById("btn_oficina").style.display = ""; document.getElementById("filtro").style.display = "flex"; await kvSet("esAdmin", true); } } catch(_){}
+  if (!esAdmin && await kvGet("esAdmin")) { esAdmin = true; document.getElementById("btn_oficina").style.display = ""; document.getElementById("filtro").style.display = "flex"; }
+  verTodos = esAdmin && !!(await kvGet("verTodos"));
+  marcarFiltro();
   nombreMontador = (await kvGet("nombre")) || "";
   document.getElementById("quien").textContent = nombreMontador;
   paquete = await kvGet("paquete");
@@ -188,26 +264,34 @@ async function cargarPaquete(){
   try {
     const { data: yo, error: e0 } = await client.from("montadores").select("id, nombre").eq("staff_user_id", uid).maybeSingle();
     if (e0) throw e0;
-    if (!yo) { mensaje("Tu usuario todavía no está enlazado con tu nombre de montador.<br>Avisa a la oficina."); return; }
-    nombreMontador = yo.nombre; await kvSet("nombre", yo.nombre);
-    document.getElementById("quien").textContent = yo.nombre;
+    if (!yo && !esAdmin) { mensaje("Tu usuario todavía no está enlazado con tu nombre de montador.<br>Avisa a la oficina."); return; }
+    if (yo) { nombreMontador = yo.nombre; await kvSet("nombre", yo.nombre); document.getElementById("quien").textContent = yo.nombre; }
+    else { document.getElementById("quien").textContent = "Oficina"; if (!verTodos) verEquipos(true); }
+    // los montadores solo reciben lo suyo (lo decide la seguridad de la base de datos); el administrador recibe todos los equipos
     const { data, error } = await client.from("ordenes")
-      .select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, telefono2_cli, num_pedido, estado, fecha_prev_montaje, horamont, obs_albaran, mio:ordenes_montadores!inner(montador_id), equipo:ordenes_montadores(montadores(nombre)), entregas(id), fotos:fotos_orden(id)")
-      .eq("mio.montador_id", yo.id).gte("fecha_prev_montaje", diaN(0)).lt("fecha_prev_montaje", diaN(2)).order("fecha_prev_montaje");
+      .select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, telefono2_cli, num_pedido, estado, con_incidencia, fecha_prev_montaje, horamont, obs_albaran, equipo:ordenes_montadores(montador_id, montadores(nombre)), entregas(id), fotos:fotos_orden(id, storage_path, categoria, comentario, created_at)")
+      .gte("fecha_prev_montaje", diaN(0)).lt("fecha_prev_montaje", diaN(2)).order("fecha_prev_montaje");
     if (error) throw error;
-    const lineas = {};
+    const lineas = {}, docs = {};
     const porAnyo = {}; (data || []).forEach(o => (porAnyo[o.anyo] ||= []).push(o.orden));
     for (const [a, lst] of Object.entries(porAnyo)) {
       const { data: ls, error: el } = await client.from("linorden").select("anyo, orden, linea, tipolinea, descripcion, cantidad").eq("anyo", +a).in("orden", lst).neq("tipolinea", 4).order("linea");
       if (el) throw el;
       (ls || []).forEach(l => (lineas[l.anyo + "/" + l.orden] ||= []).push(l));
+      try {   // documentos que la oficina ha marcado como visibles para el montador
+        const { data: ds } = await client.from("documentos_orden").select("anyo, orden, storage_path, nombre").eq("anyo", +a).in("orden", lst).eq("visible_montador", true).order("created_at");
+        (ds || []).forEach(d => (docs[d.anyo + "/" + d.orden] ||= []).push(d));
+      } catch(_){}
     }
     const ordenes = (data || []).map(o => ({
       anyo:o.anyo, orden:o.orden, nombre_cli:o.nombre_cli, domicilio_cli:o.domicilio_cli, localidad_cli:o.localidad_cli,
-      telefono_cli:o.telefono_cli, telefono2_cli:o.telefono2_cli, num_pedido:o.num_pedido, estado:o.estado,
+      telefono_cli:o.telefono_cli, telefono2_cli:o.telefono2_cli, num_pedido:o.num_pedido, estado:o.estado, con_incidencia:!!o.con_incidencia,
       dia:String(o.fecha_prev_montaje).slice(0,10), horamont:o.horamont, obs:o.obs_albaran,
       equipo:(o.equipo || []).map(e => e.montadores?.nombre).filter(Boolean),
-      hecho:(o.entregas || []).length > 0, fotos:(o.fotos || []).length, lineas:lineas[o.anyo + "/" + o.orden] || []
+      mio:!!yo && (o.equipo || []).some(e => e.montador_id === yo.id),
+      hecho:(o.entregas || []).length > 0,
+      fotos:(o.fotos || []).sort((a,b) => String(a.created_at).localeCompare(String(b.created_at))),
+      docs:docs[o.anyo + "/" + o.orden] || [], lineas:lineas[o.anyo + "/" + o.orden] || []
     }));
     paquete = { cargado:new Date().toISOString(), ordenes };
     await kvSet("paquete", paquete);
@@ -216,45 +300,155 @@ async function cargarPaquete(){
     if (!/fetch|network|timeout|load failed/i.test(String(e?.message || e))) toast("No se pudieron cargar los montajes: " + (e.message || e), 6000);
   }
 }
+function marcarFiltro(){ document.getElementById("f_mios").classList.toggle("on", !verTodos); document.getElementById("f_todos").classList.toggle("on", verTodos); }
+async function verEquipos(todos){ verTodos = todos; marcarFiltro(); try { await kvSet("verTodos", todos); } catch(_){} pintar(); }
 
-/* ---------- Pintar las tarjetas ---------- */
+/* ---------- Enlaces temporales a fotos y documentos (necesitan cobertura) ---------- */
+async function pedirUrls(rutas){
+  const falta = [...new Set(rutas)].filter(r => r && !urls[r]);
+  if (!falta.length || !navigator.onLine) return;
+  try {
+    const { data } = await client.storage.from("ordenes-adjuntos").createSignedUrls(falta, 3600);
+    (data || []).forEach(d => { if (d.signedUrl) urls[d.path] = d.signedUrl; });
+  } catch(_){}
+}
+const esImagen = r => /\.(jpe?g|png|webp|heic|gif)$/i.test(r || "");
+
+/* ---------- Inicio: una tarjeta por montaje ---------- */
 function verDia(n){ diaVista = n; document.getElementById("d0").classList.toggle("on", n === 0); document.getElementById("d1").classList.toggle("on", n === 1); pintar(); }
 function enCola(o, tipo){ return cola.filter(c => c.tipo === tipo && c.anyo === o.anyo && c.orden === o.orden); }
+const buscar = k => paquete.ordenes.find(o => o.anyo + "/" + o.orden === k);
+function situacion(o){
+  const hecho = o.hecho || o.estado === "completado" || enCola(o, "firma").length > 0;
+  const incid = o.estado === "incidencia" || o.con_incidencia || enCola(o, "incidencia").length > 0;
+  return { hecho, incid };
+}
+function chipEstado(o){
+  const { hecho, incid } = situacion(o);
+  if (hecho && incid) return '<span class="chip n" style="background:#fecaca;color:#991b1b">✔ TERMINADO · ⚠ CON INCIDENCIA</span>';
+  if (hecho) return '<span class="chip v">✔ TERMINADO</span>';
+  if (incid) return '<span class="chip n">⚠ INCIDENCIA</span>';
+  return '<span class="chip">Pendiente</span>';
+}
 function pintar(){
   document.getElementById("mensaje").style.display = "none";
   const lista = document.getElementById("lista");
   if (!paquete) { lista.innerHTML = '<div class="vacio">Cargando tus montajes…</div>'; return; }
   const dias = [diaN(0), diaN(1)];
-  [0, 1].forEach(i => { const n = paquete.ordenes.filter(o => o.dia === dias[i]).length; document.getElementById("n" + i).textContent = n + (n === 1 ? " montaje" : " montajes"); });
-  const hoy = paquete.ordenes.filter(o => o.dia === dias[diaVista]).sort((a,b) => (a.horamont || "99").localeCompare(b.horamont || "99"));
+  const visibles = paquete.ordenes.filter(o => verTodos || o.mio || !esAdmin);
+  [0, 1].forEach(i => { const n = visibles.filter(o => o.dia === dias[i]).length; document.getElementById("n" + i).textContent = n + (n === 1 ? " montaje" : " montajes"); });
+  const hoy = visibles.filter(o => o.dia === dias[diaVista]).sort((a,b) => {
+    const ea = verTodos ? a.equipo.join(" + ") : "", eb = verTodos ? b.equipo.join(" + ") : "";
+    return ea.localeCompare(eb) || (a.horamont || "99").localeCompare(b.horamont || "99");
+  });
   document.getElementById("pie").textContent = "Montajes cargados " + new Date(paquete.cargado).toLocaleString("es-ES", { weekday:"short", hour:"2-digit", minute:"2-digit" }) + (navigator.onLine ? "" : " · sin cobertura: se usa lo guardado");
-  if (!hoy.length) { lista.innerHTML = '<div class="vacio">' + (diaVista === 0 ? "Hoy no tienes montajes 🎉" : "Mañana no tienes montajes") + '</div>'; return; }
-  lista.innerHTML = hoy.map(o => {
-    const hecho = o.hecho || enCola(o, "firma").length > 0;
-    const incid = o.estado === "incidencia" || enCola(o, "incidencia").length > 0;
-    const nFotos = o.fotos + enCola(o, "foto").length;
-    const dir = [o.domicilio_cli, o.localidad_cli].filter(Boolean).join(", ");
-    const tel = (o.telefono_cli || "").replace(/[^\d+]/g, "");
-    const mapa = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(dir);
-    const arts = o.lineas.map(l => (l.cantidad ?? 1) + " × " + esc(l.descripcion)).join("<br>");
-    const k = o.anyo + "/" + o.orden;
-    return '<div class="tarjeta ' + (hecho ? "hecho" : incid ? "incid" : "") + '">' +
-      '<div class="fila1"><span class="hora">' + esc((o.horamont && o.horamont !== "M") ? o.horamont : "Sin hora") + '</span>' +
-      (hecho ? '<span class="chip v">✔ TERMINADO</span>' : incid ? '<span class="chip n">⚠ INCIDENCIA</span>' : '<span class="chip">Pendiente</span>') + '</div>' +
-      '<div class="cliente">' + esc(o.nombre_cli) + '</div><div class="dir">' + esc(dir) + '</div>' +
-      (o.equipo.length > 1 ? '<div class="eq">Equipo: ' + esc(o.equipo.join(" + ")) + '</div>' : "") +
-      (arts ? '<div class="arts">' + arts + '</div>' : "") +
-      (o.obs ? '<div class="obs">📝 ' + esc(o.obs) + '</div>' : "") +
+  if (!hoy.length) lista.innerHTML = '<div class="vacio">' + (diaVista === 0 ? (verTodos ? "Hoy no hay montajes" : "Hoy no tienes montajes 🎉") : (verTodos ? "Mañana no hay montajes" : "Mañana no tienes montajes")) + '</div>';
+  else {
+    let grupo = null;
+    lista.innerHTML = hoy.map(o => {
+      const { hecho, incid } = situacion(o);
+      const dir = [o.domicilio_cli, o.localidad_cli].filter(Boolean).join(", ");
+      const k = o.anyo + "/" + o.orden, eq = o.equipo.join(" + ") || "Sin equipo";
+      let cab = ""; if (verTodos && eq !== grupo) { grupo = eq; cab = '<div class="grupo">👷 ' + esc(eq) + '</div>'; }
+      const clase = hecho && incid ? "conincid" : hecho ? "hecho" : incid ? "incid" : "";
+      return cab + '<div class="tarjeta tocable ' + clase + '" onclick="abrirDetalle(\'' + k + '\')">' +
+        '<div class="fila1"><span class="hora">' + esc((o.horamont && o.horamont !== "M") ? o.horamont : "Sin hora") + '</span>' + chipEstado(o) + '</div>' +
+        '<div class="nord">Orden ' + o.anyo + '/' + o.orden + (o.num_pedido ? ' · Pedido ' + esc(o.num_pedido) : '') + '</div>' +
+        '<div class="cliente">' + esc(o.nombre_cli) + '</div><div class="dir">' + esc(dir) + '</div>' +
+        (o.equipo.length > 1 && !verTodos ? '<div class="eq">Equipo: ' + esc(o.equipo.join(" + ")) + '</div>' : "") +
+        '<div class="ver">Ver detalle ›</div></div>';
+    }).join("");
+  }
+  if (detalleK) pintarDetalle();
+}
+
+/* ---------- Detalle de un montaje ---------- */
+async function abrirDetalle(k){
+  detalleK = k; document.getElementById("p_detalle").style.display = "block"; document.getElementById("p_detalle").scrollTop = 0;
+  pintarDetalle();
+  const o = buscar(k); if (!o) return;
+  await pedirUrls([...o.docs.map(d => d.storage_path), ...o.fotos.map(f => f.storage_path)]);
+  if (detalleK === k) pintarDetalle();
+}
+function cerrarDetalle(){ detalleK = null; cerrarPantalla("p_detalle"); }
+function tiraFotos(lista, cola_){
+  // lista: [{ruta, texto}] ya enviadas; cola_: fotos esperando cobertura
+  const mini = lista.map((f, i) => {
+    const u = urls[f.ruta];
+    const cont = !esImagen(f.ruta) ? '📄<br>PDF' : u ? '<img src="' + u + '" alt="">' : (navigator.onLine ? "…" : "Sin cobertura");
+    return '<div class="mini" onclick="abrirVisor(\'' + f.grupo + '\',' + i + ')"><div class="im">' + cont + '</div>' + (f.texto ? '<div class="pie_m">' + esc(f.texto) + '</div>' : "") + '</div>';
+  }).join("");
+  const pend = cola_.map(c => '<div class="mini"><div class="im">⏳<br>por enviar</div>' + (c.comentario ? '<div class="pie_m">' + esc(c.comentario) + '</div>' : "") + '</div>').join("");
+  return '<div class="tira">' + mini + pend + '</div>';
+}
+function pintarDetalle(){
+  const o = detalleK && buscar(detalleK); if (!o) return;
+  const { hecho, incid } = situacion(o);
+  const dir = [o.domicilio_cli, o.localidad_cli].filter(Boolean).join(", ");
+  const tel = (o.telefono_cli || "").replace(/[^\d+]/g, ""), tel2 = (o.telefono2_cli || "").replace(/[^\d+]/g, "");
+  const mapa = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(dir);
+  const arts = o.lineas.map(l => (l.cantidad ?? 1) + " × " + esc(l.descripcion)).join("<br>");
+  document.getElementById("det_titulo").textContent = "Orden " + o.anyo + "/" + o.orden;
+  const docs = o.docs.map(d => ({ ruta:d.storage_path, texto:d.nombre, grupo:"docs" }));
+  const fotos = o.fotos.map(f => ({ ruta:f.storage_path, texto:f.comentario, grupo:"fotos" }));
+  const fotosCola = enCola(o, "foto");
+  const k = detalleK;
+  document.getElementById("det_cuerpo").innerHTML =
+    '<div class="sec"><div class="fila1"><span class="hora">' + esc((o.horamont && o.horamont !== "M") ? o.horamont : "Sin hora") + '</span>' + chipEstado(o) + '</div>' +
+      '<div class="cliente">' + esc(o.nombre_cli) + '</div>' +
+      '<div class="dato"><b>Orden</b><span>' + o.anyo + '/' + o.orden + '</span></div>' +
+      (o.num_pedido ? '<div class="dato"><b>Pedido</b><span>' + esc(o.num_pedido) + '</span></div>' : "") +
+      '<div class="dato"><b>Día</b><span>' + esc(o.dia.split("-").reverse().join("/")) + '</span></div>' +
+      '<div class="dato"><b>Dirección</b><span>' + esc(dir) + '</span></div>' +
+      (o.telefono_cli ? '<div class="dato"><b>Teléfono</b><span>' + esc(o.telefono_cli) + '</span></div>' : "") +
+      (o.telefono2_cli ? '<div class="dato"><b>Teléfono 2</b><span>' + esc(o.telefono2_cli) + '</span></div>' : "") +
+      (o.equipo.length ? '<div class="dato"><b>Equipo</b><span>' + esc(o.equipo.join(" + ")) + '</span></div>' : "") +
       '<div class="botones">' +
         (tel ? '<a class="btn az" href="tel:' + tel + '">📞 Llamar</a>' : '<span class="btn pl">Sin teléfono</span>') +
         '<a class="btn az" href="' + mapa + '" target="_blank" rel="noopener">🧭 Cómo llegar</a>' +
-        '<button class="btn az" onclick="hacerFoto(\'' + k + '\')">📷 Foto' + (nFotos ? " (" + nFotos + ")" : "") + '</button>' +
-        '<button class="btn na" onclick="abrirIncidencia(\'' + k + '\')">⚠ Problema</button>' +
-        (hecho ? "" : '<button class="btn gr" onclick="abrirFirma(\'' + k + '\')"><span>✔ TERMINADO<br><small style="font-weight:600">(firma del cliente)</small></span></button>') +
-      '</div></div>';
-  }).join("");
+        (tel2 ? '<a class="btn az" href="tel:' + tel2 + '" style="grid-column:1/-1">📞 Llamar al 2.º teléfono</a>' : "") +
+      '</div></div>' +
+    '<div class="sec"><h3>Qué hay que montar</h3>' + (arts ? '<div class="arts" style="margin:0">' + arts + '</div>' : '<div style="color:var(--gris)">Sin artículos.</div>') +
+      (o.obs ? '<div class="obs">📝 ' + esc(o.obs) + '</div>' : "") + '</div>' +
+    (docs.length ? '<div class="sec"><h3>📄 Documentos de la oficina (' + docs.length + ')</h3>' + tiraFotos(docs, []) + '</div>' : "") +
+    '<div class="sec"><h3>📷 Mis fotos (' + (fotos.length + fotosCola.length) + ')</h3>' +
+      (fotos.length || fotosCola.length ? tiraFotos(fotos, fotosCola) : '<div style="color:var(--gris);margin-bottom:8px">Todavía no has enviado fotos.</div>') +
+      '<div class="botones"><button class="btn az" onclick="hacerFoto(\'' + k + '\',true)">📷 Cámara</button>' +
+      '<button class="btn az" onclick="hacerFoto(\'' + k + '\',false)">🖼 Fototeca</button></div></div>' +
+    '<div class="botones">' +
+      '<button class="btn na" onclick="abrirIncidencia(\'' + k + '\')">⚠ Problema</button>' +
+      (hecho ? "" : '<button class="btn gr" onclick="abrirFirma(\'' + k + '\')"><span>✔ TERMINADO<br><small style="font-weight:600">(firma del cliente)</small></span></button>') +
+    '</div>';
 }
-const buscar = k => paquete.ordenes.find(o => o.anyo + "/" + o.orden === k);
+
+/* ---------- Visor: pasar de una foto a otra con el dedo ---------- */
+let visor = { lista:[], i:0 };
+function abrirVisor(grupo, i){
+  const o = buscar(detalleK); if (!o) return;
+  visor.lista = grupo === "docs" ? o.docs.map(d => ({ ruta:d.storage_path, texto:d.nombre })) : o.fotos.map(f => ({ ruta:f.storage_path, texto:f.comentario }));
+  visor.i = i;
+  const it = visor.lista[i];
+  if (it && !esImagen(it.ruta)) { if (urls[it.ruta]) window.open(urls[it.ruta], "_blank"); else toast("Sin cobertura: no se puede abrir el documento"); return; }
+  document.getElementById("p_visor").style.display = "block"; pintarVisor();
+}
+function pintarVisor(){
+  const it = visor.lista[visor.i]; if (!it) return;
+  const u = urls[it.ruta];
+  document.getElementById("v_img").innerHTML = u ? '<img src="' + u + '" alt="">' : '<span style="color:#fff">Sin cobertura</span>';
+  document.getElementById("v_pie").innerHTML = (visor.i + 1) + " / " + visor.lista.length + (it.texto ? "<br>" + esc(it.texto) : "");
+}
+function visorMover(d){
+  // salta los PDF: solo se pasan imágenes
+  let j = visor.i;
+  do { j += d; } while (visor.lista[j] && !esImagen(visor.lista[j].ruta));
+  if (visor.lista[j]) { visor.i = j; pintarVisor(); }
+}
+function cerrarVisor(){ cerrarPantalla("p_visor"); }
+(function(){
+  let x0 = null; const v = document.getElementById("p_visor");
+  v.addEventListener("touchstart", e => { x0 = e.touches[0].clientX; }, { passive:true });
+  v.addEventListener("touchend", e => { if (x0 === null) return; const dx = e.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(dx) > 50) visorMover(dx < 0 ? 1 : -1); });
+})();
 
 /* ---------- Estado arriba (enviado / pendiente / sin cobertura) ---------- */
 function estadoBarra(){
@@ -266,9 +460,10 @@ function estadoBarra(){
   else { b.className = "ok"; b.textContent = "✔ Todo enviado"; }
 }
 
-/* ---------- Foto (comprimida para gastar pocos datos) ---------- */
-let ordenFoto = null;
-function hacerFoto(k){ ordenFoto = buscar(k); document.getElementById("cam").value = ""; document.getElementById("cam").click(); }
+/* ---------- Foto (comprimida para gastar pocos datos): cámara o fototeca, con descripción ---------- */
+let ordenFoto = null, fotosPend = [];
+const DESC_RAPIDAS = ["Mueble montado", "Antes de montar", "Pieza dañada", "Albarán", "Colchón"];
+function hacerFoto(k, camara){ ordenFoto = buscar(k); const e = document.getElementById(camara ? "cam" : "galeria"); e.value = ""; e.click(); }
 async function comprimir(file){
   try {
     const bmp = await createImageBitmap(file), max = 1600, esc_ = Math.min(1, max / Math.max(bmp.width, bmp.height));
@@ -277,15 +472,32 @@ async function comprimir(file){
     return await new Promise(r => c.toBlob(r, "image/jpeg", 0.8)) || file;
   } catch (_) { return file; }
 }
-document.getElementById("cam").addEventListener("change", async e => {
-  const f = e.target.files[0]; if (!f || !ordenFoto) return;
-  const blob = await comprimir(f), o = ordenFoto;
-  const rnd = Math.random().toString(36).slice(2, 8);
-  await colaAdd({ tipo:"foto", anyo:o.anyo, orden:o.orden, blob, path:o.anyo + "/" + o.orden + "/fotos/" + Date.now() + "-" + rnd + ".jpg", categoria:(o.estado === "incidencia" || enCola(o, "incidencia").length) ? "incidencia" : "entrega_ok", ts:Date.now() });
+const rutaFoto = o => o.anyo + "/" + o.orden + "/fotos/" + Date.now() + "-" + Math.random().toString(36).slice(2, 8) + ".jpg";
+async function alElegirFotos(e){
+  const fs = [...e.target.files]; if (!fs.length || !ordenFoto) return;
+  for (const f of fs) fotosPend.push({ blob:await comprimir(f), o:ordenFoto });
+  if (document.getElementById("p_foto").style.display !== "block") mostrarFotoPend();
+}
+["cam","galeria"].forEach(id => document.getElementById(id).addEventListener("change", alElegirFotos));
+function mostrarFotoPend(){
+  const f = fotosPend[0];
+  if (!f) { cerrarPantalla("p_foto"); return; }
+  if (f.url) URL.revokeObjectURL(f.url); f.url = URL.createObjectURL(f.blob);
+  document.getElementById("pf_img").src = f.url; document.getElementById("pf_desc").value = "";
+  document.getElementById("pf_resto").textContent = fotosPend.length > 1 ? "Quedan " + (fotosPend.length - 1) + " fotos más por describir" : "";
+  document.getElementById("pf_chips").innerHTML = DESC_RAPIDAS.map(t => '<button onclick="document.getElementById(\'pf_desc\').value=this.textContent">' + esc(t) + '</button>').join("");
+  document.getElementById("p_foto").style.display = "block";
+}
+async function guardarFotoPend(){
+  const f = fotosPend.shift(); if (!f) return;
+  const o = f.o, comentario = document.getElementById("pf_desc").value.trim() || null;
+  await colaAdd({ tipo:"foto", anyo:o.anyo, orden:o.orden, blob:f.blob, path:rutaFoto(o), comentario, categoria:(o.estado === "incidencia" || enCola(o, "incidencia").length) ? "incidencia" : "entrega_ok", ts:Date.now() });
   cola = await colaAll(); pintar(); estadoBarra();
-  toastOtraFoto(navigator.onLine ? "✔ Foto guardada" : "✔ Foto guardada en el móvil. Se enviará cuando haya cobertura", o.anyo + "/" + o.orden);
+  if (fotosPend.length) mostrarFotoPend();
+  else { cerrarPantalla("p_foto"); toast(navigator.onLine ? "✔ Foto guardada" : "✔ Foto guardada en el móvil. Se enviará cuando haya cobertura"); }
   enviarCola(false);
-});
+}
+function descartarFoto(){ fotosPend.shift(); mostrarFotoPend(); }
 
 /* ---------- Firma / terminar ---------- */
 let ordenFirma = null, dibujando = false, pintado = false, ult = null;
@@ -320,20 +532,30 @@ async function guardarFirma(){
   enviarCola(false);
 }
 
-/* ---------- Problema / incidencia ---------- */
+/* ---------- Problema / incidencia (con fotos) ---------- */
 const MOTIVOS = ["El cliente no está en casa", "Faltan piezas o bultos", "Hay una pieza rota o dañada", "No se puede montar (no cabe, falta algo…)", "El cliente rechaza el mueble", "Otro problema"];
-let ordenInc = null, motivoSel = null;
+let ordenInc = null, motivoSel = null, incFotos = [];
 function abrirIncidencia(k){
-  ordenInc = buscar(k); motivoSel = null; document.getElementById("i_texto").value = "";
+  ordenInc = buscar(k); motivoSel = null; incFotos = []; document.getElementById("i_texto").value = "";
   document.getElementById("i_cliente").textContent = ordenInc.nombre_cli + " · " + ordenInc.domicilio_cli;
   document.getElementById("i_opciones").innerHTML = MOTIVOS.map((m, i) => '<button class="btn" id="m' + i + '" onclick="elegirMotivo(' + i + ')">' + esc(m) + '</button>').join("");
-  document.getElementById("p_incid").style.display = "block";
+  pintarFotosInc(); document.getElementById("p_incid").style.display = "block";
 }
 function elegirMotivo(i){ motivoSel = MOTIVOS[i]; MOTIVOS.forEach((_, j) => document.getElementById("m" + j).classList.toggle("sel", j === i)); }
+function pintarFotosInc(){
+  document.getElementById("i_fotos").innerHTML = incFotos.map((f, i) => '<div class="mini"><div class="im"><img src="' + f.url + '" alt=""></div><button class="btn pl" style="min-height:36px;width:100%;margin-top:4px;font-size:.8rem" onclick="quitarFotoInc(' + i + ')">Quitar</button></div>').join("");
+}
+function quitarFotoInc(i){ incFotos.splice(i, 1); pintarFotosInc(); }
+async function alElegirFotosInc(e){
+  for (const f of [...e.target.files]) { const blob = await comprimir(f); incFotos.push({ blob, url:URL.createObjectURL(blob) }); }
+  pintarFotosInc();
+}
+["cam_inc","gal_inc"].forEach(id => document.getElementById(id).addEventListener("change", alElegirFotosInc));
 async function guardarIncidencia(){
   if (!motivoSel) { toast("Elige qué ha pasado"); return; }
   const o = ordenInc;
-  await colaAdd({ tipo:"incidencia", anyo:o.anyo, orden:o.orden, motivo:motivoSel, texto:document.getElementById("i_texto").value.trim() || null, ts:Date.now() });
+  const fotos = incFotos.map(f => ({ blob:f.blob, path:rutaFoto(o) }));
+  await colaAdd({ tipo:"incidencia", anyo:o.anyo, orden:o.orden, motivo:motivoSel, texto:document.getElementById("i_texto").value.trim() || null, fotos, ts:Date.now() });
   cola = await colaAll(); cerrarPantalla("p_incid"); pintar(); estadoBarra();
   toast(navigator.onLine ? "✔ Aviso enviado a la oficina" : "✔ Aviso guardado. Se enviará cuando haya cobertura", 5000);
   enviarCola(false);
@@ -349,20 +571,26 @@ async function enviarUno(it){
       it.subido = true; await colaPut(it);
     }
     if (it.tipo === "foto") {
-      const { error } = await client.from("fotos_orden").insert({ anyo:it.anyo, orden:it.orden, storage_path:it.path, categoria:it.categoria, subida_por:uid });
+      const { error } = await client.from("fotos_orden").insert({ anyo:it.anyo, orden:it.orden, storage_path:it.path, categoria:it.categoria, comentario:it.comentario || null, subida_por:uid });
       if (error) throw error;
     } else {
       const { error } = await client.from("entregas").insert({ anyo:it.anyo, orden:it.orden, firmante_nombre:it.nombre, firma_storage_path:it.path, observaciones:it.obs, montador_id:uid });
       if (error) throw error;
     }
   } else if (it.tipo === "incidencia") {
-    if (!it.registrada) {
-      const { error } = await client.from("incidencias").insert({ anyo:it.anyo, orden:it.orden, tipo:it.motivo, descripcion:it.texto, creado_por:uid });
+    if (!it.incidencia_id) {   // la base de datos registra el aviso y decide el estado de la orden (Incidencia / Completado con incidencias)
+      const { data, error } = await client.rpc("registrar_incidencia_montador", { p_anyo:it.anyo, p_orden:it.orden, p_tipo:it.motivo, p_descripcion:it.texto });
       if (error) throw error;
-      it.registrada = true; await colaPut(it);
+      it.incidencia_id = data; await colaPut(it);
     }
-    const { error: e2 } = await client.from("ordenes").update({ estado:"incidencia" }).eq("anyo", it.anyo).eq("orden", it.orden);
-    if (e2) throw e2;
+    for (const f of (it.fotos || [])) {
+      if (f.hecha) continue;
+      const { error } = await client.storage.from("ordenes-adjuntos").upload(f.path, f.blob, { contentType:"image/jpeg" });
+      if (error && !/already exists|duplicate|409/i.test(String(error.message) + String(error.statusCode))) throw error;
+      const { error: e2 } = await client.from("fotos_orden").insert({ anyo:it.anyo, orden:it.orden, storage_path:f.path, categoria:"incidencia", incidencia_id:it.incidencia_id, subida_por:uid });
+      if (e2) throw e2;
+      f.hecha = true; await colaPut(it);
+    }
   }
 }
 async function enviarCola(manual){
