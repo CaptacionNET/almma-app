@@ -319,7 +319,7 @@ async function cargarRecibidos(){
   const desde = new Date(Date.now() - dias * 864e5).toISOString().slice(0,10);
   const { data, error } = await client.rpc("mis_albaranes_recibidos", { p_desde: desde });
   if (error) { cont.innerHTML = '<span class="muted">No se pudo cargar: ' + esc(error.message) + '</span>'; return; }
-  cont.innerHTML = pintarRecibidos((data || []).filter(a => !tiendaSel || a.tienda_id === tiendaSel));
+  cont.innerHTML = pintarRecibidos((data || []).filter(a => !tiendaSel || !a.tienda_id || a.tienda_id === tiendaSel));
 }
 
 /* Teléfonos de la tienda que ve el montador en «Mi día» (migracion/74_la_tienda_mantiene_sus_telefonos.sql) */
