@@ -46,6 +46,12 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 
 #overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.15);z-index:30;}
 #panel_detalle{display:none;position:fixed;top:0;right:0;bottom:0;width:min(1000px,100vw);background:var(--card);border-left:1px solid var(--border);box-shadow:-10px 0 30px -20px rgba(0,0,0,.3);z-index:31;flex-direction:column;}
+/* Visor de tarifa: ocupa el hueco a la izquierda de la orden (solo si cabe; en pantallas estrechas se ve encima) */
+#visor_tarifa{display:none;position:fixed;top:0;left:0;bottom:0;right:min(1000px,100vw);background:var(--card);z-index:32;flex-direction:column;border-right:1px solid var(--border);}
+#visor_tarifa .vt-head{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);}
+#visor_tarifa .spacer{flex:1;}
+#visor_tarifa iframe{flex:1;border:0;width:100%;}
+@media (max-width:1100px){#visor_tarifa{right:0;}}
 #panel_detalle .panel-head{padding:18px 24px 0;}
 #panel_detalle .panel-head h3{margin:0 0 4px;}
 #panel_detalle .tabs{display:flex;gap:2px;padding:0 24px;border-bottom:1px solid var(--border);flex-wrap:wrap;}
@@ -360,6 +366,10 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 </div>
 
 <div id="overlay" onclick="cerrarPanel()"></div>
+<div id="visor_tarifa">
+  <div class="vt-head"><b id="vt_titulo">Tarifa</b><span class="spacer"></span><button class="secondary btn-mini" onclick="cerrarTarifa()">Cerrar ✕</button></div>
+  <iframe id="vt_frame" title="Tarifa"></iframe>
+</div>
 <div id="panel_detalle">
   <div class="panel-head">
     <button class="secondary" onclick="cerrarPanel()" style="float:right;">✕</button>
@@ -494,6 +504,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
       <div class="campo lf-4">
         <label>Tipo de línea</label>
         <select id="ln_tipo" onchange="cambioTipoLinea()"></select>
+        <button type="button" id="btn_ver_tarifa" class="secondary btn-mini" style="display:none;margin-top:6px;font-size:13px;padding:6px 12px;" onclick="verTarifa()">📄 Ver tarifa</button>
       </div>
       <div class="campo lf-8 buscador-articulo">
         <label id="label_articulo">Artículo</label>
@@ -1068,6 +1079,8 @@ function codigoLegadoTienda(tiendaId) {
 async function cambioTipoLinea() {
   const tipo = document.getElementById("ln_tipo").value;
   const esServicio = tipo === "4";
+  document.getElementById("btn_ver_tarifa").style.display = esServicio ? "inline-block" : "none";
+  if (!esServicio) cerrarTarifa();
   document.getElementById("campo_fabricante").style.display = esServicio ? "none" : "";
   document.getElementById("label_articulo").textContent = esServicio ? "Código de servicio de esta tienda" : etiquetaArticulo();
   const desc = document.getElementById("ln_descripcion");
@@ -1291,7 +1304,27 @@ async function abrirPanel(orden) {
   document.getElementById("overlay").style.display = "block";
 }
 
+/* Ver tarifa de la tienda de la orden (PDF subido en Administración → Tarifas) */
+async function verTarifa() {
+  const tiendaId = document.getElementById("ch_tienda").value;
+  if (!tiendaId) { alert("Esta orden no tiene tienda asignada."); return; }
+  const { data: asig, error } = await client.from("tarifas_tiendas").select("tarifa_id").eq("tienda_id", tiendaId).maybeSingle();
+  if (error) { alert("No se pudo consultar la tarifa (¿falta ejecutar el SQL 88?)."); return; }
+  if (!asig) { alert("Esta tienda no tiene ninguna tarifa asignada. Se asigna en Administración → Tarifas."); return; }
+  const { data: t } = await client.from("tarifas").select("nombre, archivo").eq("id", asig.tarifa_id).single();
+  const { data: f, error: e2 } = await client.storage.from("tarifas").createSignedUrl(t.archivo, 3600);
+  if (e2) { alert(e2.message); return; }
+  document.getElementById("vt_titulo").textContent = "Tarifa: " + t.nombre;
+  document.getElementById("vt_frame").src = f.signedUrl;
+  document.getElementById("visor_tarifa").style.display = "flex";
+}
+function cerrarTarifa() {
+  document.getElementById("visor_tarifa").style.display = "none";
+  document.getElementById("vt_frame").removeAttribute("src");
+}
+
 function cerrarPanel() {
+  cerrarTarifa();
   document.getElementById("panel_detalle").style.display = "none";
   document.getElementById("overlay").style.display = "none";
   pedidoActivo = null;
@@ -1734,6 +1767,7 @@ async function editarLinea(linea) {
   lineaEditando = linea;
   document.getElementById("ln_tipo").value = String(l.tipolinea);
   document.getElementById("campo_fabricante").style.display = l.tipolinea === 4 ? "none" : "";
+  document.getElementById("btn_ver_tarifa").style.display = l.tipolinea === 4 ? "inline-block" : "none";
   document.getElementById("label_articulo").textContent = l.tipolinea === 4 ? "Código de servicio de esta tienda" : etiquetaArticulo();
   if (l.articulo) {
     articuloSeleccionado = { articulo: l.articulo, descripcion: l.descripcion || "" };
@@ -1767,6 +1801,7 @@ function mostrarNuevaLinea(mostrar) {
   }
   if (!mostrar && lineaEditando !== null) { lineaEditando = null; limpiarFormularioLinea(); }
   document.getElementById("caja_nueva_linea").style.display = mostrar ? "block" : "none";
+  if (!mostrar) cerrarTarifa();
   document.getElementById("btn_nueva_linea").style.display = mostrar ? "none" : "inline-block";
   if (mostrar) document.getElementById("ln_articulo_buscar").focus();
 }

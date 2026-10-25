@@ -66,6 +66,7 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
   <button class="tab activa" data-t="resumen">Resumen</button>
   <button class="tab" data-t="usuarios">Usuarios y accesos</button>
   <button class="tab" data-t="control">Control del sistema</button>
+  <button class="tab" data-t="tarifas">Tarifas</button>
 </div>
 
 <div class="panel activa" id="p_resumen">
@@ -116,8 +117,21 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
   (necesita un repositorio privado). Mientras tanto, la copia del servidor antiguo en tu Mac es la única de los datos históricos.</div>
 </div>
 
+<div class="panel" id="p_tarifas">
+  <p class="muted" style="margin-top:0">Cada tarifa es un PDF. Una misma tarifa puede aplicar a muchas tiendas; cada tienda tiene una sola. En la orden, el botón «Ver tarifa» (al crear una línea de importes) abre la de su tienda.</p>
+  <div class="caja" style="margin-bottom:14px">
+    <div class="barra" style="margin-bottom:0">
+      <input id="tf_nombre" placeholder="Nombre de la tarifa (p. ej. Tarifa 1)" style="width:260px">
+      <input id="tf_archivo" type="file" accept="application/pdf">
+      <button onclick="subirTarifa()">Subir tarifa</button>
+    </div>
+  </div>
+  <div id="tf_tabla"><span class="muted">Cargando...</span></div>
+  <div id="tf_editor" class="caja" style="display:none;margin-top:14px"></div>
+</div>
+
 <script>
-const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
+const client =supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
 let miMontador = null, montadores = [], semanaIni = lunes(new Date()), ordenesSemana = [];
 
 function lunes(d){ d = new Date(d.getFullYear(), d.getMonth(), d.getDate()); const w = (d.getDay()+6)%7; d.setDate(d.getDate()-w); return d; }
@@ -141,8 +155,106 @@ async function iniciar(){
   const r = await client.from("montadores").select("id, nombre, activo, especial, staff_user_id").eq("activo", true).order("especial").order("nombre");
   montadores = r.data || [];
   miMontador = (montadores.find(m => m.staff_user_id === user.id) || {}).id || null;
-  cargarResumen(); cargarUsuarios(); cargarControl();
+  cargarResumen(); cargarUsuarios(); cargarControl(); cargarTarifas();
 }
+
+/* ---------- Tarifas (PDF de consulta, asignadas a tiendas) ---------- */
+let tfLista = [], tfAsign = [], tfTiendas = null, tfAbierta = null;
+async function cargarTarifas(){
+  const [a, b] = await Promise.all([
+    client.from("tarifas").select("id, nombre, archivo, creado_at").order("nombre"),
+    client.from("tarifas_tiendas").select("tienda_id, tarifa_id")]);
+  const el = document.getElementById("tf_tabla");
+  if (a.error) { el.innerHTML = '<span class="muted">Falta ejecutar el SQL 88 en Supabase.</span>'; return; }
+  tfLista = a.data || []; tfAsign = b.data || [];
+  if (!tfLista.length) { el.innerHTML = '<span class="muted">Todavía no hay tarifas. Sube la primera arriba.</span>'; return; }
+  el.innerHTML = '<table><tr><th>Tarifa</th><th>Tiendas</th><th></th></tr>' + tfLista.map(t =>
+    '<tr><td><b>'+esc(t.nombre)+'</b></td><td>'+tfAsign.filter(x => x.tarifa_id === t.id).length+'</td><td>'
+    + '<button class="secondary" onclick="verTarifaAdmin(\''+t.id+'\')">Ver PDF</button> '
+    + '<button class="secondary" onclick="editarTarifa(\''+t.id+'\')">Tiendas</button> '
+    + '<button class="secondary" onclick="reemplazarTarifa(\''+t.id+'\')">Cambiar PDF</button> '
+    + '<button class="secondary" onclick="borrarTarifa(\''+t.id+'\')">Borrar</button></td></tr>').join("") + '</table>';
+}
+async function subirArchivoTarifa(file){
+  const ruta = Date.now() + "_" + file.name.replace(/[^\w.\-]+/g, "_");
+  const r = await client.storage.from("tarifas").upload(ruta, file, { contentType: "application/pdf" });
+  if (r.error) { alert("No se pudo subir: " + r.error.message); return null; }
+  return ruta;
+}
+async function subirTarifa(){
+  const nombre = document.getElementById("tf_nombre").value.trim(), f = document.getElementById("tf_archivo").files[0];
+  if (!nombre || !f) { alert("Pon un nombre y elige el PDF."); return; }
+  const ruta = await subirArchivoTarifa(f); if (!ruta) return;
+  const r = await client.from("tarifas").insert({ nombre, archivo: ruta });
+  if (r.error) { alert(r.error.message); return; }
+  document.getElementById("tf_nombre").value = ""; document.getElementById("tf_archivo").value = "";
+  cargarTarifas();
+}
+async function verTarifaAdmin(id){
+  const t = tfLista.find(x => x.id === id);
+  const r = await client.storage.from("tarifas").createSignedUrl(t.archivo, 300);
+  if (r.error) { alert(r.error.message); return; }
+  window.open(r.data.signedUrl, "_blank");
+}
+function reemplazarTarifa(id){
+  const i = document.createElement("input"); i.type = "file"; i.accept = "application/pdf";
+  i.onchange = async () => {
+    const t = tfLista.find(x => x.id === id), ruta = await subirArchivoTarifa(i.files[0]); if (!ruta) return;
+    const r = await client.from("tarifas").update({ archivo: ruta }).eq("id", id);
+    if (r.error) { alert(r.error.message); return; }
+    await client.storage.from("tarifas").remove([t.archivo]); cargarTarifas();
+  };
+  i.click();
+}
+async function borrarTarifa(id){
+  const t = tfLista.find(x => x.id === id), n = tfAsign.filter(x => x.tarifa_id === id).length;
+  if (!confirm('¿Borrar la tarifa «'+t.nombre+'»?' + (n ? ' Sus '+n+' tiendas se quedarán sin tarifa.' : ''))) return;
+  const r = await client.from("tarifas").delete().eq("id", id);
+  if (r.error) { alert(r.error.message); return; }
+  await client.storage.from("tarifas").remove([t.archivo]);
+  document.getElementById("tf_editor").style.display = "none"; cargarTarifas();
+}
+async function editarTarifa(id){
+  tfAbierta = id;
+  if (!tfTiendas) { const { data } = await client.from("tiendas").select("id, nombre").order("nombre"); tfTiendas = data || []; }
+  pintarEditorTarifa();
+}
+function pintarEditorTarifa(){
+  const t = tfLista.find(x => x.id === tfAbierta), ed = document.getElementById("tf_editor");
+  const mias = tfAsign.filter(x => x.tarifa_id === tfAbierta).map(x => tfTiendas.find(s => s.id === x.tienda_id)).filter(Boolean);
+  ed.style.display = "block";
+  ed.innerHTML = '<h3 style="margin-top:0">Tiendas de «'+esc(t.nombre)+'» ('+mias.length+')</h3>'
+    + '<div id="tf_chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">' + (mias.map(s =>
+        '<span style="background:#dbeafe;border:1px solid #93c5fd;border-radius:999px;padding:3px 10px;font-size:13px">'+esc(s.nombre)
+        +' <a href="#" onclick="quitarTiendaTarifa(\''+s.id+'\');return false" style="color:#dc2626;text-decoration:none;font-weight:700">×</a></span>').join("") || '<span class="muted">Ninguna todavía.</span>') + '</div>'
+    + '<input id="tf_buscar" placeholder="Escribe para buscar una tienda y añadirla..." oninput="buscarTiendaTarifa()" style="width:340px" autocomplete="off">'
+    + '<div id="tf_res" style="max-width:480px;max-height:260px;overflow:auto;background:#fff;border:1px solid #93c5fd;border-radius:6px;margin-top:4px;display:none"></div>'
+    + '<div style="margin-top:12px"><button class="secondary" onclick="document.getElementById(\'tf_editor\').style.display=\'none\'">Cerrar</button></div>';
+}
+function buscarTiendaTarifa(){
+  const q = norm(document.getElementById("tf_buscar").value).split(" ").filter(Boolean), res = document.getElementById("tf_res");
+  if (!q.length) { res.style.display = "none"; return; }
+  const l = tfTiendas.filter(s => q.every(p => norm(s.nombre).includes(p))).slice(0, 40);
+  res.style.display = "block";
+  res.innerHTML = l.map(s => {
+    const a = tfAsign.find(x => x.tienda_id === s.id), otra = a && a.tarifa_id !== tfAbierta ? tfLista.find(x => x.id === a.tarifa_id) : null;
+    return '<div class="opt" data-id="'+s.id+'" style="padding:8px 10px;cursor:pointer;border-bottom:1px solid #eaf2ff">'+esc(s.nombre)
+      + (a && !otra ? ' <span class="muted">· ya está aquí</span>' : '') + (otra ? ' <span class="muted">· tiene «'+esc(otra.nombre)+'» (se pasará a esta)</span>' : '') + '</div>';
+  }).join("") || '<div class="muted" style="padding:8px 10px">Ninguna tienda coincide.</div>';
+  res.querySelectorAll(".opt").forEach(d => d.onclick = () => ponerTiendaTarifa(d.dataset.id));
+}
+async function ponerTiendaTarifa(tid){
+  const r = await client.from("tarifas_tiendas").upsert({ tienda_id: tid, tarifa_id: tfAbierta }, { onConflict: "tienda_id" });
+  if (r.error) { alert(r.error.message); return; }
+  const a = tfAsign.find(x => x.tienda_id === tid); if (a) a.tarifa_id = tfAbierta; else tfAsign.push({ tienda_id: tid, tarifa_id: tfAbierta });
+  pintarEditorTarifa(); document.getElementById("tf_buscar").focus(); cargarTarifasContador();
+}
+async function quitarTiendaTarifa(tid){
+  const r = await client.from("tarifas_tiendas").delete().eq("tienda_id", tid);
+  if (r.error) { alert(r.error.message); return; }
+  tfAsign = tfAsign.filter(x => x.tienda_id !== tid); pintarEditorTarifa(); cargarTarifasContador();
+}
+function cargarTarifasContador(){ cargarTarifas(); }
 
 /* ---------- Detalle al pulsar una cifra ---------- */
 const ANYOS = () => new Date().getFullYear() - 3;
