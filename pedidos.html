@@ -525,6 +525,15 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 
     <div style="margin-top:16px;">
       <button class="secondary" onclick="traspasarAIncidencia()">Traspasar a Incidencias</button>
+      <button class="secondary" onclick="abrirAlbaranSalida()">Generar albarán de salida</button>
+    </div>
+    <div id="caja_albaran_salida" style="display:none;margin-top:10px;padding:14px;border:1px solid #93c5fd;border-radius:10px;background:#f5f9ff;">
+      <h4 style="margin-top:0;">Albarán de salida: marca las líneas que salen</h4>
+      <div id="lista_albaran_salida"></div>
+      <div style="margin-top:10px;">
+        <button class="btn-mini" style="font-size:14px;padding:8px 16px;" onclick="generarAlbaranSalida()">Generar albarán (PDF)</button>
+        <button class="secondary btn-mini" style="font-size:14px;padding:8px 16px;" onclick="document.getElementById('caja_albaran_salida').style.display='none'">Cancelar</button>
+      </div>
     </div>
   </div>
 
@@ -1536,6 +1545,7 @@ async function cargarLineas() {
   } catch (_) { /* si no existe la tabla o no hay permiso, simplemente no hay enlace */ }
   window._albPorLinea = albPorLinea;
 
+  window._lineasOrden = lineas || [];
   const tbody = document.getElementById("tabla_lineas");
   tbody.innerHTML = "<tr><th></th><th>Artículo</th><th>Cant.</th><th>Importe</th><th>%</th><th>A cobrar</th><th>Ubicación</th><th>Bultos</th><th>Peso kg</th><th>Albarán prov.</th><th>Recibido</th><th></th></tr>" +
     (lineas || []).map(l => {
@@ -1566,6 +1576,22 @@ async function cargarLineas() {
   document.getElementById("ch_bultos").textContent = totalBultos;
   const totalPeso = (lineas || []).reduce((acc, l) => acc + (Number(l.peso_kg) || 0), 0);
   document.getElementById("ch_peso").textContent = Math.round(totalPeso * 100) / 100;
+}
+
+function abrirAlbaranSalida() {
+  const ls = (window._lineasOrden || []).filter(l => l.tipolinea !== 4);   // las líneas de importes (servicios) no son mercancía que salga
+  if (!ls.length) { alert("Esta orden no tiene líneas de mercancía."); return; }
+  document.getElementById("lista_albaran_salida").innerHTML = ls.map(l => {
+    const txt = (l.descripcion || l.articulo || "").replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    return `<label style="display:flex;gap:8px;align-items:center;padding:4px 0;"><input type="checkbox" class="chk-alb-salida" value="${l.linea}" style="width:auto;"> ${txt} <span class="meta">· Cant. ${l.cantidad ?? ""}${l.recibido_at ? " · recibida" : " · sin recibir"}</span></label>`;
+  }).join("");
+  document.getElementById("caja_albaran_salida").style.display = "block";
+}
+
+function generarAlbaranSalida() {
+  const sel = [...document.querySelectorAll(".chk-alb-salida:checked")].map(c => c.value);
+  if (!sel.length) { alert("Marca al menos una línea."); return; }
+  window.open(`albaran_salida.html?anyo=${pedidoActivo.anyo}&orden=${pedidoActivo.orden}&lineas=${sel.join(",")}`, "_blank");
 }
 
 function textoQuienAlbaran(v) {

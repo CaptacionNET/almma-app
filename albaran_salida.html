@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - Albarán de salida</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--text:#1f2430;--muted:#6b7280;--line:#cfd6e4;}
+*{box-sizing:border-box;}
+body{margin:0;background:#e8ebf2;color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:13px;}
+#barra{position:sticky;top:0;z-index:5;background:#1f2430;color:#fff;padding:10px 20px;display:flex;gap:12px;align-items:center;}
+#barra button{background:#2563eb;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:14px;cursor:pointer;}
+#barra button.sec{background:#fff;color:#1f2430;}
+.hoja{width:210mm;min-height:297mm;margin:16px auto;background:#fff;padding:16mm 16mm 14mm;box-shadow:0 2px 14px rgba(0,0,0,.18);display:flex;flex-direction:column;}
+.cab{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;}
+.tienda{line-height:1.5;}
+.tienda strong{font-size:16px;}
+.titulo{text-align:right;}
+.titulo .tipo{font-size:22px;font-weight:800;letter-spacing:.5px;}
+.titulo .num{font-size:14px;font-weight:700;margin-top:2px;}
+.caja{margin-top:14px;border:1px solid var(--line);border-radius:6px;padding:10px 14px;line-height:1.5;}
+.caja .et{font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.6px;}
+.datos{display:flex;gap:30px;margin-top:12px;color:var(--muted);flex-wrap:wrap;}
+.datos b{color:var(--text);}
+table{width:100%;border-collapse:collapse;margin-top:16px;}
+thead{display:table-header-group;}
+tr{break-inside:avoid;page-break-inside:avoid;}
+th{background:#f1f4fa;text-align:left;padding:7px 8px;border-bottom:2px solid var(--line);font-size:12px;}
+td{padding:7px 8px;border-bottom:1px solid #e6eaf2;vertical-align:top;}
+td.num,th.num{text-align:right;white-space:nowrap;}
+.obs{margin-top:14px;padding:8px 12px;border:1px solid var(--line);border-radius:6px;}
+.firmas{margin-top:auto;padding-top:30px;display:flex;gap:20px;break-inside:avoid;}
+.firma{flex:1;border:1px solid var(--text);border-radius:4px;height:38mm;padding:6px 10px;font-size:12px;}
+.firma .sub{color:var(--muted);font-size:11px;margin-top:2px;}
+.nota{margin-top:10px;font-size:11px;color:var(--muted);}
+@page{size:A4;margin:0;}
+@media print{
+  body{background:#fff;}
+  #barra{display:none;}
+  .hoja{margin:0;box-shadow:none;width:auto;min-height:0;height:277mm;}
+}
+</style>
+</head>
+<body>
+<div id="barra"><button onclick="window.print()">Imprimir / Guardar PDF</button><button class="sec" onclick="window.close()">Cerrar</button><span id="estado">Cargando…</span></div>
+<div id="hojas"></div>
+<script>
+const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
+const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+const fechaES = (v) => v ? String(v).slice(8, 10) + "/" + String(v).slice(5, 7) + "/" + String(v).slice(0, 4) : "";
+const estado = (t) => { document.getElementById("estado").textContent = t; };
+
+async function iniciar() {
+  const { data: { user } } = await client.auth.getUser();
+  if (!user) { location.href = "login.html?volver=" + encodeURIComponent(location.pathname.split("/").pop() + location.search); return; }
+  const p = new URLSearchParams(location.search);
+  const anyo = Number(p.get("anyo")), orden = Number(p.get("orden"));
+  const lineasSel = (p.get("lineas") || "").split(",").map(Number).filter(n => !isNaN(n) && n > 0);
+  if (!anyo || !orden || !lineasSel.length) { estado("Faltan datos: elige la orden y las líneas desde la pantalla de pedidos."); return; }
+
+  const [{ data: o, error: e1 }, { data: lins, error: e2 }] = await Promise.all([
+    client.from("ordenes").select("*").eq("anyo", anyo).eq("orden", orden).maybeSingle(),
+    client.from("linorden").select("linea, tipolinea, articulo, descripcion, cantidad, bultos, peso_kg, ubicacion")
+      .eq("anyo", anyo).eq("orden", orden).in("linea", lineasSel).order("linea"),
+  ]);
+  if (e1 || e2 || !o) { estado("Error: " + ((e1 || e2) ? (e1 || e2).message : "no se encuentra la orden")); return; }
+  const { data: t } = o.tienda_id ? await client.from("tiendas").select("*").eq("id", o.tienda_id).maybeSingle() : { data: null };
+  document.getElementById("hojas").innerHTML = hoja(o, t || {}, lins || []);
+  const ref = `${anyo}/${orden}`;
+  document.title = "Albarán de salida " + ref;
+  estado("Albarán de salida de la orden " + ref);
+}
+
+function hoja(o, t, lins) {
+  const hoy = new Date().toISOString().slice(0, 10);
+  const totBultos = lins.reduce((a, l) => a + (Number(l.bultos) || 0), 0);
+  const totPeso = lins.reduce((a, l) => a + (Number(l.peso_kg) || 0), 0);
+  const filas = lins.map(l => `<tr>
+      <td>${esc(l.descripcion || l.articulo || "")}${l.articulo && l.descripcion ? `<div style="color:var(--muted);font-size:11px;">Ref. ${esc(l.articulo)}</div>` : ""}</td>
+      <td class="num">${l.cantidad ?? ""}</td>
+      <td class="num">${l.bultos ?? ""}</td>
+      <td class="num">${l.peso_kg ?? ""}</td>
+      <td>${esc(l.ubicacion || "")}</td></tr>`).join("");
+  const loc = [t.cp, t.localidad].filter(Boolean).map(esc).join(" ") + (t.provincia ? " (" + esc(t.provincia) + ")" : "");
+  return `<div class="hoja">
+    <div class="cab">
+      <div class="tienda"><strong>${esc(t.nombre_comercial || t.nombre || "")}</strong>
+        ${t.nombre_comercial && t.nombre && t.nombre !== t.nombre_comercial ? `<br>${esc(t.nombre)}` : ""}
+        ${t.cif ? `<br>CIF: ${esc(t.cif)}` : ""}${t.direccion ? `<br>${esc(t.direccion)}` : ""}${loc ? `<br>${loc}` : ""}
+        ${t.telefono ? `<br>Tel.: ${esc(t.telefono)}` : ""}${t.email ? `<br>${esc(t.email)}` : ""}</div>
+      <div class="titulo"><div class="tipo">ALBARÁN DE SALIDA</div>
+        <div class="num">Orden ${o.anyo}/${o.orden}</div>
+        <div style="color:var(--muted);margin-top:2px;">Fecha: ${fechaES(hoy)}</div></div>
+    </div>
+    <div class="caja"><div class="et">Cliente</div><strong>${esc(o.nombre_cli || "")}</strong>
+      ${o.dni_cli ? `<br>DNI: ${esc(o.dni_cli)}` : ""}${o.domicilio_cli ? `<br>${esc(o.domicilio_cli)}` : ""}${o.localidad_cli ? `<br>${esc(o.localidad_cli)}` : ""}
+      ${o.telefono_cli || o.telefono2_cli ? `<br>Tel.: ${[o.telefono_cli, o.telefono2_cli].filter(Boolean).map(esc).join(" / ")}` : ""}</div>
+    <div class="datos">
+      <span>Orden: <b>${o.anyo}/${o.orden}</b></span>
+      ${o.num_pedido ? `<span>Referencia de pedido: <b>${esc(o.num_pedido)}</b></span>` : ""}
+      ${o.fecha_recepcion ? `<span>Recepción: <b>${fechaES(o.fecha_recepcion)}</b></span>` : ""}
+      ${o.fecha_montaje ? `<span>Montaje: <b>${fechaES(o.fecha_montaje)}</b></span>` : ""}
+    </div>
+    <table>
+      <thead><tr><th>Artículo</th><th class="num">Cant.</th><th class="num">Bultos</th><th class="num">Peso kg</th><th>Ubicación</th></tr></thead>
+      <tbody>${filas}</tbody>
+    </table>
+    <div style="margin-top:10px;text-align:right;">Total bultos: <b>${totBultos}</b> &nbsp;·&nbsp; Peso total: <b>${Math.round(totPeso * 100) / 100} kg</b></div>
+    ${o.obs_albaran ? `<div class="obs"><b>Observaciones:</b> ${esc(o.obs_albaran)}</div>` : ""}
+    <div class="firmas">
+      <div class="firma">Firma y DNI de quien recoge / recibe la mercancía<div class="sub">Nombre:</div></div>
+      <div class="firma">Firma de ${esc(t.nombre_comercial || t.nombre || "la tienda")}<div class="sub">Fecha:</div></div>
+    </div>
+    <div class="nota">Con su firma, el firmante confirma haber recibido la mercancía relacionada en buen estado, salvo anotación en contrario.</div>
+  </div>`;
+}
+iniciar();
+</script>
+</body>
+</html>
