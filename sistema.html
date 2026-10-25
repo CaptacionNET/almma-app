@@ -325,7 +325,7 @@ function cambiarCatalogo(cat) {
   document.getElementById("buscador").style.display = esArticulos ? "none" : "";
   document.getElementById("filtros_articulos").style.display = esArticulos ? "flex" : "none";
   if (esArticulos) prepararFiltrosArticulos();
-  document.getElementById("lbl_antiguos").style.display = (cat === "fabricantes" || cat === "dependientes") ? "inline-flex" : "none";
+  document.getElementById("lbl_antiguos").style.display = (cat === "fabricantes" || cat === "dependientes" || cat === "tiendas") ? "inline-flex" : "none";
   document.getElementById("chk_antiguos").checked = false;
   cargarCatalogo();
 }
@@ -354,12 +354,12 @@ async function cargarCatalogo() {
 
   // fabricantes y vendedores: por defecto solo los usados en los últimos 3 años (migracion/81)
   ocultosAntiguos = 0;
-  if ((catalogoActivo === "fabricantes" || catalogoActivo === "dependientes") && !document.getElementById("chk_antiguos").checked) {
-    const rpc = catalogoActivo === "fabricantes" ? "fabricantes_recientes" : "dependientes_recientes";
+  if (["fabricantes", "dependientes", "tiendas"].includes(catalogoActivo) && !document.getElementById("chk_antiguos").checked) {
+    const rpc = { fabricantes: "fabricantes_recientes", dependientes: "dependientes_recientes", tiendas: "tiendas_recientes" }[catalogoActivo];
     const { data: usados, error: eU } = await client.rpc(rpc);
     if (!eU && Array.isArray(usados)) {
       const set = new Set(usados);
-      const clave = catalogoActivo === "fabricantes" ? "codigo" : "id";
+      const clave = catalogoActivo === "fabricantes" ? "codigo" : "id";   // fabricantes por código; tiendas y vendedores por id
       const total = data.length;
       data = data.filter(f => set.has(f[clave]));
       ocultosAntiguos = total - data.length;
