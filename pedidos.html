@@ -1577,6 +1577,7 @@ async function editarUbicacion(linea, actual) {
 }
 
 async function marcarRecibida(linea, recibida) {
+  if (!recibida && !confirm("¿Deshacer la recepción de esta línea?\n\nLa línea volverá a quedar pendiente de recibir y la orden puede bajar de estado.\nNo se borra la entrada de almacén ya registrada ni la ubicación.")) return;
   const valores = recibida
     ? { recibido_at: new Date().toISOString(), recibido_por: staffUserId }
     : { recibido_at: null, recibido_por: null };
