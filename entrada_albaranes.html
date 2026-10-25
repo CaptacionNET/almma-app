@@ -208,7 +208,7 @@ function pintaVisor(){
   if(!s.ords.length)oh='<div class="sinpdf">Cuando elijas una orden, aquí verás su PDF (si lo tiene).</div>';
   else if(sel){grande=true;oh=(lista.length>1?'<select style="margin-bottom:6px" onchange="ST[cur].vdoc=+this.value;pintaVisor()">'+lista.map((x,k)=>'<option value="'+k+'" '+(k===s.vdoc?'selected':'')+'>Orden '+x.o+' · '+esc(x.nombre)+'</option>').join('')+'</select>':'')+(sel.img?'<div class="imgbox"><img src="'+esc(sel.url)+'"></div>':'<iframe src="'+esc(sel.url)+'" style="flex:1;width:100%;min-height:0;border:0;border-radius:6px;background:#fff"></iframe>');}
   else oh='<div class="sinpdf">'+(cargando?'Buscando el PDF de la orden…':esc(s.ords.map(x=>x==='NUEVA'?'Orden nueva (sin PDF de la tienda)':'Orden '+x+': sin PDF adjunto').join(' · ')))+'</div>';
-  document.getElementById('visor').innerHTML=`<div class="vbox"><div class="bar"><span>Albarán · ${esc(d.pdf)}</span><span>clic = ampliar</span></div><div class="imgbox" onclick="this.classList.toggle('zoom')"><img src="${esc(d.img)}" alt="albarán"></div></div><div class="vbox ${grande?'':'peq'}"><div class="bar"><span>PDF de la orden</span></div>${oh}</div>`;}
+  document.getElementById('visor').innerHTML=`<div class="vbox"><div class="bar"><span>Albarán · ${esc(d.pdf)}</span><span><button class="sec2 peq" onclick="girar(${cur},-90)" title="Girar a la izquierda">⟲</button> <button class="sec2 peq" onclick="girar(${cur},90)" title="Girar a la derecha">⟳</button> &nbsp;clic = ampliar</span></div><div class="imgbox" onclick="this.classList.toggle('zoom')"><img src="${esc(d.imgView||d.img)}" alt="albarán"></div></div><div class="vbox ${grande?'':'peq'}"><div class="bar"><span>PDF de la orden</span></div>${oh}</div>`;}
 
 const okTienda=(o,i)=>{const g=DOCS[i].grupo;return !g||canon(o.t)===g;};
 const refsGrupo=g=>[...new Set(ORD.filter(o=>canon(o.t)===g).map(o=>o.t).filter(Boolean))];
@@ -379,6 +379,9 @@ function docDesdeFila(f,url,dups){
   d.grupo=grupoDoc(L.tienda_destino);d.nota_interna=f.nota_interna||'';d.revisado=!!f.revisado;d.duplicados=dups||[];
   ['bultos_impresos','bultos_mano','peso_kg'].forEach(k=>{if(d[k]===0)d[k]=null;});
   d.lineas=d.lineas||[];d.refs=d.refs||[];
+  let r=null;try{r=localStorage.getItem('almma_rot_'+f.id);}catch(_){}
+  d.rot=r!==null?Number(r):([90,180,270].includes(L.giro_horario)?L.giro_horario:0);
+  if(d.rot)setTimeout(()=>{const i=DOCS.indexOf(d);if(i>=0)aplicaRot(i);},0);
   d.top=candidatas(d);d.cls=clasifica(d.top);return d;
 }
 async function cargarPendientes(){
@@ -473,6 +476,18 @@ async function iniciar(){
   try{await cargarOrdenes();await cargarPendientes();}catch(e){toast('Error al cargar: '+e.message);}
   pinta();
 }
+
+/* girar el albarán (fotos hechas en horizontal) */
+function girar(i,delta){const d=DOCS[i];d.rot=(((d.rot||0)+delta)%360+360)%360;try{localStorage.setItem('almma_rot_'+d.id,String(d.rot));}catch(_){}aplicaRot(i);}
+function aplicaRot(i){const d=DOCS[i];if(!d)return;
+  if(!d.rot){d.imgView=null;if(i===cur)pintaVisor();return;}
+  const im=new Image();im.crossOrigin='anonymous';
+  im.onload=()=>{const r=d.rot*Math.PI/180,c=document.createElement('canvas'),q=d.rot%180!==0;
+    c.width=q?im.height:im.width;c.height=q?im.width:im.height;const x=c.getContext('2d');
+    x.translate(c.width/2,c.height/2);x.rotate(r);x.drawImage(im,-im.width/2,-im.height/2);
+    try{d.imgView=c.toDataURL('image/jpeg',0.85);}catch(_){toast('No se pudo girar la imagen.');return;}
+    if(i===cur)pintaVisor();};
+  im.onerror=()=>toast('No se pudo girar la imagen.');im.src=d.img;}
 
 iniciar();
 </script>
