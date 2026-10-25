@@ -47,11 +47,17 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
   <div class="barra"><b id="ed_titulo" style="font-size:16px"></b><span style="flex:1"></span><button class="secondary" onclick="cerrarEditor()">Cerrar</button></div>
   <div id="ed_cuerpo"></div></div>
 <div id="toolbar">
-  <b>ALMMA · Administración</b>
-  <button class="secondary" onclick="location.href='pedidos.html'">Órdenes</button>
-  <button class="secondary" onclick="location.href='sistema.html'">Sistema</button>
+  <button class="secondary" onclick="location.href='inicio.html'">🏠 Inicio</button>
+  <button class="secondary" onclick="location.href='pedidos.html'">Ordenes</button>
+  <button class="secondary" onclick="location.href='recepcion.html'">Entradas Almacén</button>
+  <button class="secondary" id="btn_modo_mont" style="display:none" onclick="location.href='mi-dia.html'">📱 Modo montador</button>
+  <button class="secondary" onclick="location.href='deca.html'">DeCA</button>
   <button class="secondary" onclick="location.href='facturas.html'">Facturación</button>
+  <button class="secondary" id="btn_admin" style="display:none" onclick="location.href='admin.html'">Administración</button>
   <div class="spacer"></div>
+  <span id="quien" class="muted"></span>
+  <button class="secondary" onclick="logout()">Salir</button>
+</div>
   <span id="quien" class="muted"></span>
   <button class="secondary" onclick="logout()">Salir</button>
 </div>
@@ -126,9 +132,11 @@ document.querySelectorAll(".tab").forEach(b => b.onclick = () => {
 async function iniciar(){
   const { data:{ user } } = await client.auth.getUser();
   if (!user) { location.href = "login.html"; return; }
-  const { data: st } = await client.from("staff").select("nombre, solo_deca, solo_montajes").eq("user_id", user.id).maybeSingle();
+  const { data: st } = await client.from("staff").select("nombre, solo_deca, solo_montajes, es_admin, es_montador").eq("user_id", user.id).maybeSingle();
   if (!st || st.solo_deca || st.solo_montajes) { location.href = "login.html"; return; }
   document.getElementById("quien").textContent = st.nombre || user.email;
+  if (st.es_admin) document.getElementById("btn_admin").style.display = "";
+  if (st.es_montador) document.getElementById("btn_modo_mont").style.display = "";
   const r = await client.from("montadores").select("id, nombre, activo, especial, staff_user_id").eq("activo", true).order("especial").order("nombre");
   montadores = r.data || [];
   miMontador = (montadores.find(m => m.staff_user_id === user.id) || {}).id || null;
