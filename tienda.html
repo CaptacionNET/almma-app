@@ -36,6 +36,7 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
 .fotos{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;}
 .fotos img,.firma img{width:100%;border:1px solid var(--border);border-radius:6px;background:#fafbfe;}
 .ok{color:#15803d;font-weight:700;}
+.f{margin-bottom:10px;} .f label{display:block;font-size:12px;color:var(--muted);font-weight:600;margin-bottom:3px;} .f input,.f select{width:100%;}
 .caja{background:var(--card);border:1px dashed #93c5fd;border-radius:8px;padding:14px;margin-bottom:14px;}
 </style>
 <link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="ALMMA"><script src="pwa.js" defer></script>
@@ -94,26 +95,44 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
 <div id="det"><div class="barra"><b id="det_t" style="font-size:16px"></b><span style="flex:1"></span><button class="secondary" onclick="cerrarMontaje()">Cerrar</button></div><div id="det_c"></div></div>
 
 <div class="panel" id="p_equipo">
-  <div class="caja"><b>Teléfonos de la tienda</b>
-    <div class="muted" style="margin:4px 0 8px">Los ven los montadores en su móvil para poder llamaros si tienen una duda con un pedido.</div>
-    <div id="tt_caja"><span class="muted">Cargando...</span></div></div>
-  <div class="caja"><b>Teléfonos de los vendedores</b>
-    <div class="muted" style="margin:4px 0 8px">El móvil de cada vendedor. Si lo dejas vacío, el montador solo podrá llamar a la tienda. Avisa a tu equipo de que el montador verá su número.</div>
-    <div id="tv_tabla"><span class="muted">Cargando...</span></div></div>
-  <div class="caja"><b>Emails de la tienda</b>
-    <div class="muted" style="margin:4px 0 8px">Cada casilla admite uno o varios emails separados por coma (máximo 3). Facturación: donde se enviarán vuestras facturas. Incidencias y administración: para los avisos de cada tipo.</div>
-    <div id="te_caja"><span class="muted">Cargando...</span></div></div>
-  <div class="caja"><b>Emails de los vendedores</b>
-    <div class="muted" style="margin:4px 0 8px">Email de contacto de cada vendedor. No es el email con el que entra a la web.</div>
-    <div id="ev_tabla"><span class="muted">Cargando...</span></div></div>
-  <div class="caja"><b>Nuevo dependiente</b>
-    <div class="barra" style="margin-top:8px">
-      <input id="n_nombre" placeholder="Nombre"><input id="n_email" type="email" placeholder="Email">
-      <input id="n_pass" placeholder="Contraseña (mín. 10)"><button onclick="crearDep()">Crear cuenta</button></div>
-    <span class="muted">Cada dependiente verá solo los pedidos que haga él.</span></div>
-  <h3 style="margin:22px 0 4px;color:#1e3a8a">Usuarios de la tienda</h3>
-  <div class="muted" style="margin-bottom:8px">Personas con acceso a la web. Aquí puedes cambiar su nombre, bloquearlas o ponerles una contraseña nueva.</div>
+  <div class="barra">
+    <h3 style="margin:0;color:#1e3a8a">Equipo de la tienda</h3>
+    <span class="muted">Vendedores y personas con acceso a la web.</span>
+    <span style="flex:1"></span>
+    <label class="muted"><input type="checkbox" id="q_ant" onchange="pintarEquipo()"> Ver también vendedores antiguos</label>
+    <button onclick="abrirFicha(null)">+ Nueva persona</button>
+  </div>
   <div id="e_tabla"><span class="muted">Cargando...</span></div>
+  <h3 style="margin:26px 0 8px;color:#1e3a8a">Datos de la tienda</h3>
+  <div class="caja"><b>Teléfonos de la tienda</b>
+    <div class="muted" style="margin:4px 0 8px">Los ven los montadores en su móvil para poder llamaros si tienen una duda con un pedido. El móvil de cada vendedor se cambia en su ficha (botón Editar).</div>
+    <div id="tt_caja"><span class="muted">Cargando...</span></div></div>
+  <div class="caja"><b>Emails de la tienda</b>
+    <div class="muted" style="margin:4px 0 8px">Cada casilla admite uno o varios emails separados por coma (máximo 3). Facturación: donde se enviarán vuestras facturas. Incidencias y administración: para los avisos de cada tipo. El email de cada vendedor se cambia en su ficha.</div>
+    <div id="te_caja"><span class="muted">Cargando...</span></div></div>
+</div>
+
+<div id="ficha_fondo" onclick="cerrarFicha()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:40"></div>
+<div id="ficha" style="display:none;position:fixed;z-index:41;top:50%;left:50%;transform:translate(-50%,-50%);width:min(520px,94vw);max-height:92vh;overflow-y:auto;background:var(--card);border-radius:12px;padding:20px 22px;box-shadow:0 20px 40px -10px rgba(0,0,0,.35)">
+  <h3 id="f_titulo" style="margin:0 0 12px;color:#1e3a8a"></h3>
+  <div class="f"><label>Nombre *</label><input id="f_nombre"></div>
+  <div class="f"><label>Teléfono (móvil)</label><input id="f_tel" placeholder="6…"></div>
+  <div class="f"><label>Email de contacto (para avisos de sus pedidos)</label><input id="f_email" placeholder="vendedor@…"><div class="muted">Distinto del email con el que entra a la web. Hasta 3 separados por coma.</div></div>
+  <div class="f" id="f_tienda_f"><label>Tienda</label><select id="f_tienda"></select></div>
+  <div class="f"><label>Rol</label><select id="f_rol"><option value="0">Vendedor</option><option value="1">Administrador de tienda (ve todo: órdenes, facturas y equipo)</option></select></div>
+  <div class="caja" style="margin:14px 0 0">
+    <b>Perfil de acceso a la web</b>
+    <div id="f_perfil_tiene" style="display:none" class="muted"></div>
+    <div id="f_perfil_no">
+      <label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="f_crear" onchange="verPerfil()"> Darle perfil para que entre a la web</label>
+      <div id="f_perfil_campos" style="display:none">
+        <div class="f"><label>Email de acceso *</label><input id="f_login" type="email" placeholder="el email con el que entrará"></div>
+        <div class="f"><label>Contraseña inicial * (mínimo 10 caracteres)</label><input id="f_pass"></div>
+      </div>
+      <div class="muted" id="f_sinperfil">Sin perfil: es solo un vendedor para anotar en los pedidos, no puede entrar a la web. Podrás darle perfil más adelante.</div>
+    </div>
+  </div>
+  <div class="barra" style="margin:16px 0 0;justify-content:flex-end"><button class="secondary" onclick="cerrarFicha()">Cancelar</button><button id="f_guardar" onclick="guardarFicha()">Guardar</button></div>
 </div>
 
 <script src="condiciones.js"></script>
@@ -302,81 +321,123 @@ async function cargarRecibidos(){
   cont.innerHTML = pintarRecibidos((data || []).filter(a => !tiendaSel || a.tienda_id === tiendaSel));
 }
 
-/* Teléfonos que ve el montador en «Mi día» (funciones de migracion/74_la_tienda_mantiene_sus_telefonos.sql) */
+/* Teléfonos de la tienda que ve el montador en «Mi día» (migracion/74_la_tienda_mantiene_sus_telefonos.sql) */
 async function cargarTelefonos(){
-  const cajaT = document.getElementById("tt_caja"), cajaV = document.getElementById("tv_tabla");
+  const cajaT = document.getElementById("tt_caja");
   const { data: ts, error: e1 } = await client.rpc("mis_telefonos_tienda");
-  if (e1) { cajaT.innerHTML = cajaV.innerHTML = '<span class="muted">No se pudieron cargar los teléfonos: ' + esc(e1.message) + '</span>'; return; }
+  if (e1) { cajaT.innerHTML = '<span class="muted">No se pudieron cargar los teléfonos: ' + esc(e1.message) + '</span>'; return; }
   const mias = (ts || []).filter(t => !tiendaSel || t.tienda_id === tiendaSel);
-  if (multi() && !tiendaSel) cajaT.innerHTML = '<span class="muted">Elige arriba la tienda concreta.</span>';
-  else cajaT.innerHTML = mias.map(t => '<div class="barra" style="margin-bottom:6px">' + (multi() ? '<b style="min-width:140px">' + esc(t.tienda) + '</b>' : '') +
+  cajaT.innerHTML = mias.map(t => '<div class="barra" style="margin-bottom:6px">' + (multi() ? '<b style="min-width:140px">' + esc(t.tienda) + '</b>' : '') +
     '<label>Teléfono de la tienda <input id="tt1_' + t.tienda_id + '" value="' + esc(t.telefono) + '" placeholder="96…"></label>' +
     '<label>Teléfono del local <input id="tt2_' + t.tienda_id + '" value="' + esc(t.telefono2) + '" placeholder="si tiene otro"></label>' +
     '<button onclick="guardarTelTienda(\'' + t.tienda_id + '\')">Guardar</button></div>').join("") || '<span class="muted">Sin datos.</span>';
-  const { data: vs, error: e2 } = await client.rpc("mi_equipo_telefonos");
-  if (e2) { cajaV.innerHTML = '<span class="muted">No se pudieron cargar los vendedores: ' + esc(e2.message) + '</span>'; return; }
-  const lista = (vs || []).filter(v => !tiendaSel || v.tienda_id === tiendaSel);
-  cajaV.innerHTML = lista.length ? '<table><tr><th>Vendedor</th>' + (multi() ? '<th>Tienda</th>' : '') + '<th>Teléfono</th><th></th></tr>' +
-    lista.map(v => '<tr><td>' + esc(v.nombre) + (v.es_admin_tienda ? ' <span class="muted">(administrador)</span>' : '') + '</td>' + (multi() ? '<td>' + esc(v.tienda) + '</td>' : '') +
-      '<td><input id="tv_' + v.id + '" value="' + esc(v.telefono1) + '" placeholder="móvil"></td>' +
-      '<td><button onclick="guardarTelVendedor(\'' + v.id + '\')">Guardar</button></td></tr>').join("") + '</table>' : '<span class="muted">Sin vendedores.</span>';
 }
 async function guardarTelTienda(id){
   const { error } = await client.rpc("guardar_telefonos_tienda", { p_tienda_id: id, p_telefono: document.getElementById("tt1_" + id).value, p_telefono2: document.getElementById("tt2_" + id).value });
   alert(error ? "No se pudo guardar: " + error.message : "Teléfonos de la tienda guardados.");
 }
-async function guardarTelVendedor(id){
-  const { error } = await client.rpc("guardar_telefono_vendedor", { p_dependiente_id: id, p_telefono: document.getElementById("tv_" + id).value });
-  alert(error ? "No se pudo guardar: " + error.message : "Teléfono guardado.");
-}
-/* Emails de la tienda y de los vendedores (funciones de migracion/80_emails_de_la_tienda.sql) */
+/* Emails de la tienda (migracion/80_emails_de_la_tienda.sql) */
 async function cargarEmails(){
-  const cajaT = document.getElementById("te_caja"), cajaV = document.getElementById("ev_tabla");
+  const cajaT = document.getElementById("te_caja");
   const { data: ts, error: e1 } = await client.rpc("mis_emails_tienda");
-  if (e1) { cajaT.innerHTML = cajaV.innerHTML = '<span class="muted">No se pudieron cargar los emails: ' + esc(e1.message) + '</span>'; return; }
+  if (e1) { cajaT.innerHTML = '<span class="muted">No se pudieron cargar los emails: ' + esc(e1.message) + '</span>'; return; }
   const mias = (ts || []).filter(t => !tiendaSel || t.tienda_id === tiendaSel);
-  if (multi() && !tiendaSel) cajaT.innerHTML = '<span class="muted">Elige arriba la tienda concreta.</span>';
-  else cajaT.innerHTML = mias.map(t => '<div style="margin-bottom:10px">' + (multi() ? '<b>' + esc(t.tienda) + '</b>' : '') +
+  cajaT.innerHTML = mias.map(t => '<div style="margin-bottom:10px">' + (multi() ? '<b>' + esc(t.tienda) + '</b>' : '') +
     '<div class="barra" style="margin-top:4px;flex-wrap:wrap">' +
     '<label>General <input id="te0_' + t.tienda_id + '" value="' + esc(t.email) + '" placeholder="tienda@…"></label>' +
     '<label>Facturación <input id="te1_' + t.tienda_id + '" value="' + esc(t.email_facturacion) + '" placeholder="facturas@…"></label>' +
     '<label>Incidencias <input id="te2_' + t.tienda_id + '" value="' + esc(t.email_incidencias) + '" placeholder="incidencias@…"></label>' +
     '<label>Administración <input id="te3_' + t.tienda_id + '" value="' + esc(t.email_administracion) + '" placeholder="admin@…"></label>' +
     '<button onclick="guardarEmailsTienda(\'' + t.tienda_id + '\')">Guardar</button></div></div>').join("") || '<span class="muted">Sin datos.</span>';
-  const { data: vs, error: e2 } = await client.rpc("mi_equipo_emails");
-  if (e2) { cajaV.innerHTML = '<span class="muted">No se pudieron cargar los vendedores: ' + esc(e2.message) + '</span>'; return; }
-  const lista = (vs || []).filter(v => !tiendaSel || v.tienda_id === tiendaSel);
-  cajaV.innerHTML = lista.length ? '<table><tr><th>Vendedor</th>' + (multi() ? '<th>Tienda</th>' : '') + '<th>Email de contacto</th><th></th></tr>' +
-    lista.map(v => '<tr><td>' + esc(v.nombre) + (v.es_admin_tienda ? ' <span class="muted">(administrador)</span>' : '') + '</td>' + (multi() ? '<td>' + esc(v.tienda) + '</td>' : '') +
-      '<td><input id="ev_' + v.id + '" value="' + esc(v.email) + '" placeholder="vendedor@…"></td>' +
-      '<td><button onclick="guardarEmailVendedor(\'' + v.id + '\')">Guardar</button></td></tr>').join("") + '</table>' : '<span class="muted">Sin vendedores.</span>';
 }
 async function guardarEmailsTienda(id){
   const g = k => document.getElementById("te" + k + "_" + id).value;
   const { error } = await client.rpc("guardar_emails_tienda", { p_tienda_id: id, p_general: g(0), p_facturacion: g(1), p_incidencias: g(2), p_administracion: g(3) });
   if (error) alert("No se pudo guardar: " + error.message); else { alert("Emails de la tienda guardados."); cargarEmails(); }
 }
-async function guardarEmailVendedor(id){
-  const { error } = await client.rpc("guardar_email_vendedor", { p_dependiente_id: id, p_email: document.getElementById("ev_" + id).value });
-  if (error) alert("No se pudo guardar: " + error.message); else { alert("Email guardado."); cargarEmails(); }
-}
+
+/* Equipo: vendedores (con o sin perfil de acceso) — migracion/84_equipo_de_la_tienda.sql */
+let equipo = [], cuentas = {}, idFicha = null;
 async function cargarEquipo(){
-  cargarTelefonos();
-  cargarEmails();
-  const r = await llamar({ accion:"listar" });
-  if (r.error) { document.getElementById("e_tabla").innerHTML = '<span class="muted">Error: '+esc(r.error)+'</span>'; return; }
-  document.getElementById("e_tabla").innerHTML = '<table><tr><th>Nombre</th><th>Email</th><th>Tipo</th>'+(multi()?'<th>Tienda</th>':'')+'<th>Último acceso</th><th>Estado</th><th></th></tr>'+
-    r.usuarios.filter(x => !tiendaSel || x.tienda_id === tiendaSel).map(x => '<tr class="'+(x.bloqueado?'bloq':'')+'"><td>'+esc(x.nombre)+'</td><td>'+esc(x.email)+'</td><td>'+esc(x.tipo)+'</td>'+(multi()?'<td>'+esc(x.tienda)+'</td>':'')+'<td>'+(x.ultimo_acceso?new Date(x.ultimo_acceso).toLocaleString("es-ES"):"Nunca")+'</td><td>'+(x.bloqueado?"Bloqueado":"Activo")+'</td><td><button class="secondary" onclick="editarNombre(\''+x.user_id+'\',this)" data-n="'+esc(x.nombre)+'">Editar</button> '+(x.tipo==="Dependiente"?'<button class="secondary" onclick="bloqueo(\''+x.user_id+'\','+x.bloqueado+')">'+(x.bloqueado?"Desbloquear":"Bloquear")+'</button> <button class="secondary" onclick="pass(\''+x.user_id+'\')">Contraseña</button>':'')+'</td></tr>').join("")+'</table>';
+  cargarTelefonos(); cargarEmails();
+  const [r, c] = await Promise.all([client.rpc("mi_equipo"), llamar({ accion:"listar" })]);
+  if (r.error) { document.getElementById("e_tabla").innerHTML = '<span class="muted">No se pudo cargar el equipo: ' + esc(r.error.message) + '. ¿Está ejecutado el SQL 84?</span>'; return; }
+  equipo = r.data || [];
+  cuentas = {}; ((c && c.usuarios) || []).forEach(u => { cuentas[u.user_id] = u; });
+  pintarEquipo();
 }
-async function editarNombre(id, b){ const n = prompt("Nombre de la persona:", b.dataset.n); if (n === null) return; const { error } = await client.rpc("guardar_nombre_dependiente", { p_user_id: id, p_nombre: n }); if (error) alert("No se pudo guardar: " + error.message); else cargarEquipo(); }
+function pintarEquipo(){
+  const ver = document.getElementById("q_ant").checked;
+  const lista = equipo.filter(x => (!tiendaSel || x.tienda_id === tiendaSel) && (ver || x.activo));
+  const ocultos = equipo.filter(x => (!tiendaSel || x.tienda_id === tiendaSel) && !x.activo).length;
+  const fila = x => {
+    const c = x.user_id ? (cuentas[x.user_id] || {}) : null;
+    const acceso = !x.user_id ? '<span class="muted">Sin perfil</span>'
+      : (c.bloqueado ? '<b style="color:#b91c1c">Bloqueado</b>' : '<b style="color:#15803d">Activo</b>') +
+        '<div class="muted">' + esc(c.email || "") + (c.ultimo_acceso ? ' · último acceso ' + new Date(c.ultimo_acceso).toLocaleDateString("es-ES") : ' · nunca ha entrado') + '</div>';
+    const acc = '<button class="secondary" onclick="abrirFicha(\'' + x.id + '\')">Editar</button> ' +
+      (!x.user_id ? '<button onclick="abrirFicha(\'' + x.id + '\', true)">Dar perfil</button>'
+        : '<button class="secondary" onclick="bloqueo(\'' + x.user_id + '\',' + !!c.bloqueado + ')">' + (c.bloqueado ? "Desbloquear" : "Bloquear") + '</button> <button class="secondary" onclick="pass(\'' + x.user_id + '\')">Contraseña</button>');
+    return '<tr class="' + (c && c.bloqueado ? 'bloq' : '') + '"><td><b>' + esc(x.nombre) + '</b></td>' + (multi() ? '<td>' + esc(x.tienda) + '</td>' : '') +
+      '<td>' + (x.es_admin_tienda ? '<b style="color:#1e3a8a">Administrador</b>' : 'Vendedor') + '</td><td>' + esc(x.telefono) + '</td><td>' + esc(x.email) + '</td><td>' + acceso + '</td><td style="white-space:nowrap">' + acc + '</td></tr>';
+  };
+  document.getElementById("e_tabla").innerHTML = lista.length
+    ? '<table><tr><th>Nombre</th>' + (multi() ? '<th>Tienda</th>' : '') + '<th>Rol</th><th>Teléfono</th><th>Email de contacto</th><th>Acceso a la web</th><th></th></tr>' + lista.map(fila).join("") + '</table>'
+    : '<span class="muted">No hay personas que mostrar.</span>';
+  if (!ver && ocultos) document.getElementById("e_tabla").insertAdjacentHTML("beforeend", '<div class="muted" style="margin-top:6px">' + ocultos + ' vendedores antiguos ocultos (sin perfil y sin pedidos recientes). Marca «Ver también vendedores antiguos» para verlos.</div>');
+}
+function verPerfil(){ document.getElementById("f_perfil_campos").style.display = document.getElementById("f_crear").checked ? "" : "none"; document.getElementById("f_sinperfil").style.display = document.getElementById("f_crear").checked ? "none" : ""; }
+function abrirFicha(id, conPerfil){
+  idFicha = id;
+  const x = id ? equipo.find(e => e.id === id) : null;
+  document.getElementById("f_titulo").textContent = x ? "Editar: " + x.nombre : "Nueva persona del equipo";
+  document.getElementById("f_nombre").value = x ? x.nombre : "";
+  document.getElementById("f_tel").value = x ? (x.telefono || "") : "";
+  document.getElementById("f_email").value = x ? (x.email || "") : "";
+  const sel = document.getElementById("f_tienda");
+  sel.innerHTML = misTiendas.map(t => '<option value="' + t.id + '">' + esc(t.nombre) + '</option>').join("");
+  sel.value = x ? x.tienda_id : (tiendaSel || misTiendas[0].id);
+  document.getElementById("f_tienda_f").style.display = multi() ? "" : "none";
+  document.getElementById("f_rol").value = x && x.es_admin_tienda ? "1" : "0";
+  const tiene = x && x.user_id;
+  document.getElementById("f_perfil_tiene").style.display = tiene ? "" : "none";
+  document.getElementById("f_perfil_no").style.display = tiene ? "none" : "";
+  if (tiene) document.getElementById("f_perfil_tiene").textContent = "Ya tiene perfil" + ((cuentas[x.user_id] || {}).email ? ": entra con " + cuentas[x.user_id].email : "") + ". El bloqueo y la contraseña se gestionan desde la tabla.";
+  document.getElementById("f_crear").checked = !!conPerfil;
+  document.getElementById("f_login").value = x && conPerfil ? (x.email || "").split(",")[0].trim() : "";
+  document.getElementById("f_pass").value = "";
+  verPerfil();
+  document.getElementById("ficha_fondo").style.display = document.getElementById("ficha").style.display = "block";
+}
+function cerrarFicha(){ document.getElementById("ficha_fondo").style.display = document.getElementById("ficha").style.display = "none"; }
+async function guardarFicha(){
+  const v = k => document.getElementById(k).value.trim();
+  const nombre = v("f_nombre"), tel = v("f_tel"), email = v("f_email"), tienda = document.getElementById("f_tienda").value, admin = v("f_rol") === "1";
+  const crear = document.getElementById("f_crear").checked && document.getElementById("f_perfil_no").style.display !== "none";
+  if (!nombre) { alert("Escribe el nombre."); return; }
+  if (crear && (!v("f_login") || v("f_pass").length < 10)) { alert("Para dar perfil hace falta el email de acceso y una contraseña de al menos 10 caracteres."); return; }
+  const btn = document.getElementById("f_guardar"); btn.disabled = true;
+  try {
+    let id = idFicha;
+    if (!id) {
+      const r = await client.rpc("crear_vendedor", { p_nombre: nombre, p_telefono: tel, p_email: email, p_tienda_id: tienda });
+      if (r.error) { alert("No se pudo crear: " + r.error.message); return; }
+      id = r.data; idFicha = id;
+    }
+    if (crear) {
+      const r = await llamar({ accion:"crear", tipo:"dependiente", tienda_id: tienda, nombre, email: v("f_login"), password: v("f_pass") });
+      if (r.error) { alert("La ficha está guardada, pero no se pudo crear el perfil: " + r.error + "\nPuedes reintentarlo con «Dar perfil»."); await cargarEquipo(); cerrarFicha(); return; }
+      const e = await client.rpc("dar_perfil", { p_id: id, p_login_email: v("f_login") });
+      if (e.error) { alert("El perfil se creó pero no se pudo enlazar con el vendedor: " + e.error.message); await cargarEquipo(); cerrarFicha(); return; }
+    }
+    const g = await client.rpc("guardar_miembro", { p_id: id, p_nombre: nombre, p_telefono: tel, p_email: email, p_tienda_id: tienda, p_es_admin: admin });
+    if (g.error) { alert("No se pudo guardar: " + g.error.message); await cargarEquipo(); return; }
+    cerrarFicha(); await cargarEquipo();
+  } finally { btn.disabled = false; }
+}
 async function bloqueo(id, b){ if(!b && !confirm("¿Bloquear esta cuenta?")) return; const r = await llamar({accion:b?"desbloquear":"bloquear",user_id:id}); if(r.error) alert(r.error); else cargarEquipo(); }
 async function pass(id){ const p = prompt("Nueva contraseña (mínimo 10 caracteres):"); if(!p) return; const r = await llamar({accion:"password",user_id:id,password:p}); alert(r.error||"Contraseña cambiada."); }
-async function crearDep(){
-  if (multi() && !tiendaSel) { alert("Elige arriba la tienda concreta en la que crear el dependiente."); return; }
-  const r = await llamar({ accion:"crear", tipo:"dependiente", tienda_id: tiendaSel || undefined, nombre:document.getElementById("n_nombre").value, email:document.getElementById("n_email").value, password:document.getElementById("n_pass").value });
-  if (r.error) { alert(r.error); return; }
-  ["n_nombre","n_email","n_pass"].forEach(i => document.getElementById(i).value = ""); cargarEquipo();
-}
+
 iniciar();
 
 // --- banner de mensajes sin leer (migracion/61_chat_ordenes_sin_leer.sql) ---
