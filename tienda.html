@@ -301,6 +301,7 @@ async function llamar(cuerpo){
 const ESTADO_ORDEN = { en_proceso:"En proceso", recepcionado_parcial:"Recibida en parte", recepcionado_total:"Recibida completa", agendado:"Montaje agendado", completado:"Montada", incidencia:"Incidencia" };
 function fechaES(iso){ return iso ? String(iso).slice(0,10).split("-").reverse().join("/") : ""; }
 function pintarRecibidos(lista){
+  lista = lista.filter(a => (a.ordenes || []).length);   // solo lo que tiene orden asociada
   if (!lista.length) return '<span class="muted">Todavía no hay albaranes recibidos en este periodo.</span>';
   const bloque = a => '<tr><td>' + fechaES(a.fecha_recibido) + '</td><td>' + esc(a.fabricante || "") + '</td><td>' + esc(a.num_albaran || "") + '</td>' +
     (multi() ? '<td>' + esc(a.tienda || "") + '</td>' : "") +
