@@ -97,6 +97,12 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
   <div class="caja"><b>Teléfonos de los vendedores</b>
     <div class="muted" style="margin:4px 0 8px">El móvil de cada vendedor. Si lo dejas vacío, el montador solo podrá llamar a la tienda. Avisa a tu equipo de que el montador verá su número.</div>
     <div id="tv_tabla"><span class="muted">Cargando...</span></div></div>
+  <div class="caja"><b>Emails de la tienda</b>
+    <div class="muted" style="margin:4px 0 8px">Cada casilla admite uno o varios emails separados por coma (máximo 3). Facturación: donde se enviarán vuestras facturas. Incidencias y administración: para los avisos de cada tipo.</div>
+    <div id="te_caja"><span class="muted">Cargando...</span></div></div>
+  <div class="caja"><b>Emails de los vendedores</b>
+    <div class="muted" style="margin:4px 0 8px">Email de contacto de cada vendedor. No es el email con el que entra a la web.</div>
+    <div id="ev_tabla"><span class="muted">Cargando...</span></div></div>
   <div class="caja"><b>Nuevo dependiente</b>
     <div class="barra" style="margin-top:8px">
       <input id="n_nombre" placeholder="Nombre"><input id="n_email" type="email" placeholder="Email">
@@ -310,8 +316,40 @@ async function guardarTelVendedor(id){
   const { error } = await client.rpc("guardar_telefono_vendedor", { p_dependiente_id: id, p_telefono: document.getElementById("tv_" + id).value });
   alert(error ? "No se pudo guardar: " + error.message : "Teléfono guardado.");
 }
+/* Emails de la tienda y de los vendedores (funciones de migracion/80_emails_de_la_tienda.sql) */
+async function cargarEmails(){
+  const cajaT = document.getElementById("te_caja"), cajaV = document.getElementById("ev_tabla");
+  const { data: ts, error: e1 } = await client.rpc("mis_emails_tienda");
+  if (e1) { cajaT.innerHTML = cajaV.innerHTML = '<span class="muted">No se pudieron cargar los emails: ' + esc(e1.message) + '</span>'; return; }
+  const mias = (ts || []).filter(t => !tiendaSel || t.tienda_id === tiendaSel);
+  if (multi() && !tiendaSel) cajaT.innerHTML = '<span class="muted">Elige arriba la tienda concreta.</span>';
+  else cajaT.innerHTML = mias.map(t => '<div style="margin-bottom:10px">' + (multi() ? '<b>' + esc(t.tienda) + '</b>' : '') +
+    '<div class="barra" style="margin-top:4px;flex-wrap:wrap">' +
+    '<label>General <input id="te0_' + t.tienda_id + '" value="' + esc(t.email) + '" placeholder="tienda@…"></label>' +
+    '<label>Facturación <input id="te1_' + t.tienda_id + '" value="' + esc(t.email_facturacion) + '" placeholder="facturas@…"></label>' +
+    '<label>Incidencias <input id="te2_' + t.tienda_id + '" value="' + esc(t.email_incidencias) + '" placeholder="incidencias@…"></label>' +
+    '<label>Administración <input id="te3_' + t.tienda_id + '" value="' + esc(t.email_administracion) + '" placeholder="admin@…"></label>' +
+    '<button onclick="guardarEmailsTienda(\'' + t.tienda_id + '\')">Guardar</button></div></div>').join("") || '<span class="muted">Sin datos.</span>';
+  const { data: vs, error: e2 } = await client.rpc("mi_equipo_emails");
+  if (e2) { cajaV.innerHTML = '<span class="muted">No se pudieron cargar los vendedores: ' + esc(e2.message) + '</span>'; return; }
+  const lista = (vs || []).filter(v => !tiendaSel || v.tienda_id === tiendaSel);
+  cajaV.innerHTML = lista.length ? '<table><tr><th>Vendedor</th>' + (multi() ? '<th>Tienda</th>' : '') + '<th>Email de contacto</th><th></th></tr>' +
+    lista.map(v => '<tr><td>' + esc(v.nombre) + (v.es_admin_tienda ? ' <span class="muted">(administrador)</span>' : '') + '</td>' + (multi() ? '<td>' + esc(v.tienda) + '</td>' : '') +
+      '<td><input id="ev_' + v.id + '" value="' + esc(v.email) + '" placeholder="vendedor@…"></td>' +
+      '<td><button onclick="guardarEmailVendedor(\'' + v.id + '\')">Guardar</button></td></tr>').join("") + '</table>' : '<span class="muted">Sin vendedores.</span>';
+}
+async function guardarEmailsTienda(id){
+  const g = k => document.getElementById("te" + k + "_" + id).value;
+  const { error } = await client.rpc("guardar_emails_tienda", { p_tienda_id: id, p_general: g(0), p_facturacion: g(1), p_incidencias: g(2), p_administracion: g(3) });
+  if (error) alert("No se pudo guardar: " + error.message); else { alert("Emails de la tienda guardados."); cargarEmails(); }
+}
+async function guardarEmailVendedor(id){
+  const { error } = await client.rpc("guardar_email_vendedor", { p_dependiente_id: id, p_email: document.getElementById("ev_" + id).value });
+  if (error) alert("No se pudo guardar: " + error.message); else { alert("Email guardado."); cargarEmails(); }
+}
 async function cargarEquipo(){
   cargarTelefonos();
+  cargarEmails();
   const r = await llamar({ accion:"listar" });
   if (r.error) { document.getElementById("e_tabla").innerHTML = '<span class="muted">Error: '+esc(r.error)+'</span>'; return; }
   document.getElementById("e_tabla").innerHTML = '<table><tr><th>Nombre</th><th>Email</th><th>Tipo</th>'+(multi()?'<th>Tienda</th>':'')+'<th>Último acceso</th><th>Estado</th><th></th></tr>'+
