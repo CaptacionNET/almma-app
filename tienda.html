@@ -45,7 +45,7 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
 <div id="toolbar">
   <b>ALMMA · <span id="tienda_nombre">Mi tienda</span></b>
   <button class="secondary" onclick="location.href='inicio.html'">🏠 Inicio</button>
-  <button class="secondary" onclick="location.href='mis-pedidos.html'">Nuevo pedido</button>
+  <button class="secondary" onclick="abrirNuevoPedido()">Nuevo pedido</button>
   <div class="spacer"></div>
   <span id="quien" class="muted"></span>
   <button class="secondary" onclick="logout()">Salir</button>
@@ -148,6 +148,20 @@ document.querySelectorAll(".tab[data-t]").forEach(b => b.onclick = () => {
   document.querySelectorAll(".panel").forEach(p => p.classList.toggle("activa", p.id === "p_" + b.dataset.t));
   history.replaceState(null, "", "#" + b.dataset.t);
 });
+/* Nuevo pedido: la ventana de mis-pedidos.html se abre aquí encima, sin cambiar de pantalla */
+function abrirNuevoPedido(){
+  if (document.getElementById("nuevo_if")) return;
+  const f = document.createElement("iframe"); f.id = "nuevo_if";
+  f.src = "mis-pedidos.html?embebido=1&tienda=" + encodeURIComponent(tiendaSel || "");
+  f.setAttribute("allowtransparency", "true");
+  f.style.cssText = "position:fixed;inset:0;width:100%;height:100%;border:0;z-index:60;background:transparent;color-scheme:normal";
+  document.body.appendChild(f);
+}
+window.addEventListener("message", ev => {
+  if (ev.origin !== location.origin || !ev.data || ev.data.ap !== "nuevo_pedido") return;
+  const f = document.getElementById("nuevo_if"); if (f) f.remove();
+  if (ev.data.creado) cargarOrdenes();
+});
 function abrirSeccion(t){ const b = document.querySelector('.tab[data-t="' + t + '"]'); if (b) b.click(); }
 
 async function iniciar(){
@@ -170,7 +184,8 @@ async function iniciar(){
       cambiaTienda(b.dataset.id);
     });
   }
-  abrirSeccion((location.hash || "").slice(1));
+  if (location.hash === "#nuevo") { history.replaceState(null, "", "#ordenes"); abrirNuevoPedido(); }
+  else abrirSeccion((location.hash || "").slice(1));
   document.getElementById("quien").textContent = d.nombre || user.email;
   cargarOrdenes(); cargarFacturas(); cargarMontajes(); cargarRecibidos(); cargarEquipo();
 }

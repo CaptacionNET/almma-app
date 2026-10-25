@@ -41,6 +41,8 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .sugerencias div:hover{background:#f5f6fa;}
 #modal_nuevo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.25);align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto;z-index:10;}
 #modal_nuevo .card{width:100%;max-width:640px;margin:0;}
+/* dentro de «Mi tienda» solo se ve la ventana de nuevo pedido */
+body.emb{background:transparent;} body.emb > *:not(#modal_nuevo){display:none !important;}
 /* --- listados con el formato de las líneas de la orden: cabecera azul, filas alternas y banda de color a la izquierda --- */
 .tabulator{border:1px solid #bfdbfe;border-radius:8px;}
 .tabulator .tabulator-header{background:#dbeafe;border-bottom:2px solid #93c5fd;color:#1e3a8a;}
@@ -176,6 +178,9 @@ const client = supabase.createClient(
 let tabla = null;
 let dependiente = null;
 let misTiendas = [], tiendaSel = "";
+const _qs = new URLSearchParams(location.search), EMBEBIDO = _qs.get("embebido") === "1";
+let pedidoCreado = false;
+if (EMBEBIDO) document.body.classList.add("emb");
 let lineasNuevoPedido = [];
 let articuloSeleccionado = null;
 let pdfAdjunto = null; // el PDF leído con "Leer PDF": se guarda con el pedido como soporte
@@ -200,6 +205,7 @@ async function comprobarSesion() {
   const { data: ts } = await client.from("tiendas").select("id, nombre").order("nombre");
   misTiendas = ts || [];
   tiendaSel = depRow.tienda_id;
+  if (EMBEBIDO && misTiendas.some(x => x.id === _qs.get("tienda"))) tiendaSel = _qs.get("tienda");
   document.getElementById("tienda_nombre").textContent = (misTiendas.find(x => x.id === tiendaSel) || {}).nombre || "";
   if (misTiendas.length > 1) {
     const tb = document.getElementById("t_tabs"); tb.style.display = "flex";
@@ -208,6 +214,7 @@ async function comprobarSesion() {
     pintar();
   }
   cargarPedidos();
+  if (EMBEBIDO) abrirModalNuevo();
 }
 
 async function logout() {
@@ -266,6 +273,7 @@ function abrirModalNuevo() {
 
 function cerrarModalNuevo() {
   document.getElementById("modal_nuevo").style.display = "none";
+  if (EMBEBIDO) parent.postMessage({ ap: "nuevo_pedido", creado: pedidoCreado }, location.origin);
 }
 
 let debounceTimer = null;
@@ -454,6 +462,7 @@ async function crearPedido() {
   if (error) { errorBox.textContent = "No se pudo crear el pedido: " + error.message; errorBox.style.display = "block"; return; }
 
   const { anyo, orden } = data[0];
+  pedidoCreado = true;
   avisoBox.textContent = `Pedido ${anyo}/${orden} creado correctamente.`;
   avisoBox.style.display = "block";
 
