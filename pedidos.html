@@ -1514,13 +1514,26 @@ async function cargarLineas() {
     .select("linea, tipolinea, articulo, descripcion, cantidad, importe, porcentaje, importe_cobrar, ubicacion, albaran, bultos, peso_kg, control_stock, recibido, recibido_at")
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).order("linea");
 
+  // albarán del transportista con el que se casó cada línea (si se registró con "Entrada por albarán")
+  const albPorLinea = {};
+  try {
+    const { data: gr } = await client.from("albaranes_lecturas_grupos").select("linea, lectura_id").eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden);
+    const ids = [...new Set((gr || []).map(g => g.lectura_id))];
+    if (ids.length) {
+      const { data: lec } = await client.from("albaranes_lecturas").select("id, archivo, estado, creado_en").in("id", ids).eq("estado", "confirmada").order("creado_en");
+      const arch = {}; (lec || []).forEach(x => arch[x.id] = x.archivo);
+      (gr || []).forEach(g => { if (arch[g.lectura_id]) albPorLinea[g.linea] = arch[g.lectura_id]; });
+    }
+  } catch (_) { /* si no existe la tabla o no hay permiso, simplemente no hay enlace */ }
+  window._albPorLinea = albPorLinea;
+
   const tbody = document.getElementById("tabla_lineas");
   tbody.innerHTML = "<tr><th></th><th>Artículo</th><th>Cant.</th><th>Importe</th><th>%</th><th>A cobrar</th><th>Ubicación</th><th>Bultos</th><th>Peso kg</th><th>Albarán prov.</th><th>Recibido</th><th></th></tr>" +
     (lineas || []).map(l => {
       const recibida = !!l.recibido_at;
       const boton = l.tipolinea === 4 ? ""   // las líneas de importes no se reciben: no llevan botón
         : recibida
-        ? `<span class="pill-recibida">${new Date(l.recibido_at).toLocaleDateString("es-ES")}</span> <button class="secondary btn-mini" onclick="marcarRecibida(${l.linea}, false)">Deshacer</button>`
+        ? `<span class="pill-recibida">${new Date(l.recibido_at).toLocaleDateString("es-ES")}</span> <button class="secondary btn-mini" onclick="marcarRecibida(${l.linea}, false)">Deshacer</button>${albPorLinea[l.linea] ? ` <button class="secondary btn-mini" onclick="verAlbaranTransportista(${l.linea})">Ver albarán</button>` : ""}`
         : `<button class="btn-mini" onclick="marcarRecibida(${l.linea}, true)">Marcar recibida</button>`;
       const claseTipo = [1, 2, 3, 4].includes(l.tipolinea) ? `lin-t${l.tipolinea}` : "";
       const pendiente = l.tipolinea !== 4 && !l.recibido_at && l.recibido !== "S";
@@ -1544,6 +1557,14 @@ async function cargarLineas() {
   document.getElementById("ch_bultos").textContent = totalBultos;
   const totalPeso = (lineas || []).reduce((acc, l) => acc + (Number(l.peso_kg) || 0), 0);
   document.getElementById("ch_peso").textContent = Math.round(totalPeso * 100) / 100;
+}
+
+async function verAlbaranTransportista(linea) {
+  const ruta = (window._albPorLinea || {})[linea];
+  if (!ruta) return;
+  const { data, error } = await client.storage.from("albaranes").createSignedUrl(ruta, 300);
+  if (error) { alert("No se pudo abrir el albarán: " + error.message); return; }
+  window.open(data.signedUrl, "_blank");
 }
 
 async function editarUbicacion(linea, actual) {
