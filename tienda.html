@@ -111,6 +111,8 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
       <input id="n_nombre" placeholder="Nombre"><input id="n_email" type="email" placeholder="Email">
       <input id="n_pass" placeholder="Contraseña (mín. 10)"><button onclick="crearDep()">Crear cuenta</button></div>
     <span class="muted">Cada dependiente verá solo los pedidos que haga él.</span></div>
+  <h3 style="margin:22px 0 4px;color:#1e3a8a">Usuarios de la tienda</h3>
+  <div class="muted" style="margin-bottom:8px">Personas con acceso a la web. Aquí puedes cambiar su nombre, bloquearlas o ponerles una contraseña nueva.</div>
   <div id="e_tabla"><span class="muted">Cargando...</span></div>
 </div>
 
@@ -364,8 +366,9 @@ async function cargarEquipo(){
   const r = await llamar({ accion:"listar" });
   if (r.error) { document.getElementById("e_tabla").innerHTML = '<span class="muted">Error: '+esc(r.error)+'</span>'; return; }
   document.getElementById("e_tabla").innerHTML = '<table><tr><th>Nombre</th><th>Email</th><th>Tipo</th>'+(multi()?'<th>Tienda</th>':'')+'<th>Último acceso</th><th>Estado</th><th></th></tr>'+
-    r.usuarios.filter(x => !tiendaSel || x.tienda_id === tiendaSel).map(x => '<tr class="'+(x.bloqueado?'bloq':'')+'"><td>'+esc(x.nombre)+'</td><td>'+esc(x.email)+'</td><td>'+esc(x.tipo)+'</td>'+(multi()?'<td>'+esc(x.tienda)+'</td>':'')+'<td>'+(x.ultimo_acceso?new Date(x.ultimo_acceso).toLocaleString("es-ES"):"Nunca")+'</td><td>'+(x.bloqueado?"Bloqueado":"Activo")+'</td><td>'+(x.tipo==="Dependiente"?'<button class="secondary" onclick="bloqueo(\''+x.user_id+'\','+x.bloqueado+')">'+(x.bloqueado?"Desbloquear":"Bloquear")+'</button> <button class="secondary" onclick="pass(\''+x.user_id+'\')">Contraseña</button>':'')+'</td></tr>').join("")+'</table>';
+    r.usuarios.filter(x => !tiendaSel || x.tienda_id === tiendaSel).map(x => '<tr class="'+(x.bloqueado?'bloq':'')+'"><td>'+esc(x.nombre)+'</td><td>'+esc(x.email)+'</td><td>'+esc(x.tipo)+'</td>'+(multi()?'<td>'+esc(x.tienda)+'</td>':'')+'<td>'+(x.ultimo_acceso?new Date(x.ultimo_acceso).toLocaleString("es-ES"):"Nunca")+'</td><td>'+(x.bloqueado?"Bloqueado":"Activo")+'</td><td><button class="secondary" onclick="editarNombre(\''+x.user_id+'\',this)" data-n="'+esc(x.nombre)+'">Editar</button> '+(x.tipo==="Dependiente"?'<button class="secondary" onclick="bloqueo(\''+x.user_id+'\','+x.bloqueado+')">'+(x.bloqueado?"Desbloquear":"Bloquear")+'</button> <button class="secondary" onclick="pass(\''+x.user_id+'\')">Contraseña</button>':'')+'</td></tr>').join("")+'</table>';
 }
+async function editarNombre(id, b){ const n = prompt("Nombre de la persona:", b.dataset.n); if (n === null) return; const { error } = await client.rpc("guardar_nombre_dependiente", { p_user_id: id, p_nombre: n }); if (error) alert("No se pudo guardar: " + error.message); else cargarEquipo(); }
 async function bloqueo(id, b){ if(!b && !confirm("¿Bloquear esta cuenta?")) return; const r = await llamar({accion:b?"desbloquear":"bloquear",user_id:id}); if(r.error) alert(r.error); else cargarEquipo(); }
 async function pass(id){ const p = prompt("Nueva contraseña (mínimo 10 caracteres):"); if(!p) return; const r = await llamar({accion:"password",user_id:id,password:p}); alert(r.error||"Contraseña cambiada."); }
 async function crearDep(){
