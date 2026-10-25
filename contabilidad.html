@@ -94,8 +94,11 @@ ul.q{padding-left:18px;} ul.q li{margin-bottom:8px;}
 <script>
 const client=supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
 const MES=['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
-const ANYO=2026, HOY=new Date(), HOYS=HOY.toISOString().slice(0,10);
-const MES_ACT=(HOY.getFullYear()===ANYO)?HOY.getMonth()+1:(HOY.getFullYear()>ANYO?12:0);
+const HOY=new Date(), HOYS=HOY.toISOString().slice(0,10), ANYO_MIN=2026;
+let ANYO=Math.max(ANYO_MIN,HOY.getFullYear());
+try{const g=+localStorage.getItem('cont_anyo');if(g>=ANYO_MIN&&g<=HOY.getFullYear()+1)ANYO=g;}catch(e){}
+const mesActual=()=>(HOY.getFullYear()===ANYO)?HOY.getMonth()+1:(HOY.getFullYear()>ANYO?12:0);
+let MES_ACT=mesActual();   // último mes ya alcanzado del año elegido (0 = año aún no empezado)
 const CATS=['Dietas y desplazamientos','Seguridad Social','Seguros','Gasoil','Mecánico / Vehículos','Proveedores','IVA','IVA aplazado','Impuestos','Préstamos','Telefonía / Internet','Suministros','Gestoría / Asesoría','Material y herramientas','Alquileres','Multas y sanciones','Comisiones bancarias','Otros'];
 const TABS=[['resumen','Resumen anual'],['mes','Mes'],['liq','Liquidación socios'],['libro','Libro de facturas'],['cobros','Cobros'],['pend','Pendientes de cobro'],['cli','Por cliente'],['pers','Personal'],['tar','Tarifas'],['iva','IVA y modelos'],['mayor','Libro mayor']];
 
@@ -104,7 +107,7 @@ const S={facturas:[],cobros:[],tarifas:{},tarOrigen:{},gastos:[],otros:[],nom:[]
 async function todo(tabla){let out=[],desde=0;for(;;){const {data,error}=await client.from(tabla).select('*').range(desde,desde+999);if(error)throw error;out=out.concat(data);if(data.length<1000)break;desde+=1000;}return out;}
 async function recargar(){
   const [cfg,tar,fac,cob,gas,otr,tr,nom,ade]=await Promise.all(['cont_config','cont_tarifas','cont_facturas','cont_cobros','cont_gastos','cont_otros_ingresos','cont_trabajadores','cont_nominas','cont_adelantos'].map(todo));
-  S.liqDesde=(cfg.find(c=>c.anyo===ANYO)||{liq_desde:7}).liq_desde;
+  S.liqDesde=(cfg.find(c=>c.anyo===ANYO)||{liq_desde:ANYO===ANYO_MIN?7:1}).liq_desde;   // 2026: desde julio; años nuevos: desde enero
   S.tarifas={};S.tarOrigen={};tar.forEach(x=>{S.tarifas[x.cliente]=+x.pct_montaje;S.tarOrigen[x.cliente]=x.origen||'';});
   const fa=fac.filter(f=>f.anyo===ANYO);
   S.facturas=fa.map(f=>({id:f.id,cli:f.cliente,fecha:f.fecha,num:f.serie+'-'+f.numero,conc:f.concepto||'',total:+f.total,forma:f.forma_pago||'',fpago:f.fecha_pago,mont0:+f.montaje,auto:!!f.reparto_auto}));
@@ -187,7 +190,18 @@ function cerrar(){document.getElementById('ov').style.display='none';}
 document.getElementById('ov').addEventListener('mousedown',e=>{if(e.target.id==='ov')cerrar();});
 
 /* ---------- pestañas ---------- */
-function pintaTabs(){document.getElementById('tabs').innerHTML=TABS.map(t=>`<button class="tab ${V.tab===t[0]?'on':''}" data-tab="${t[0]}">${t[1]}</button>`).join('');}
+function pintaTabs(){
+  const anyos=[];for(let a=ANYO_MIN;a<=Math.max(HOY.getFullYear()+1,ANYO);a++)anyos.push(a);
+  document.getElementById('tabs').innerHTML=TABS.map(t=>`<button class="tab ${V.tab===t[0]?'on':''}" data-tab="${t[0]}">${t[1]}</button>`).join('')+
+    `<select id="selanyo" title="Año contable" style="margin:0 0 6px auto;font-weight:700">${anyos.map(a=>`<option ${a===ANYO?'selected':''}>${a}</option>`).join('')}</select>`;
+}
+async function cambiarAnyo(a){
+  try{localStorage.setItem('cont_anyo',a);}catch(e){}
+  ANYO=a;MES_ACT=mesActual();V.mes=Math.max(1,Math.min(MES_ACT||1,12));V.lib.cli='';V.pend.cli='';
+  document.getElementById('main').innerHTML='<div class="box vacio">Cargando '+a+'…</div>';
+  try{await recargar();}catch(e){alert('No se han podido cargar los datos: '+(e.message||e));}
+  render();
+}
 function ir(t){V.tab=t;render();window.scrollTo(0,0);}
 function render(){pintaTabs();document.getElementById('main').innerHTML=VISTAS[V.tab]();}
 
@@ -477,7 +491,7 @@ function vMayor(){
   const sel=`<div class="bar"><div><label class="l">Contabilidad de</label><select id="mytit">${['Arturo','José','Ambos'].map(x=>`<option ${v.tit===x?'selected':''}>${x}</option>`).join('')}</select></div><div><label class="l">Ver</label><select id="myvista"><option value="mayor" ${v.vista==='mayor'?'selected':''}>Libro mayor (una cuenta)</option><option value="diario" ${v.vista==='diario'?'selected':''}>Libro diario (asientos)</option><option value="balance" ${v.vista==='balance'?'selected':''}>Balance de sumas y saldos</option></select></div>${v.vista==='mayor'?`<div><label class="l">Cuenta</label><select id="mycta">${ctas.map(c=>`<option value="${c}" ${v.cta===c?'selected':''}>${c} · ${PGC[c]||''}</option>`).join('')}</select></div>`:''}</div>`;
   let cuerpo='';
   if(v.vista==='mayor'){let s=0;const mv=[];A.forEach(a=>a.l.filter(x=>x.c===v.cta).forEach(x=>{s=r2(s+x.d-x.h);mv.push(`<tr><td>${fdate(a.f)}</td><td class="n">${a.n}</td><td>${esc(a.ref)}</td><td>${esc(a.desc)}</td><td class="n">${x.d?eur(x.d):''}</td><td class="n">${x.h?eur(x.h):''}</td><td class="n ${cls(s)}">${eur(s)}</td></tr>`);}));
-    cuerpo=`<div class="cards"><div class="card"><div class="k">${v.cta} · ${PGC[v.cta]||''}</div><div class="v" style="font-size:18px">Saldo ${eur(s)}</div></div><div class="card"><div class="k">Debe</div><div class="v" style="font-size:18px">${eur(sal[v.cta].d)}</div></div><div class="card"><div class="k">Haber</div><div class="v" style="font-size:18px">${eur(sal[v.cta].h)}</div></div></div><div class="tw" style="max-height:60vh"><table><thead><tr><th>Fecha</th><th class="n">Asiento</th><th>Concepto</th><th>Detalle</th><th class="n">Debe</th><th class="n">Haber</th><th class="n">Saldo</th></tr></thead><tbody>${mv.join('')}</tbody></table></div>`;}
+    cuerpo=`<div class="cards"><div class="card"><div class="k">${v.cta} · ${PGC[v.cta]||''}</div><div class="v" style="font-size:18px">Saldo ${eur(s)}</div></div><div class="card"><div class="k">Debe</div><div class="v" style="font-size:18px">${eur((sal[v.cta]||{d:0}).d)}</div></div><div class="card"><div class="k">Haber</div><div class="v" style="font-size:18px">${eur((sal[v.cta]||{h:0}).h)}</div></div></div><div class="tw" style="max-height:60vh"><table><thead><tr><th>Fecha</th><th class="n">Asiento</th><th>Concepto</th><th>Detalle</th><th class="n">Debe</th><th class="n">Haber</th><th class="n">Saldo</th></tr></thead><tbody>${mv.join('')}</tbody></table></div>`;}
   else if(v.vista==='diario'){cuerpo=`<div class="tw" style="max-height:66vh"><table><thead><tr><th class="n">Nº</th><th>Fecha</th><th>Concepto</th><th>Cuenta</th><th class="n">Debe</th><th class="n">Haber</th></tr></thead><tbody>${A.slice(-400).map(a=>a.l.map((x,i)=>`<tr><td class="n">${i?'':a.n}</td><td>${i?'':fdate(a.f)}</td><td>${i?'':esc(a.ref)+' · '+esc(a.desc)}</td><td>${x.c} ${PGC[x.c]||''}</td><td class="n">${x.d?eur(x.d):''}</td><td class="n">${x.h?eur(x.h):''}</td></tr>`).join('')).join('')}</tbody></table></div><div class="sub" style="margin-top:6px">Se muestran los últimos 400 asientos de ${A.length}.</div>`;}
   else{let D=0,H=0;cuerpo=`<div class="tw"><table><thead><tr><th>Cuenta</th><th>Nombre</th><th class="n">Debe</th><th class="n">Haber</th><th class="n">Saldo deudor</th><th class="n">Saldo acreedor</th></tr></thead><tbody>${ctas.map(c=>{const s=sal[c],d=r2(s.d-s.h);D+=s.d;H+=s.h;return `<tr><td class="clic" data-mcta="${c}">${c}</td><td>${PGC[c]||''}</td><td class="n">${eur(s.d)}</td><td class="n">${eur(s.h)}</td><td class="n">${d>0?eur(d):''}</td><td class="n">${d<0?eur(-d):''}</td></tr>`;}).join('')}<tr class="tot"><td colspan="2">TOTAL</td><td class="n">${eur(D)}</td><td class="n">${eur(H)}</td><td class="n" colspan="2">${Math.abs(D-H)<0.01?'✓ cuadra':'¡descuadre!'}</td></tr></tbody></table></div>`;}
   return cab('Libro mayor','Los asientos se generan solos a partir de las facturas, cobros, gastos, nóminas y adelantos. Nadie teclea asientos.','nada: el Excel no llevaba contabilidad por cuentas')+sel+cuerpo+
@@ -553,6 +567,7 @@ document.addEventListener('click',async e=>{
 });
 document.addEventListener('change',async e=>{
   const t=e.target,d=t.dataset;
+  if(t.id==='selanyo')return cambiarAnyo(+t.value);
   if(t.id==='selmes'){V.mes=+t.value;return render();}
   if(t.id==='lcli'){V.lib.cli=t.value;return render();} if(t.id==='lserie'){V.lib.serie=t.value;return render();}
   if(t.id==='ltrim'){V.lib.trim=t.value;return render();} if(t.id==='lest'){V.lib.est=t.value;return render();}
