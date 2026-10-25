@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - Entrada por albarán</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;--ok:#15803d;--okbg:#f0fdf4;--warn:#b45309;--warnbg:#fffbeb;--bad:#dc2626;--badbg:#fef2f2;}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{display:flex;flex-direction:column;margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);font-size:14px;}
+.top{flex:none;background:#1f2430;color:#fff;display:flex;align-items:center;gap:14px;padding:10px 16px;height:52px;}
+.top b{font-size:15px;}
+.maq{background:#fde68a;color:#78350f;border-radius:5px;padding:3px 9px;font-size:12px;font-weight:700;}
+.top .sp{flex:1;}
+.drop{border:2px dashed #93c5fd;color:#dbeafe;border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;}
+.drop:hover{background:#374151;}
+.app{flex:1;min-height:0;display:grid;grid-template-columns:230px minmax(340px,1.15fr) minmax(480px,1.45fr);}
+.col{min-height:0;overflow-y:auto;border-right:1px solid var(--border);}
+#lista{background:#fff;}
+#lista h3{margin:0;padding:12px 14px 6px;font-size:13px;}
+.resumen{padding:0 14px 10px;color:var(--muted);font-size:12px;border-bottom:1px solid var(--border);}
+.doc{display:block;width:100%;text-align:left;background:#fff;border:none;border-bottom:1px solid var(--border);padding:10px 14px;cursor:pointer;font:inherit;color:inherit;border-left:4px solid transparent;}
+.doc:hover{background:var(--bg);}
+.doc.act{background:#eff6ff;border-left-color:var(--primary);}
+.doc .n{font-weight:600;font-size:13px;}
+.doc .s{font-size:12px;color:var(--muted);margin-top:2px;}
+.chip{display:inline-block;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:600;white-space:nowrap;}
+.c-ok{background:#dcfce7;color:var(--ok);}
+.c-rev{background:#fef3c7;color:var(--warn);}
+.c-no{background:#fee2e2;color:var(--bad);}
+.c-hecho{background:#e5e7eb;color:#4b5563;}
+.c-gr{background:#e0e7ff;color:#3730a3;}
+#visor{background:#2b2f3a;padding:10px;display:flex;flex-direction:column;gap:10px;overflow:hidden;}
+.vbox{flex:1;min-height:0;display:flex;flex-direction:column;}
+.vbox .imgbox,.vbox .papel{flex:1;min-height:0;}
+.vbox.peq{flex:none;}
+.vbox.peq .sinpdf{flex:none;padding:6px 10px;font-size:12px;min-height:0;}
+.vbox.peq .bar{margin-bottom:4px;}
+.papel{overflow:auto;border-radius:6px;background:#fff;padding:14px 16px;font-size:12px;color:#222;}
+.papel h6{margin:0 0 6px;font-size:14px;}
+.papel table{width:100%;border-collapse:collapse;margin-top:8px;}
+.papel td,.papel th{border-bottom:1px solid #ddd;padding:4px 6px;text-align:left;}
+.sinpdf{flex:1;border:2px dashed #64748b;border-radius:6px;color:#94a3b8;display:flex;align-items:center;justify-content:center;text-align:center;padding:14px;font-size:13px;}
+#visor .bar{color:#cbd5e1;font-size:12px;margin-bottom:8px;display:flex;justify-content:space-between;}
+#visor .imgbox{overflow:auto;border-radius:6px;background:#fff;cursor:zoom-in;}
+#visor .imgbox.zoom{cursor:zoom-out;}
+#visor img{display:block;width:100%;}
+#visor .imgbox.zoom img{width:220%;}
+#panel{display:flex;flex-direction:column;overflow:hidden;background:var(--bg);}
+#pbody{flex:1;min-height:0;overflow-y:auto;padding-bottom:10px;}
+.sec{background:var(--card);border:1px solid var(--border);border-radius:10px;margin:14px;padding:14px 16px;}
+.sec h4{margin:0 0 10px;font-size:14px;display:flex;align-items:center;gap:8px;}
+.sec h4 .num{background:var(--primary);color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;}
+.campo label{display:block;font-size:11px;color:var(--muted);font-weight:600;margin-bottom:3px;}
+input,select{padding:7px 9px;border:1px solid var(--border);border-radius:6px;font:inherit;width:100%;}
+.campo.dud input{background:var(--warnbg);border-color:#f59e0b;}
+.campo.dud label::after{content:" ⚠ revisar";color:var(--warn);}
+.campo.edit input{border-color:var(--primary);}
+.avisos{margin-top:10px;background:var(--warnbg);border:1px solid #fde68a;border-radius:8px;padding:8px 10px;font-size:12px;color:#78350f;}
+button{background:var(--primary);color:#fff;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font:inherit;font-size:13px;}
+button:hover{opacity:.9;}
+button.sec2{background:#fff;color:var(--text);border:1px solid var(--border);}
+button.peq{padding:3px 9px;font-size:12px;}
+button:disabled{opacity:.4;cursor:not-allowed;}
+.orden{border:2px solid var(--primary);border-radius:10px;padding:12px 14px;background:#f8fbff;}
+.orden .t{font-size:16px;font-weight:700;}
+.orden .m{color:var(--muted);font-size:13px;margin-top:2px;}
+.score{float:right;font-weight:700;border-radius:8px;padding:3px 10px;}
+.razones{margin:8px 0 0;padding:0;list-style:none;font-size:13px;}
+.razones li{padding:1px 0;}
+.razones .y::before{content:"✔ ";color:var(--ok);}
+.razones .n::before{content:"⚠ ";color:var(--warn);}
+.acciones{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+.alt{border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-top:8px;cursor:pointer;background:#fff;}
+.alt:hover{border-color:var(--primary);}
+.vacio{border:2px dashed #fca5a5;background:var(--badbg);border-radius:10px;padding:14px;color:#7f1d1d;}
+.busca{margin-top:10px;border-top:1px dashed var(--border);padding-top:10px;}
+.busca .res{max-height:220px;overflow-y:auto;margin-top:8px;}
+.res .it{border:1px solid var(--border);border-radius:8px;padding:7px 10px;margin-bottom:6px;cursor:pointer;font-size:13px;background:#fff;}
+.res .it:hover{border-color:var(--primary);background:#eff6ff;}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.cols h5{margin:0 0 6px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
+.lin{display:flex;align-items:flex-start;gap:7px;border:1px solid var(--border);border-left:5px solid #cbd5e1;border-radius:8px;padding:7px 8px;margin-bottom:6px;cursor:pointer;background:#fff;font-size:13px;}
+.lin.sel{outline:2px solid var(--primary);background:#eff6ff;}
+.lin input{width:auto;margin-top:3px;}
+.lin .d{flex:1;}
+.lin .cod{color:var(--muted);font-size:11px;}
+.lin.ign{opacity:.5;}
+.unir{display:flex;gap:8px;align-items:center;margin:8px 0 12px;flex-wrap:wrap;}
+.grupo{display:grid;grid-template-columns:1fr 78px 78px 26px;gap:8px;align-items:center;border:1px solid var(--border);border-left:5px solid #999;border-radius:8px;padding:8px 10px;margin-bottom:6px;background:#fff;font-size:13px;}
+.grupo .gh{color:var(--muted);font-size:11px;}
+.grupo input{padding:5px 6px;}
+.grupo .x{background:transparent;color:var(--bad);border:none;font-size:16px;padding:0;}
+.tot{margin-top:8px;font-size:13px;padding:8px 10px;border-radius:8px;}
+.tot.ok{background:var(--okbg);color:var(--ok);}
+.tot.warn{background:var(--warnbg);color:var(--warn);}
+.pie{flex:none;background:#fff;border-top:2px solid var(--primary);padding:10px 16px;display:flex;gap:10px;align-items:center;box-shadow:0 -4px 12px -6px rgba(0,0,0,.25);}
+.pie .info{flex:1;font-size:13px;color:var(--muted);}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1f2430;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:50;max-width:80vw;}
+.nota{font-size:12px;color:var(--muted);margin:0 14px 14px;}
+@media(max-width:1100px){#visor{overflow:visible}.vbox{flex:none}.vbox .imgbox,.vbox .papel,.sinpdf{max-height:60vh;min-height:140px}.app{grid-template-columns:1fr;height:auto}.col{max-height:none}#visor .imgbox{max-height:70vh}.cols{grid-template-columns:1fr}}
+.tb{width:100%;border-collapse:collapse;font-size:13px}.tb th{background:#eff6ff;color:#1e3a8a;text-align:left;padding:6px 8px;font-size:12px}.tb td{border-bottom:1px solid var(--border);padding:6px 8px;vertical-align:top}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:60;align-items:center;justify-content:center}.mbox{background:#fff;border-radius:12px;padding:18px 20px;max-width:760px;width:92vw;max-height:84vh;overflow:auto}
+.vbox iframe{display:block}
+</style>
+</head>
+<body>
+<div class="top">
+  <a href="recepcion.html" style="color:#93c5fd;text-decoration:none;font-size:13px">← Entradas Almacén</a>
+  <b>Entrada por albarán</b>
+  <span class="maq">PRUEBA · ya registra de verdad</span>
+  <span class="sp"></span><span id="est" style="font-size:12px;color:#cbd5e1"></span>
+  <label class="drop" id="subirbtn">⬆ Subir fotos de albaranes<input type="file" accept="image/*" multiple style="display:none" onchange="subir(this.files);this.value=''"></label>
+</div>
+<div class="app">
+  <aside class="col" id="lista"></aside>
+  <section class="col" id="visor"></section>
+  <section class="col" id="panel"><div id="pbody"></div><div id="pfoot"></div></section>
+</div>
+<div id="modal" style="display:none"></div><div id="toast"></div>
+
+<script>
+const ESTADO = {en_proceso:'En proceso',recepcionado_parcial:'Recep. parcial',recepcionado_total:'Recep. total',incidencia:'Incidencia',completado:'Montada',agendado:'Agendada',nueva:'Nueva'};
+const CLS = {'casa solo':['Casa sola','c-ok'],'revisar':['Revisar','c-rev'],'dudoso':['Dudoso','c-no'],'sin orden':['Sin orden','c-no']};
+const CAMPOS=[['fabricante','Fabricante'],['tienda_destino','Tienda / destinatario'],['num_albaran','Nº albarán'],['fecha_albaran','Fecha albarán'],['pedido_fabricante','Pedido del fabricante'],['cliente_final','Cliente final'],['bultos_impresos','Bultos (impresos)'],['bultos_mano','Bultos a mano (xB) ★'],['peso_kg','Peso total (kg)'],['fecha_sello_recibido','Recibido (sello ALMMA)'],['ubicacion','Ubicación (a mano)']];
+const COL=['#2563eb','#db2777','#059669','#d97706','#7c3aed','#0891b2','#be123c'];
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+function toks(s){let n=norm(s);if(/protector/.test(n))n=n.replace(/mattress|colchon/g,'');
+  n=n.replace(/pillows?/g,'almohada').replace(/mattress/g,'colchon').replace(/sommier/g,'somier');
+  n=n.replace(/(\d)x(\d)/g,'$1 $2').replace(/(\d)x(\d)/g,'$1 $2').replace(/(\d)\*(\d)/g,'$1 $2');
+  return new Set(n.split(/[^a-z0-9]+/).map(t=>t.length>4&&t.endsWith('s')?t.slice(0,-1):t).filter(t=>t.length>=3&&!['con','por','los','las','del','sin'].includes(t)));}
+function toast(t){const e=document.getElementById('toast');e.textContent=t;e.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.display='none',5000);}
+// % de coincidencia estimado a partir de la prueba (≥90 % casi siempre acierta)
+const pct=s=>s>=100?99:s>=65?Math.round(90+(s-65)*9/35):s>=40?Math.round(65+(s-40)):Math.round(s*65/40);
+function canon(s){const n=norm(s);if(/dimaflex/.test(n))return 'Dimaflex';if(/ample|trenco|flex/.test(n))return 'Ample (Ample Trenco / Flex)';if(/morte/.test(n))return 'Morte';if(/menut/.test(n))return 'Menut';if(/hogaralia|tomasella/.test(n))return 'Tomasella (Hogaralia)';if(/tomuma|alcaina/.test(n))return 'Tomuma (Alcaina)';if(/tempur/.test(n))return 'Tempur';if(/dimaflex/.test(n))return 'Dimaflex';if(/nucleo/.test(n))return 'Núcleo';if(/masia/.test(n))return 'Masiá';if(/miguel/.test(n))return 'Miguel';return s||'Sin identificar';}
+
+const FAB_STOP=new Set(['muebles','mueble','mobiliario','sl','sa','scoop','coop','decoracion','furniture','european','europea','auropea','tapizados','talleres','hermanos','hnos','grupo','group','spain','espana','casa','sillas','diseno','iberica','cb']);
+const FAB_GEN=['fabricantes varios','varios','tienda','texto',''];
+// Fabricantes que son el mismo con otro nombre (confirmados por ALMMA). En la app real: tabla editable en Sistema → Fabricantes.
+const FAB_EQUIV=[['kazzano','dormisur'],['tetrys','tetris'],['gugel','tomasella']];
+let ALIAS_L=[];try{ALIAS_L=JSON.parse(localStorage.getItem('almma_fab_equiv')||'[]');}catch(e){}
+const guardaAlias=()=>{try{localStorage.setItem('almma_fab_equiv',JSON.stringify(ALIAS_L));}catch(e){}};
+const aliasIdx=(df,lf)=>ALIAS_L.findIndex(a=>a.kd===norm(df).trim()&&a.kl===norm(lf).trim());
+const fabToks=s=>new Set(norm(s).split(/[^a-z0-9]+/).filter(t=>t.length>=3&&!FAB_STOP.has(t)));
+// 'ok' = mismo fabricante · 'gen' = línea con fabricante genérico · 'no' = OTRO fabricante (no se puede ligar)
+function fabOk(i,lf){const n=norm(lf).trim();if(FAB_GEN.includes(n))return 'gen';const df=DOCS[i].fabricante;
+  if(aliasIdx(df,lf)>=0)return 'ok';const a=fabToks(df);for(const t of fabToks(lf))if(a.has(t))return 'ok';
+  const ca=norm(df).replace(/[^a-z0-9]/g,''),cb=n.replace(/[^a-z0-9]/g,'');if(ca.length>=5&&cb.length>=5&&(ca.includes(cb)||cb.includes(ca)))return 'ok';
+  for(const g of FAB_EQUIV){if(g.some(t=>norm(df).includes(t))&&g.some(t=>n.includes(t)))return 'ok';}return 'no';}
+function marcaMismo(fab){const df=DOCS[cur].fabricante;if(aliasIdx(df,fab)<0){ALIAS_L.push({df,lf:fab,kd:norm(df).trim(),kl:norm(fab).trim()});guardaAlias();}toast('Anotado: «'+fab+'» y «'+df+'» son el mismo fabricante. Puedes deshacerlo en la línea o en la lista de la izquierda.');pinta();}
+function limpiaIncompat(){ST.forEach((s,i)=>{s.grupos=s.grupos.filter(g=>g.o.every(key=>{const l=lineaPorKey(i,key);return !l||l.nueva||fabOk(i,l.fab)!=='no';}));s.sel={a:[],o:[]};});}
+function desmarca(k){const a=ALIAS_L.splice(k,1)[0];guardaAlias();limpiaIncompat();pinta();toast('Equivalencia deshecha: «'+(a?a.lf:'')+'» y «'+(a?a.df:'')+'» vuelven a ser fabricantes distintos. Las líneas que dependían de ella se han desligado.');}
+let ESTRICTO=true;                       // regla: una orden montada no admite mercancía (solo incidencia)
+const bloq=o=>ESTRICTO&&o&&o.e==='completado';
+const chipEst=o=>`<span class="chip ${o.e==='completado'?'c-hecho':o.e==='nueva'?'c-gr':'c-rev'}">${ESTADO[o.e]||o.e}</span>`;
+function motivos(why){return (why||[]).map(w=>{
+  if(w.startsWith('nº pedido'))return 'Número de pedido coincide: '+w.slice(10);
+  if(w.startsWith('nombre'))return 'Nombre coincide: '+w.slice(7);
+  if(w==='tienda')return 'Tienda compatible';
+  if(w.startsWith('líneas'))return 'Líneas parecidas: '+w.slice(7);
+  if(w==='fabricante')return 'Fabricante compatible';return w;});}
+
+const ST=[];const MOVS=[];
+function initDoc(i){const d=DOCS[i];ST[i]={ords:[],grupos:[],ign:[],extra:[],edit:{},xn:0,hecho:false,vals:{},sel:{a:[],o:[]},buscar:false,nueva:{tienda:'',cliente:d.cliente_final||'',pedido:'',tipo:'orden',origen:''}};
+  if((d.cls==='casa solo'||d.cls==='revisar')&&d.top.length){const o=ORDM[d.top[0].id];if(!bloq(o)){ST[i].ords=[o.i];ST[i].grupos=autoGrupos(i);}}}
+function ordenObj(id,i){ if(id==='NUEVA'){const n=ST[i].nueva;return {i:'NUEVA',t:n.tienda||'(elegir tienda)',c:n.cliente,p:n.pedido,e:'nueva',l:(DOCS[i].lineas||[]).map(l=>[l.desc,l.cant||1,'',DOCS[i].fabricante])};} return ORDM[id]; }
+function olines(o,i){const ed=ST[i].edit||{};const nu=o.i==='NUEVA';
+  const base=(o.l||[]).map((l,k)=>{const key=o.i+'#'+k,e=ed[key]||{};return {key,desc:e.desc!=null?e.desc:l[0],cant:e.cant!=null?e.cant:l[1],rec:l[2],fab:l[3],nueva:nu};});
+  (ST[i].extra||[]).filter(e=>e.oid===o.i).forEach(e=>{const x=ed[e.key]||{};base.push({key:e.key,desc:x.desc!=null?x.desc:e.desc,cant:x.cant!=null?x.cant:e.cant,rec:'',fab:e.fab,nueva:true});});return base;}
+function lineaPorKey(i,key){const oid=key.split('#')[0];const o=ordenObj(oid,i);return o?olines(o,i).find(l=>l.key===key):null;}
+function autoGrupos(i){
+  const d=DOCS[i],s=ST[i];const ls=[];s.ords.forEach(id=>olines(ordenObj(id,i),i).forEach(l=>ls.push(l)));
+  ls.splice(0,ls.length,...ls.filter(l=>l.nueva||fabOk(i,l.fab)!=='no'));
+  const gs=[]; if(!ls.length||!(d.lineas||[]).length)return gs;
+  if(ls.length===1){const ot=toks(ls[0].desc);const ov=d.lineas.map((l,k)=>[...toks(l.desc)].some(x=>ot.has(x))?k:-1).filter(k=>k>=0);
+    gs.push({a:ov.length?ov:d.lineas.map((_,k)=>k),o:[ls[0].key],b:null,p:null});return gs;}
+  const m={};d.lineas.forEach((l,k)=>{const t=toks(l.desc);let best=null,bs=0;ls.forEach(o=>{const ot=toks(o.desc);let n=0;t.forEach(x=>{if(ot.has(x))n++;});if(n>bs){bs=n;best=o.key;}});if(best){(m[best]=m[best]||[]).push(k);}});
+  Object.entries(m).forEach(([key,a])=>gs.push({a,o:[key],b:null,p:null}));return gs;}
+let cur=0;
+const val=(i,k)=>{const v=ST[i].vals[k];return v!==undefined?v:DOCS[i][k];};
+const dudoso=(i,k)=>{if(k==='bultos_mano')return false;if(ST[i].vals[k]!==undefined)return false;const v=DOCS[i][k];return v==null||v===''||String(v).includes('?');};
+function bultosEf(i){const m=val(i,'bultos_mano'),a=val(i,'bultos_impresos');
+  if(m!=null&&m!==''&&Number(m)>0)return {n:Number(m),src:'mano'};
+  if(a!=null&&a!==''&&Number(a)>0)return {n:Number(a),src:'albaran'};return {n:0,src:'orden'};}
+function estado(i){const s=ST[i],d=DOCS[i];if(s.descartada)return ['Descartado','c-hecho'];if(s.hecho)return ['Hecho','c-hecho'];
+  if(!s.ords.length){const t=d.top.length&&bloq(ORDM[d.top[0].id]);return t?['Orden montada','c-rev']:(d.cls==='dudoso'?CLS['dudoso']:d.cls==='sin orden'?CLS['sin orden']:CLS['revisar']);}
+  if(d.cls==='dudoso'||d.cls==='sin orden')return CLS['revisar'];return CLS[d.cls];}
+const gDe=(i,t,x)=>ST[i].grupos.findIndex(g=>g[t].includes(x));
+
+function pintaLista(){
+  const act=DOCS.filter((d,i)=>!ST[i].hecho).length;
+  let h='<h3>Albaranes por confirmar ('+act+')</h3><div class="resumen">Sube fotos arriba a la derecha. Los ya confirmados salen en gris.</div>';
+  DOCS.forEach((d,i)=>{const [t,c]=estado(i);
+    h+=`<button class="doc ${i==cur?'act':''}" onclick="ir(${i})"><div class="n">${esc((d.fabricante||'¿?').slice(0,34))}</div><div class="s">${esc(String(d.num_albaran||'—').slice(0,22))} · ${esc(d.fecha_albaran||'')}</div><div class="s">${esc(d.nota||'')}</div><div style="margin-top:4px"><span class="chip ${c}">${t}</span></div></button>`;});
+  if(ALIAS_L.length)h+=`<div class="resumen" style="border-top:1px solid var(--border)"><b>Equivalencias de fabricante anotadas (${ALIAS_L.length})</b>${ALIAS_L.map((a,k)=>`<div style="margin-top:6px;font-size:12px">«${esc(a.lf)}» = «${esc(a.df.slice(0,24))}» <button class="sec2 peq" onclick="desmarca(${k})">↩ Deshacer</button></div>`).join('')}</div>`;
+  document.getElementById('lista').innerHTML=h;}
+function ir(i){cur=i;ST[i].sel={a:[],o:[]};pinta();document.getElementById('pbody').scrollTop=0;}
+function pintaVisor(){
+  const d=DOCS[cur],s=ST[cur];const ords=s.ords.filter(x=>x!=='NUEVA').map(x=>ORDM[x]).filter(Boolean);
+  const lista=[];let cargando=false;
+  ords.forEach(o=>{const k=o.a+'/'+o.i;const v=DOCORD[k];if(v===undefined)docsOrden(o);if(v===undefined||v===null)cargando=true;else v.forEach(x=>lista.push(Object.assign({o:o.i},x)));});
+  if(s.vdoc==null||s.vdoc>=lista.length)s.vdoc=0;
+  const sel=lista[s.vdoc];let oh='',grande=false;
+  if(!s.ords.length)oh='<div class="sinpdf">Cuando elijas una orden, aquí verás su PDF (si lo tiene).</div>';
+  else if(sel){grande=true;oh=(lista.length>1?'<select style="margin-bottom:6px" onchange="ST[cur].vdoc=+this.value;pintaVisor()">'+lista.map((x,k)=>'<option value="'+k+'" '+(k===s.vdoc?'selected':'')+'>Orden '+x.o+' · '+esc(x.nombre)+'</option>').join('')+'</select>':'')+(sel.img?'<div class="imgbox"><img src="'+esc(sel.url)+'"></div>':'<iframe src="'+esc(sel.url)+'" style="flex:1;width:100%;min-height:0;border:0;border-radius:6px;background:#fff"></iframe>');}
+  else oh='<div class="sinpdf">'+(cargando?'Buscando el PDF de la orden…':esc(s.ords.map(x=>x==='NUEVA'?'Orden nueva (sin PDF de la tienda)':'Orden '+x+': sin PDF adjunto').join(' · ')))+'</div>';
+  document.getElementById('visor').innerHTML=`<div class="vbox"><div class="bar"><span>Albarán · ${esc(d.pdf)}</span><span>clic = ampliar</span></div><div class="imgbox" onclick="this.classList.toggle('zoom')"><img src="${esc(d.img)}" alt="albarán"></div></div><div class="vbox ${grande?'':'peq'}"><div class="bar"><span>PDF de la orden</span></div>${oh}</div>`;}
+
+const okTienda=(o,i)=>{const g=DOCS[i].grupo;return !g||canon(o.t)===g;};
+const refsGrupo=g=>[...new Set(ORD.filter(o=>canon(o.t)===g).map(o=>o.t).filter(Boolean))];
+function relacionadas(o){return ORD.filter(x=>x.i!==o.i&&x.p&&norm(x.p)===norm(o.p)&&x.e!=='completado'&&okTienda(x,cur)).slice(0,3);}
+function accionesCand(o){return bloq(o)
+  ?`<button class="sec2 peq" onclick="verOrden(${o.i})">👁 Ver orden</button><button class="peq" style="background:#b45309" onclick="nueva('incidencia',${o.i})">Crear incidencia (próximamente)</button>`
+  :`<button class="sec2 peq" onclick="verOrden(${o.i})">👁 Ver orden</button><button class="peq" onclick="usa(${o.i})">Usar esta</button><button class="sec2 peq" onclick="anade(${o.i})">Añadir también</button>`;}
+function candHTML(o,t){let h=`<div class="alt"><b>Orden ${o.i}</b> · ${esc(o.t.slice(0,26))} · ${esc(o.c)} · «${esc(o.p)}» · ${chipEst(o)}${t?` <span class="chip c-gr">${pct(t.score)} %</span>`:''}`;
+  if(t)h+=`<div style="color:var(--muted);font-size:12px;margin-top:3px">${motivos(t.why).map(esc).join(' · ')}</div>`;
+  if(bloq(o)){h+=`<div class="avisos" style="margin-top:6px;background:#fef2f2;border-color:#fecaca;color:#7f1d1d"><b>Orden ya montada:</b> no admite mercancía nueva. Solo puede entrar como <b>incidencia</b>.</div>`;
+    const rel=relacionadas(o);if(rel.length){h+=`<div style="margin-top:6px;font-size:12px;color:var(--muted)">Otras órdenes abiertas con el mismo pedido (¿es la incidencia?):</div>`;rel.forEach(r=>{h+=`<div style="border:1px dashed var(--border);border-radius:6px;padding:6px 8px;margin-top:4px;font-size:12px"><b>Orden ${r.i}</b> · ${esc(r.c)} · «${esc(r.p)}» · ${chipEst(r)} · ${esc((r.l[0]||[''])[0].slice(0,40))}<div class="acciones"><button class="sec2 peq" onclick="verOrden(${r.i})">👁 Ver</button><button class="peq" onclick="usa(${r.i})">Usar esta</button></div></div>`;});}}
+  return h+`<div class="acciones">${accionesCand(o)}</div></div>`;}
+
+function cardOrden(i,id){const o=ordenObj(id,i),d=DOCS[i];const c=d.top.find(t=>String(t.id)===String(id));const n=ST[i].nueva;
+  const tit=id==='NUEVA'?(n.tipo==='incidencia'?'INCIDENCIA NUEVA de la orden '+n.origen:'ORDEN NUEVA creada por ALMMA'):'Orden '+o.i;
+  let h=`<div class="orden" style="margin-bottom:10px">${c?`<span class="score" style="background:${pct(c.score)>=90?'#dcfce7':'#fef3c7'};color:${pct(c.score)>=90?'var(--ok)':'var(--warn)'}">${pct(c.score)} % de coincidencia</span>`:''}<div class="t">${tit}</div><div class="m">${esc(o.t)} · ${esc(o.c)} · pedido «${esc(o.p)}» · ${chipEst(o)}${o.d?' · creada '+o.d:''}</div>`;
+  if(id==='NUEVA'){const T=d.grupo?refsGrupo(d.grupo):[...new Set(ORD.map(x=>x.t).filter(Boolean))].slice(0,60);
+    h+=`<div class="avisos" style="margin-top:8px;background:#f5f3ff;border-color:#ddd6fe;color:#4c1d95">${n.tipo==='incidencia'?'Entrará como incidencia vinculada a la orden '+n.origen+'.':'La tienda aún no nos ha pasado el pedido del cliente: esta orden quedará <b>sin PDF ni datos del cliente</b> y aparecerá en su pestaña «Mercancía recibida» para que los complete.'}</div>`;
+    h+=`<div class="grid" style="margin-top:10px"><div class="campo"><label>Tienda</label><select onchange="ST[${i}].nueva.tienda=this.value;pinta()"><option value="">— elegir —</option>${T.map(t=>`<option ${n.tienda==t?'selected':''}>${esc(t)}</option>`).join('')}</select></div><div class="campo"><label>Cliente final</label><input value="${esc(n.cliente)}" onchange="ST[${i}].nueva.cliente=this.value;pinta()"></div><div class="campo"><label>Nº pedido de la tienda</label><input value="${esc(n.pedido)}" onchange="ST[${i}].nueva.pedido=this.value;pinta()"></div></div>`;}
+  else if(c)h+=`<ul class="razones">${motivos(c.why).map(x=>`<li class="y">${esc(x)}</li>`).join('')}</ul><div style="font-size:11px;color:var(--muted)">Porcentaje estimado con la prueba real: a partir del 90 % casi siempre acierta.</div>`;
+  if(o.e==='recepcionado_total')h+=`<div class="avisos" style="margin-top:8px">Esta orden ya figura como <b>Recep. total</b>: si llegan más cosas, añádelas como línea nueva o incidencia.</div>`;
+  h+=`<div class="acciones">${id!=='NUEVA'?`<button class="sec2 peq" onclick="verOrden(${o.i})">👁 Ver orden</button>`:''}<button class="sec2 peq" onclick="quita('${id}')">✕ Quitar esta orden</button></div></div>`;return h;}
+
+function pintaPanel(){
+  const d=DOCS[cur],s=ST[cur];let h='';autoPeso(cur);
+  h+=`<div class="sec"><h4><span class="num">1</span>Datos leídos del albarán <span style="font-weight:400;color:var(--muted);font-size:12px">(se pueden corregir)</span></h4><div class="grid">`;
+  CAMPOS.forEach(([k,t])=>{const v=val(cur,k);h+=`<div class="campo ${dudoso(cur,k)?'dud':''} ${s.vals[k]!==undefined?'edit':''}"><label>${t}</label><input value="${esc(v)}" placeholder="${k==='bultos_mano'?'no pone xB a mano':'no se ha podido leer'}" onchange="ST[cur].vals['${k}']=this.value;pinta()"></div>`;});
+  h+=`</div>`;
+  if((d.refs||[]).length)h+=`<div class="avisos" style="background:#eff6ff;border-color:#bfdbfe;color:#1e3a8a"><b>Referencias de la tienda leídas:</b> ${d.refs.map(esc).join(' · ')}</div>`;
+  if(d.pagina)h+=`<div class="avisos" style="margin-top:8px">Página «${esc(d.pagina)}»: ${String(d.pagina).startsWith('1/')?'puede haber más páginas del mismo albarán.':'comprueba que esté agrupada con las demás.'}</div>`;
+  h+=`<div class="avisos" style="margin-top:8px"><b>Avisos del lector</b> <span class="chip ${d.modelo==='Opus 5.5'?'c-ok':'c-gr'}">leído con ${esc(d.modelo||'')}</span><div>${d.dudas?esc(d.dudas):'<i>Sin avisos.</i>'}</div><div style="font-size:11px;margin-top:4px">Se guarda con el albarán para poder revisarlo siempre.</div><div class="grid" style="margin-top:6px"><div class="campo"><label>Nota interna</label><input value="${esc(d.nota_interna||'')}" placeholder="nota para otros compañeros…" onchange="notaDB(${cur},this.value)"></div><div class="campo" style="align-self:end"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" style="width:auto" ${d.revisado?'checked':''} onchange="revDB(${cur},this.checked)"> Aviso revisado</label></div></div></div>`;
+  if((d.duplicados||[]).length)h+=`<div class="avisos" style="margin-top:8px;background:#fef2f2;border-color:#fecaca;color:#7f1d1d"><b>Ojo: este albarán (mismo fabricante y número) ya se había leído ${d.duplicados.length} vez/veces antes.</b> Comprueba que no lo estás registrando dos veces.</div>`;
+  if((d.refs||[]).filter(r=>/\w/.test(r)).length>=3)h+=`<div class="avisos" style="margin-top:8px;background:#fef2f2;border-color:#fecaca;color:#7f1d1d"><b>Este albarán parece llevar varios clientes.</b> Añade una orden por cliente con «Añadir también» o la búsqueda.</div>`;
+  h+=`</div>`;
+  h+=`<div class="sec"><h4><span class="num">2</span>Órdenes a las que se asocia</h4>`;
+  if(d.grupo)h+=`<div class="avisos" style="margin-bottom:10px;background:#eff6ff;border-color:#bfdbfe;color:#1e3a8a"><b>Tienda del albarán: ${esc(d.grupo)}.</b> Solo se pueden asociar órdenes de esta tienda (sus referencias: ${refsGrupo(d.grupo).map(esc).join(' · ')}). Nunca de otra.</div>`;
+  s.ords.forEach(id=>h+=cardOrden(cur,id));
+  const otras=d.top.filter(t=>!s.ords.includes(t.id));
+  const tie=d.top.length>1&&d.top[0].score-d.top[1].score<10;
+  if(!s.ords.length)h+=`<div class="vacio"><b>${d.cls==='sin orden'?'No hay ninguna orden con este número ni este cliente.':d.cls==='dudoso'?'Solo hay candidatas poco seguras.':'La orden propuesta no admite mercancía nueva.'}</b> ${d.cls!=='sin orden'&&d.cls!=='dudoso'?'':'Es probable que la tienda aún no nos haya pasado el pedido.'}<div class="acciones"><button onclick="ST[cur].buscar=true;pinta()">🔍 Buscar a mano</button><button class="sec2" onclick="nueva('orden')">➕ Crear orden nueva (próximamente)</button></div></div>`;
+  if(tie&&otras.length)h+=`<div class="avisos" style="margin-bottom:8px">Hay varias órdenes con porcentaje parecido: ábrelas con «Ver orden» y elige mirando las líneas.</div>`;
+  if(otras.length){h+=`<div style="margin:6px 0;font-size:12px;color:var(--muted)">${s.ords.length?'Otras posibles:':'Candidatas encontradas:'}</div>`;otras.forEach(t=>h+=candHTML(ORDM[t.id],t));}
+  h+=`<div class="acciones"><button class="sec2" onclick="ST[cur].buscar=!ST[cur].buscar;pinta()">🔍 Buscar otra orden</button>${!s.ords.includes('NUEVA')?'<button class="sec2" onclick="nueva(\'orden\')">➕ Orden nueva (próximamente)</button>':''}</div>`;
+  if(s.buscar)h+=`<div class="busca"><input id="q" placeholder="Buscar por nº de orden, cliente o nº de pedido (solo órdenes de ${d.grupo||'cualquier tienda'})" oninput="pintaRes()"><label style="font-size:12px;color:var(--muted);display:block;margin-top:6px"><input type="checkbox" id="abiertas" style="width:auto" onchange="pintaRes()"> Ocultar órdenes montadas</label><div class="res" id="res"></div></div>`;
+  h+=`</div>`;
+  if(s.ords.length){
+    const base=s.ords.filter(x=>x!=='NUEVA'&&!bloq(ORDM[x]));
+    h+=`<div class="sec"><h4><span class="num">3</span>Casar líneas <span style="font-weight:400;color:var(--muted);font-size:12px">marca varias a cada lado y pulsa «Unir» (propuesta automática sencilla: revísala)</span></h4>${s.ords.some(id=>olines(ordenObj(id,cur),cur).some(l=>l.nueva||fabOk(cur,l.fab)!=='no'))?'':`<div class="avisos" style="margin-bottom:8px;background:#fef2f2;border-color:#fecaca;color:#7f1d1d"><b>Ninguna línea de esta orden es de ${esc(d.fabricante||'este fabricante')}.</b> No se puede ligar nada con otro fabricante: añade las líneas del albarán como líneas nuevas.</div>`}<div class="cols"><div><h5>Líneas del fabricante (albarán)</h5>`;
+    (d.lineas||[]).forEach((l,k)=>{const g=gDe(cur,'a',k),ig=s.ign.includes(k);
+      h+=`<label class="lin ${s.sel.a.includes(k)?'sel':''} ${ig?'ign':''}" style="border-left-color:${g>=0?COL[g%7]:'#cbd5e1'}"><input type="checkbox" ${s.sel.a.includes(k)?'checked':''} onchange="tog('a',${k})"><span class="d"><b>${l.cant||1}×</b> ${esc(l.desc)}<div class="cod">${esc(l.cod||'')} ${g>=0?'<span class="chip c-gr">grupo '+(g+1)+'</span>':ig?'<span class="chip c-hecho">ignorada</span>':'<span class="chip c-rev">sin casar</span>'}</div>${g<0&&!ig&&base.length?`<div class="acciones"><button class="sec2 peq" onclick="event.preventDefault();addLinea(${k})">➕ Añadir como línea nueva a la orden${base.length>1?' '+base[0]:''}</button></div>`:''}</span>${g<0?`<button class="sec2 peq" onclick="event.preventDefault();ign(${k})">${ig?'Quitar':'Ignorar'}</button>`:''}</label>`;});
+    h+=`</div><div><h5>Líneas de nuestras órdenes <span style="text-transform:none;color:#1e3a8a">(solo se ligan las de ${esc(d.fabricante||'este fabricante')})</span></h5>`;
+    s.ords.forEach(id=>{const o=ordenObj(id,cur);h+=`<div style="font-size:12px;font-weight:700;margin:6px 0 4px">${id==='NUEVA'?'Orden nueva':'Orden '+o.i} · ${esc(o.c)}</div>`;
+      olines(o,cur).forEach(l=>{const g=gDe(cur,'o',l.key),fo=l.nueva?'ok':fabOk(cur,l.fab);
+        h+=`<label class="lin ${s.sel.o.includes(l.key)?'sel':''} ${fo==='no'?'ign':''}" style="border-left-color:${fo==='no'?'#dc2626':g>=0?COL[g%7]:'#cbd5e1'}"><input type="checkbox" ${s.sel.o.includes(l.key)?'checked':''} ${fo==='no'?'disabled':''} onchange="tog('o','${l.key}')"><span class="d">${l.nueva?`<input type="number" min="1" style="width:52px;padding:3px 5px" value="${l.cant}" onclick="event.stopPropagation()" onchange="editL('${l.key}','cant',this.value)"> × <input style="width:calc(100% - 66px);padding:3px 6px" value="${esc(l.desc)}" onclick="event.stopPropagation()" onchange="editL('${l.key}','desc',this.value)">`:`<b>${l.cant}×</b> ${esc(l.desc)}`}<div class="cod">${fo==='no'?`<span class="chip c-no">Otro fabricante: ${esc(l.fab)}</span> <button class="sec2 peq" onclick="event.preventDefault();marcaMismo(${JSON.stringify(l.fab).replace(/"/g,'&quot;')})">Son el mismo fabricante</button>`:fo==='gen'?`<span class="chip c-hecho">Fabricante genérico${l.fab?': '+esc(l.fab):''}</span>`:`<span class="chip c-ok">${esc(l.fab||'')}</span>${aliasIdx(d.fabricante,l.fab)>=0?` <span class="chip c-gr">equivalencia anotada</span> <button class="sec2 peq" onclick="event.preventDefault();desmarca(${aliasIdx(d.fabricante,l.fab)})">↩ Deshacer</button>`:''}`} · ${l.nueva?'<span class="chip c-gr">línea nueva (editable): se añadirá a la orden</span>':(l.rec==='S'?'ya recibida':'pendiente')} ${g>=0?'<span class="chip c-gr">grupo '+(g+1)+'</span>':''}</div></span></label>`;});});
+    h+=`</div></div><div class="unir"><button onclick="une()" ${s.sel.a.length&&s.sel.o.length?'':'disabled'}>🔗 Unir seleccionadas</button><span style="font-size:12px;color:var(--muted)">Muchas del fabricante → una nuestra, o una → varias. Lo que no esté en la orden se puede añadir como línea nueva.</span></div>`;
+    if(s.grupos.length){h+=`<h5 style="margin:6px 0;font-size:12px;color:var(--muted);text-transform:uppercase">Grupos que se registrarán</h5>`;
+      s.grupos.forEach((g,gi)=>{const nk=g.o.find(k=>{const l=lineaPorKey(cur,k);return l&&l.nueva;}),nl=nk?lineaPorKey(cur,nk):null;
+        const per=g.o.length>1?' (repartido a partes iguales entre '+g.o.length+' líneas)':'';
+        h+=`<div class="grupo" style="border-left-color:${COL[gi%7]}"><div><b>Grupo ${gi+1}</b><div class="gh">Fabricante: ${g.a.map(k=>esc(String(d.lineas[k].desc).slice(0,34))).join(' + ')}</div><div class="gh">Nuestra: ${g.o.map(k=>{const l=lineaPorKey(cur,k);return esc(k.split('#')[0]+': '+(l?l.desc:'').slice(0,30))+(l&&l.nueva?' (línea nueva)':'');}).join(' + ')}</div>${nl?`<div class="gh" style="margin-top:4px">Nombre de la línea nueva: <input style="width:60%;padding:3px 6px" value="${esc(nl.desc)}" onchange="editL('${nk}','desc',this.value)"> <button class="sec2 peq" onclick="sugiere(${gi})">Sugerir con el albarán</button></div>`:''}<div class="gh" style="margin-top:4px;color:#1e3a8a">→ Se guarda en la línea de la orden: <b>${g.b==null?'?':g.b} bultos · ${g.p==null?'?':g.p} kg</b>${per}</div></div><div><div class="gh">Bultos</div><input type="number" min="0" value="${g.b==null?'':g.b}" placeholder="?" onchange="setG(${gi},'b',this.value)"></div><div><div class="gh">Peso kg ${g.pm?'':'(auto)'}</div><input type="number" min="0" step="0.1" value="${g.p==null?'':g.p}" placeholder="?" onchange="setG(${gi},'p',this.value)"></div><button class="x" onclick="quitaG(${gi})">✕</button></div>`;});
+      const be=bultosEf(cur),sb=s.grupos.reduce((a,g)=>a+(g.b||0),0),falta=s.grupos.some(g=>g.b==null),sp=s.grupos.reduce((a,g)=>a+(g.p||0),0),tp=Number(val(cur,'peso_kg'))||0,hp=s.grupos.some(g=>g.p!=null),imp=Number(val(cur,'bultos_impresos'))||0;
+      const srcT={mano:'contados a mano',albaran:'según el albarán',orden:''}[be.src];let msg=[],ok=true;
+      if(be.n){if(sb===be.n&&!falta)msg.push(`Bultos: ${sb} de ${be.n} (${srcT}) ✔`);else{ok=false;msg.push(`Bultos repartidos: ${sb} de ${be.n} (${srcT})`+(falta?' · faltan por rellenar':''));}if(be.src==='mano'&&imp&&imp!==be.n)msg.push(`El albarán impreso dice ${imp}: nos fiamos del conteo a mano`);}else{ok=false;msg.push('Sin xB a mano ni bultos en el albarán: se mirarán en la orden.');}
+      if(hp){if(Math.abs(sp-tp)<0.5)msg.push(`Peso: ${sp} de ${tp} kg ✔`);else{ok=false;msg.push(`Peso repartido: ${sp} de ${tp} kg`);}}else if(tp)msg.push(`Peso del albarán: ${tp} kg`);
+      h+=`<div class="tot ${ok?'ok':'warn'}">${msg.join(' · ')}</div><p class="nota" style="margin:6px 0 0">Bultos y peso de cada grupo se guardan en la línea de la orden, para poder mostrar en el DECA lo que llevamos. El peso del albarán se reparte solo (proporcional a los bultos) y se puede corregir.</p>`;}
+    h+=`</div>`;}
+  const sinCasar=(d.lineas||[]).filter((l,k)=>gDe(cur,'a',k)<0&&!s.ign.includes(k)).length;
+  const nuevas=s.extra.length;
+  let puede=s.ords.length&&s.grupos.length&&!(s.ords.includes('NUEVA')&&!s.nueva.tienda),why='';
+  if(!s.ords.length)why='Falta elegir o crear la orden.';else if(!s.grupos.length)why='Falta casar al menos una línea.';else if(!puede)why='Falta elegir la tienda de la orden nueva.';
+  const f=`<div class="pie"><div class="info">${s.hecho?'✔ Entrada ya registrada.':(puede?`Se registrará: ${s.grupos.length} grupo(s), ${bultosEf(cur).n||s.grupos.reduce((a,g)=>a+(g.b||0),0)} bultos, recibido ${esc(val(cur,'fecha_sello_recibido')||'hoy')}, ubicación «${esc(val(cur,'ubicacion')||'—')}»${nuevas?` · ${nuevas} línea(s) nueva(s) en la orden`:''}${sinCasar?` · <b style="color:var(--warn)">${sinCasar} línea(s) sin casar</b>`:''}`:why)}</div><button class="sec2" onclick="siguiente()">Dejar para después</button><button class="sec2" onclick="descartar()" ${s.hecho?'disabled':''}>Descartar lectura</button><button onclick="confirma()" ${puede&&!s.hecho?'':'disabled'}>✔ Todo correcto: registrar entrada</button></div>`;
+  document.getElementById('pbody').innerHTML=h;document.getElementById('pfoot').innerHTML=f;
+  if(s.buscar)pintaRes();}
+function pinta(){pintaLista();pintaVisor();pintaPanel();}
+function tog(l,k){if(l==='o'){const ln=lineaPorKey(cur,k);if(ln&&!ln.nueva&&fabOk(cur,ln.fab)==='no')return toast('Esa línea es de otro fabricante ('+ln.fab+'): no se puede ligar con este albarán ('+DOCS[cur].fabricante+').');}const a=ST[cur].sel[l],i=a.indexOf(k);i<0?a.push(k):a.splice(i,1);pintaPanel();}
+function ign(k){const a=ST[cur].ign,i=a.indexOf(k);i<0?a.push(k):a.splice(i,1);pinta();}
+function limpiaExtras(){const s=ST[cur];const usadas=new Set(s.grupos.flatMap(g=>g.o));s.extra=s.extra.filter(e=>usadas.has(e.key));}
+function une(){const s=ST[cur];if(!s.sel.a.length||!s.sel.o.length)return;if(s.sel.o.some(k=>{const ln=lineaPorKey(cur,k);return ln&&!ln.nueva&&fabOk(cur,ln.fab)==='no';}))return toast('Hay una línea de otro fabricante: no se puede ligar.');
+  s.grupos.forEach(g=>{g.a=g.a.filter(x=>!s.sel.a.includes(x));g.o=g.o.filter(x=>!s.sel.o.includes(x));});s.grupos=s.grupos.filter(g=>g.a.length&&g.o.length);
+  s.ign=s.ign.filter(x=>!s.sel.a.includes(x));s.grupos.push({a:[...s.sel.a].sort((x,y)=>x-y),o:[...s.sel.o],b:null,p:null});s.sel={a:[],o:[]};limpiaExtras();pinta();}
+function quitaG(gi){ST[cur].grupos.splice(gi,1);limpiaExtras();pinta();}
+function setG(gi,k,v){const g=ST[cur].grupos[gi];g[k]=v===''?null:Number(v);if(k==='p')g.pm=true;pintaPanel();}
+function editL(key,k,v){const e=ST[cur].edit;e[key]=Object.assign({},e[key],{[k]:k==='cant'?Math.max(1,Number(v)||1):v});pintaPanel();}
+function corto(x){return String(x).replace(/[\[\(].*?[\]\)]/g,'').split(/[\s,\-\/]+/).filter(w=>w.length>2).slice(0,3).join(' ').toLowerCase();}
+function sugiere(gi){const g=ST[cur].grupos[gi],nk=g.o.find(k=>{const l=lineaPorKey(cur,k);return l&&l.nueva;});if(!nk)return;const nom=[...new Set(g.a.map(k=>corto(DOCS[cur].lineas[k].desc)))].join(' + ');editL(nk,'desc',nom);}
+// peso del albarán repartido entre grupos (si no lo has escrito tú): 1 grupo = todo; varios = proporcional a bultos
+function autoPeso(i){const s=ST[i],tp=Number(val(i,'peso_kg'))||0;if(!tp||!s.grupos.length)return;
+  const sb=s.grupos.reduce((a,g)=>a+(g.b||0),0);
+  s.grupos.forEach(g=>{if(g.pm)return;if(s.grupos.length===1)g.p=tp;else if(sb>0&&g.b>0)g.p=Math.round(tp*g.b/sb*10)/10;else g.p=null;});}
+function addLinea(k){toast('Añadir líneas nuevas a una orden desde aquí aún no está disponible: hazlo en pedidos.html y vuelve.');}
+function quita(id){const s=ST[cur];id=String(id);s.ords=s.ords.filter(x=>String(x)!==id);s.grupos=s.grupos.filter(g=>!g.o.some(k=>k.startsWith(id+'#')));s.extra=s.extra.filter(e=>String(e.oid)!==id);pinta();}
+function usa(id){if(!okTienda(ORDM[id],cur))return toast('Ese albarán es de '+DOCS[cur].grupo+': no puede ir a una orden de otra tienda.');if(bloq(ORDM[id]))return toast('Esa orden ya está montada: solo admite incidencias.');const s=ST[cur];s.ords=[id];s.extra=[];s.grupos=autoGrupos(cur);s.buscar=false;s.sel={a:[],o:[]};pinta();toast('Orden elegida. Revisa el casado de líneas.');}
+function anade(id){if(!okTienda(ORDM[id],cur))return toast('Ese albarán es de '+DOCS[cur].grupo+': no puede ir a una orden de otra tienda.');if(bloq(ORDM[id]))return toast('Esa orden ya está montada: solo admite incidencias.');const s=ST[cur];if(!s.ords.includes(id))s.ords.push(id);const aut=autoGrupos(cur);aut.forEach(g=>{if(g.o.some(k=>k.startsWith(id+'#'))&&!g.a.some(x=>s.grupos.some(h=>h.a.includes(x))))s.grupos.push(g);});s.buscar=false;pinta();}
+function nueva(tipo,origen){toast('Crear órdenes o incidencias nuevas desde aquí aún no está disponible: hazlo en pedidos.html y vuelve a buscarla.');}
+function pintaRes(){const q=norm((document.getElementById('q')||{value:''}).value),ab=document.getElementById('abiertas').checked;
+  const r=q.length<2?[]:ORD.filter(o=>okTienda(o,cur)&&(!ab||o.e!=='completado')&&norm(o.i+' '+o.t+' '+o.c+' '+o.p).includes(q)).slice(0,25);
+  document.getElementById('res').innerHTML=q.length<2?'<div style="color:var(--muted);font-size:13px">Escribe al menos 2 letras.</div>':(r.length?r.map(o=>candHTML(o,null)).join(''):'<div style="color:var(--muted);font-size:13px">Ninguna coincide. Puedes crear una orden nueva.</div>');}
+function verOrden(id){const o=ORDM[id];if(!o)return;
+  document.getElementById('modal').innerHTML=`<div class="mbox"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">Orden ${o.i} ${chipEst(o)}</h3><button class="sec2 peq" onclick="document.getElementById('modal').style.display='none'">✕ Cerrar</button></div><div class="m" style="margin:8px 0">${esc(o.t)} · cliente «${esc(o.c)}» · pedido «${esc(o.p)}» · creada ${esc(o.d)}</div><table class="tb"><tr><th>Cant.</th><th>Descripción</th><th>Fabricante</th><th>Recibida</th></tr>${o.l.length?o.l.map(l=>`<tr><td>${l[1]}</td><td>${esc(l[0])}</td><td>${esc(l[3])}</td><td>${l[2]==='S'?'✔ sí':'no'}</td></tr>`).join(''):'<tr><td colspan="4">Sin líneas de mercancía</td></tr>'}</table><div class="acciones"><a href="pedidos.html?anyo=${o.a}&orden=${o.i}" target="_blank"><button class="peq">Abrir la ficha completa en pedidos.html</button></a></div></div>`;document.getElementById('modal').style.display='flex';}
+function siguiente(){const n=DOCS.findIndex((d,i)=>i>cur&&!ST[i].hecho);if(n>=0)ir(n);else pinta();}
+
+
+/* ====== CONEXIÓN Y DATOS REALES ====== */
+const client = supabase.createClient(
+  "https://uamgbtbsxbrgymhqalak.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k"
+);
+let DOCS=[],ORD=[],ORDM={},ROWS=[],AV=[];
+const CARGA={ordenes:false};
+const estTxt=t=>{const e=document.getElementById('est');if(e)e.textContent=t||'';};
+async function paginar(q){let todo=[],d=0;for(;;){const r=await q().range(d,d+999);if(r.error)throw new Error(r.error.message);todo=todo.concat(r.data);if(r.data.length<1000)break;d+=1000;}return todo;}
+const nums=s=>{const out=new Set();const add=m=>{const d=m.replace(/\D/g,"");if(d.length>=3)out.add(d.replace(/^0+/,""));};
+  for(const m of String(s||"").match(/\d[\d.\-\/]*\d|\d/g)||[]){add(m);for(const p of m.split(/[\-\/ ]/))add(p);}return out;};
+const NSTOP=new Set("recoge recoger expo menut ample trenco muebles mueble sofa mesa colchon canape cama almma servicios para sl s.l. cb de del la el los las y en con por entrega almacen descarga tienda cliente pedido ref su s/pedido s/ref albaran".split(" "));
+const ntoks=s=>new Set((norm(s).match(/[a-z]{4,}/g)||[]).filter(t=>!NSTOP.has(t)));
+const TIENDA={ample:"ample",trenco:"ample",morte:"morte",menut:"menut",tomasella:"hogaralia",hogaralia:"hogaralia",tomuma:"tomuma",alcaina:"tomuma",nucleo:"nucleo",tempur:"tempur",flex:"flex",dimaflex:"dimaflex",miguel:"miguel",masia:"masia"};
+const tk=s=>{const n=norm(s);return new Set(Object.entries(TIENDA).filter(([k])=>n.includes(k)).map(([,v])=>v));};
+function lev1(a,b){if(a===b)return true;if(Math.abs(a.length-b.length)>1||Math.min(a.length,b.length)<6)return false;
+  if(a.length===b.length){let d=0;for(let i=0;i<a.length;i++)if(a[i]!==b[i])d++;return d<=1;}
+  if(a.length>b.length)[a,b]=[b,a];for(let i=0;i<b.length;i++)if(b.slice(0,i)+b.slice(i+1)===a)return true;return false;}
+const fz=(A,B)=>[...A].filter(x=>[...B].some(y=>lev1(x,y)));
+const inter=(A,B)=>[...A].filter(x=>B.has(x));
+const GRUPOS_CONOCIDOS=new Set(['Dimaflex','Ample (Ample Trenco / Flex)','Morte','Menut','Tomasella (Hogaralia)','Tomuma (Alcaina)','Tempur','Núcleo','Masiá','Miguel']);
+const grupoDoc=t=>{const c=canon(t);return GRUPOS_CONOCIDOS.has(c)?c:null;};
+
+async function cargarOrdenes(){
+  if(CARGA.ordenes)return;
+  estTxt('Cargando órdenes recientes (solo la primera vez)…');
+  const desde=new Date();desde.setMonth(desde.getMonth()-9);const ds=desde.toISOString().slice(0,10);
+  const ords=await paginar(()=>client.from("ordenes").select("anyo,orden,estado,nombre_cli,num_pedido,proveedor,tienda_id,fecha_creacion").gte("fecha_creacion",ds).order("anyo").order("orden"));
+  const tiendas=await paginar(()=>client.from("tiendas").select("id,nombre"));
+  const fabs=await paginar(()=>client.from("fabricantes").select("codigo,nombre"));
+  const minPorAnyo={};ords.forEach(o=>{if(!(o.anyo in minPorAnyo)||o.orden<minPorAnyo[o.anyo])minPorAnyo[o.anyo]=o.orden;});
+  let lins=[];for(const a of Object.keys(minPorAnyo))lins=lins.concat(await paginar(()=>client.from("linorden").select("anyo,orden,linea,articulo,descripcion,cantidad,recibido,proveedor").eq("anyo",a).eq("tipolinea",1).gte("orden",minPorAnyo[a]).order("orden").order("linea")));
+  try{const e=await client.from("fabricantes_equivalentes").select("nombre_a,nombre_b");if(e.data)e.data.forEach(x=>FAB_EQUIV.push([norm(x.nombre_a),norm(x.nombre_b)]));}catch(_){}
+  const tN={};tiendas.forEach(t=>tN[t.id]=t.nombre);const fN={};fabs.forEach(f=>fN[f.codigo]=f.nombre);
+  const porOrd={};lins.forEach(l=>{(porOrd[l.anyo+"/"+l.orden]=porOrd[l.anyo+"/"+l.orden]||[]).push(l);});
+  ORD=ords.map(o=>{const ls=porOrd[o.anyo+"/"+o.orden]||[];const t=tN[o.tienda_id]||'';
+    const x={i:o.orden,a:o.anyo,tid:o.tienda_id,t,c:o.nombre_cli||'',p:o.num_pedido||'',e:o.estado||'',d:(o.fecha_creacion||'').slice(0,10),
+      l:ls.map(l=>[l.descripcion||l.articulo||'',l.cantidad||1,l.recibido==='S'?'S':'',fN[l.proveedor]||'',l.linea,l.articulo,l.proveedor])};
+    x._nums=nums(o.num_pedido);x._toks=ntoks((o.nombre_cli||'')+' '+(o.num_pedido||''));x._tset=tk(t);x._ltoks=ntoks(ls.map(l=>l.descripcion).join(' '));
+    x._fabs=new Set([fN[o.proveedor]||'',...x.l.map(l=>l[3])].map(norm).filter(Boolean));return x;});
+  ORDM={};ORD.forEach(o=>{if(!ORDM[o.i]||o.a>=ORDM[o.i].a)ORDM[o.i]=o;});
+  CARGA.ordenes=true;estTxt('');
+}
+function candidatas(L){
+  const refs=(L.refs||[]).join(" ")+" "+(L.cliente_final||"");
+  const pn=new Set([...nums(refs),...nums(L.pedido_fabricante),...(/tempur/.test(norm(L.fabricante))?nums(L.num_albaran):[])]);
+  const pt=ntoks(refs),ptd=tk(L.tienda_destino),gdoc=grupoDoc(L.tienda_destino);
+  const ltx=ntoks((L.lineas||[]).map(l=>l.desc).join(" ")),fab=norm(L.fabricante);const out=[];
+  for(const c of ORD){
+    if(gdoc&&canon(c.t)!==gdoc)continue;
+    let s=0;const why=[];
+    const n=inter(pn,c._nums);if(n.length){s+=40+15*Math.min(2,n.length);why.push("nº pedido "+n.join(","));}
+    const t=fz(pt,c._toks);if(t.length){s+=15*Math.min(3,t.length);why.push("nombre "+t.join(","));}
+    if(ptd.size&&inter(ptd,c._tset).length&&(n.length||t.length)){s+=10;why.push("tienda");}
+    const lt=inter(ltx,c._ltoks);if(lt.length&&(n.length||t.length)){s+=3*Math.min(5,lt.length);why.push("líneas "+lt.slice(0,3).join(","));}
+    const fb=[...c._fabs].filter(f=>f.length>3&&fab.includes(f.split(" ")[0]));if(fb.length&&(n.length||t.length)){s+=8;why.push("fabricante");}
+    if(s>0)out.push({id:c.i,score:s,why});
+  }
+  return out.sort((a,b)=>b.score-a.score).slice(0,4);
+}
+function clasifica(top){const b=top[0],s2=top[1];
+  if(!b)return 'sin orden';if(b.score>=65&&(!s2||b.score-s2.score>=10))return 'casa solo';if(b.score>=40)return 'revisar';return 'dudoso';}
+function docDesdeFila(f,url,dups){
+  const L=f.lectura||{};const d=Object.assign({},L);
+  d.id=f.id;d.img=url;d.pdf=(L._origen&&L._origen.nombre_original)||'foto';d.page=L.pagina||'1';
+  d.modelo=/opus/.test(f.modelo||'')?'Opus 5.5':(f.modelo||'');d.dudas=(L.avisos||[]).join(' · ');
+  d.grupo=grupoDoc(L.tienda_destino);d.nota_interna=f.nota_interna||'';d.revisado=!!f.revisado;d.duplicados=dups||[];
+  ['bultos_impresos','bultos_mano','peso_kg'].forEach(k=>{if(d[k]===0)d[k]=null;});
+  d.lineas=d.lineas||[];d.refs=d.refs||[];
+  d.top=candidatas(d);d.cls=clasifica(d.top);return d;
+}
+async function cargarPendientes(){
+  const r=await client.from("albaranes_lecturas").select("id,archivo,modelo,lectura,nota_interna,revisado").eq("estado","pendiente").order("creado_en",{ascending:false}).limit(60);
+  if(r.error){toast('No se pudieron cargar los pendientes: '+r.error.message);return;}
+  const rows=(r.data||[]).filter(f=>f.lectura&&f.lectura.es_albaran);if(!rows.length)return;
+  const sg=await client.storage.from("albaranes").createSignedUrls(rows.map(f=>f.archivo),3600);
+  const url={};(sg.data||[]).forEach(x=>{url[x.path]=x.signedUrl;});
+  rows.reverse().forEach(f=>{const d=docDesdeFila(f,url[f.archivo]||'');DOCS.push(d);initDoc(DOCS.length-1);});
+}
+function reducir(file){return new Promise((ok,ko)=>{
+  const url=URL.createObjectURL(file),im=new Image();
+  im.onload=()=>{const k=Math.min(1,2000/Math.max(im.width,im.height));
+    const c=document.createElement("canvas");c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);
+    c.getContext("2d").drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(url);
+    c.toBlob(b=>b?ok(b):ko(new Error("No se pudo preparar la imagen")),"image/jpeg",0.85);};
+  im.onerror=()=>ko(new Error("No se puede abrir "+file.name+" (¿es HEIC o PDF? De momento solo JPG, PNG o WEBP)"));
+  im.src=url;});}
+async function subir(files){
+  files=[...files];if(!files.length)return;
+  const b=document.getElementById('subirbtn');b.style.opacity=.5;
+  try{await cargarOrdenes();}catch(e){toast('No se pudieron cargar las órdenes: '+e.message);b.style.opacity=1;return;}
+  let primero=-1;
+  for(let n=0;n<files.length;n++){
+    estTxt('Leyendo '+(n+1)+' de '+files.length+'…');
+    try{
+      const blob=await reducir(files[n]);
+      const dt=new Date(),mm=String(dt.getMonth()+1).padStart(2,"0");
+      const ruta=dt.getFullYear()+"/"+mm+"/"+crypto.randomUUID()+".jpg";
+      const up=await client.storage.from("albaranes").upload(ruta,blob,{contentType:"image/jpeg"});
+      if(up.error)throw new Error("Subida: "+up.error.message);
+      const r=await client.functions.invoke("leer-albaran",{body:{ruta,nombre_original:files[n].name}});
+      if(r.error){let m=r.error.message;try{const j=await r.error.context.json();m=j.error||m;}catch(_){}throw new Error(m);}
+      if(!r.data.lectura.es_albaran){toast(files[n].name+': no parece una página de albarán (portada o en blanco). Se ha guardado igualmente.');continue;}
+      const sg=await client.storage.from("albaranes").createSignedUrl(ruta,3600);
+      const d=docDesdeFila({id:r.data.id,modelo:r.data.lectura._uso&&r.data.lectura._uso.modelo,lectura:r.data.lectura},sg.data&&sg.data.signedUrl,r.data.duplicados);
+      DOCS.push(d);initDoc(DOCS.length-1);if(primero<0)primero=DOCS.length-1;
+      pintaLista();
+    }catch(e){toast(files[n].name+': '+e.message);}
+  }
+  estTxt('');b.style.opacity=1;if(primero>=0)ir(primero);else pinta();
+}
+/* documentos (PDF) de cada orden, para verlos junto al albarán */
+const DOCORD={};
+async function docsOrden(o){const k=o.a+'/'+o.i;if(DOCORD[k]!==undefined)return;DOCORD[k]=null;
+  try{const r=await client.from("documentos_orden").select("nombre,storage_path").eq("anyo",o.a).eq("orden",o.i);
+  const lista=[];for(const x of (r.data||[])){const sg=await client.storage.from("ordenes-adjuntos").createSignedUrl(x.storage_path,3600);if(sg.data)lista.push({nombre:x.nombre||'documento',url:sg.data.signedUrl,img:/\.(jpe?g|png|webp)$/i.test(x.storage_path)});}
+  DOCORD[k]=lista;}catch(e){DOCORD[k]=[];}
+  if(DOCS[cur]&&ST[cur].ords.includes(o.i))pintaVisor();}
+function notaDB(i,v){DOCS[i].nota_interna=v;client.from("albaranes_lecturas").update({nota_interna:v||null}).eq("id",DOCS[i].id).then(r=>{if(r.error)toast('No se guardó la nota: '+r.error.message);});}
+async function revDB(i,v){DOCS[i].revisado=v;const u=(await client.auth.getUser()).data.user;client.from("albaranes_lecturas").update({revisado:v,revisado_por:v?u.id:null,revisado_en:v?new Date().toISOString():null}).eq("id",DOCS[i].id).then(r=>{if(r.error)toast('No se guardó: '+r.error.message);});}
+function aIso(v){const m=String(v||'').match(/(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/);if(!m)return null;let [,d,mo,y]=m;if(y.length===2)y='20'+y;const f=new Date(Date.UTC(+y,+mo-1,+d));return f.getUTCFullYear()==+y&&f.getUTCMonth()==+mo-1&&f.getUTCDate()==+d?y+'-'+mo.padStart(2,'0')+'-'+d.padStart(2,'0'):null;}
+async function descartar(){const d=DOCS[cur];if(!confirm('¿Descartar esta lectura? (No toca ninguna orden; deja de salir en la lista.)'))return;
+  const r=await client.from("albaranes_lecturas").update({estado:'descartada'}).eq("id",d.id);if(r.error)return toast('No se pudo descartar: '+r.error.message);
+  ST[cur].descartada=true;ST[cur].hecho=true;toast('Lectura descartada.');siguiente();}
+let confirmando=false;
+async function confirma(){
+  if(confirmando)return;const s=ST[cur],d=DOCS[cur];if(s.hecho)return;
+  if(s.ords.includes('NUEVA')||s.extra.length)return toast('Crear órdenes o líneas nuevas desde aquí aún no está disponible.');
+  const ops=[];
+  s.grupos.forEach(g=>{const n=g.o.length;g.o.forEach((key,j)=>{const [oid,idx]=String(key).split('#');const o=ORDM[oid],l=o&&o.l[+idx];if(!l)return;
+    ops.push({o,l,g,bultos:g.b==null?null:Math.floor(g.b/n)+(j<g.b%n?1:0),peso:g.p==null?null:Math.round(g.p/n*100)/100});});});
+  if(!ops.length)return toast('No hay líneas que registrar.');
+  const ubi=(val(cur,'ubicacion')||'').trim()||null,alb=(val(cur,'num_albaran')||'').trim()||null;
+  const iso=aIso(val(cur,'fecha_sello_recibido'));const cuando=iso?iso+'T12:00:00':new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,19);
+  const yaRec=ops.filter(x=>x.l[2]==='S').length;
+  let t='Vas a marcar como RECIBIDAS '+ops.length+' línea(s) de '+[...new Set(ops.map(x=>'#'+x.o.a+'/'+x.o.i))].join(', ')+'.\nRecibido el '+(iso?iso.split('-').reverse().join('/'):'hoy')+(ubi?' · ubicación «'+ubi+'»':'')+'.\nEsto modifica las órdenes y crea las entradas de almacén.';
+  if(!ubi)t+='\n\n¡Atención! No hay ubicación.';if(yaRec)t+='\n\n¡Atención! '+yaRec+' línea(s) ya estaban recibidas (se sobrescribirían sus datos).';
+  if(!confirm(t+'\n\n¿Confirmar?'))return;
+  confirmando=true;const uid=(await client.auth.getUser()).data.user.id,errs=[];
+  for(const x of ops){
+    const val1={ubicacion:ubi,bultos:x.bultos,albaran:alb,recibido:'S',recibido_at:cuando,recibido_por:uid};if(x.peso!==null)val1.peso_kg=x.peso;
+    const u=await client.from("linorden").update(val1).eq("anyo",x.o.a).eq("orden",x.o.i).eq("linea",x.l[4]);
+    if(u.error){errs.push('Línea '+x.l[4]+' de la orden '+x.o.i+': '+u.error.message);continue;}
+    const e=await client.rpc("registrar_entrada_almacen",{p_orden_anyo:x.o.a,p_orden_num:x.o.i,p_orden_linea:x.l[4],p_almacen:x.l[6]??0,p_articulo:x.l[5]||null,p_descripcion:x.l[0]||null,p_cantidad:x.l[1]??1,p_ubicacion:ubi,p_bultos:x.bultos,p_albaran:alb,p_num_pedido:x.o.p||null,p_tienda_id:x.o.tid||null,p_fabricante:x.l[6]??null,p_fecha:cuando});
+    if(e.error)errs.push('Línea '+x.l[4]+' de la orden '+x.o.i+' (marcada recibida, pero sin entrada de almacén): '+e.error.message);
+    x.l[2]='S';
+  }
+  const gr=await client.from("albaranes_lecturas_grupos").insert(ops.map(x=>({lectura_id:d.id,anyo:x.o.a,orden:x.o.i,linea:x.l[4],lineas_albaran:x.g.a.map(k=>d.lineas[k]),bultos:x.bultos,peso_kg:x.peso})));
+  if(gr.error)errs.push('No se guardó el detalle del casado: '+gr.error.message);
+  const o1=ops[0].o,be=bultosEf(cur);
+  await client.from("albaranes_lecturas").update({estado:errs.length?'pendiente':'confirmada',tienda_id:o1.tid||null,num_albaran:alb,fecha_albaran:aIso(val(cur,'fecha_albaran')),fecha_recibido:iso,ubicacion:ubi,bultos_mano:Number(val(cur,'bultos_mano'))||null,bultos_impresos:Number(val(cur,'bultos_impresos'))||null,peso_kg:Number(val(cur,'peso_kg'))||null}).eq("id",d.id);
+  confirmando=false;
+  if(errs.length){alert('Hubo problemas:\n\n'+errs.join('\n')+'\n\nRevísalo en Entradas Almacén antes de repetir.');pinta();return;}
+  s.hecho=true;toast('Entrada registrada: '+ops.length+' línea(s) marcadas como recibidas.');siguiente();
+}
+async function iniciar(){
+  const {data:ses}=await client.auth.getSession();if(!ses.session){location.href='login.html';return;}
+  const st=await client.from('staff').select('user_id').eq('user_id',ses.session.user.id).maybeSingle();
+  if(!st.data){document.body.innerHTML='<p style="padding:30px">Esta pantalla es solo para personal de oficina.</p>';return;}
+  document.getElementById('lista').innerHTML='<h3>Cargando…</h3>';
+  try{await cargarOrdenes();await cargarPendientes();}catch(e){toast('Error al cargar: '+e.message);}
+  pinta();
+}
+
+iniciar();
+</script>
+</body>
+</html>
