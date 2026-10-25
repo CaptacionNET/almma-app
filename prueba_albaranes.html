@@ -8,23 +8,37 @@
 <style>
 body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:#f5f6fa;color:#1f2430;}
 header{background:#1f2430;color:#fff;padding:12px 20px;font-weight:700;}
-main{max-width:900px;margin:20px auto;padding:0 16px;}
+main{max-width:980px;margin:20px auto;padding:0 16px;}
 .card{background:#fff;border:1px solid #e2e4eb;border-radius:10px;padding:16px;margin-bottom:16px;}
-button{background:#2563eb;color:#fff;border:none;padding:9px 18px;border-radius:6px;cursor:pointer;font-size:14px;}
+button{background:#2563eb;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;}
+button.sec{background:#fff;color:#1f2430;border:1px solid #e2e4eb;}
+button.rojo{background:#fff;color:#dc2626;border:1px solid #fecaca;padding:3px 10px;font-size:12px;}
 button:disabled{opacity:.5;}
+input[type=text],input[type=number]{padding:7px 9px;border:1px solid #e2e4eb;border-radius:6px;font-size:14px;}
 .meta{color:#6b7280;font-size:13px;}
 .err{background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:8px;padding:10px;margin-top:10px;}
+.ok{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;border-radius:8px;padding:8px 10px;margin-top:8px;font-size:13px;}
 pre{background:#f3f4f6;padding:10px;border-radius:6px;overflow:auto;font-size:12px;white-space:pre-wrap;}
 img{max-width:100%;max-height:320px;border:1px solid #e2e4eb;border-radius:6px;}
 .res{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
 @media(max-width:700px){.res{grid-template-columns:1fr;}}
+.asoc{border-top:1px solid #e2e4eb;margin-top:14px;padding-top:12px;}
+.cand{border:1px solid #e2e4eb;border-radius:8px;padding:8px 10px;margin:8px 0;display:flex;gap:10px;align-items:center;}
+.cand .t{flex:1;font-size:13px;}
+.pct{font-weight:700;font-size:16px;min-width:48px;text-align:right;}
+.pct.a{color:#15803d;}.pct.m{color:#b45309;}.pct.b{color:#dc2626;}
+.lin{display:flex;gap:8px;align-items:flex-start;font-size:13px;padding:4px 0;}
+.lin.off{color:#9ca3af;}
+.panel{background:#f9fafb;border:1px solid #e2e4eb;border-radius:8px;padding:10px;margin:8px 0;}
+.tag{display:inline-block;font-size:11px;border-radius:10px;padding:1px 8px;background:#e5e7eb;margin-left:4px;}
+.tag.v{background:#dcfce7;color:#15803d;}.tag.r{background:#fee2e2;color:#b91c1c;}
 </style>
 </head>
 <body>
 <header>ALMMA · Prueba de lectura de albaranes (solo oficina)</header>
 <main>
 <div class="card">
-  <p class="meta">Sube una foto de una página de albarán (JPG, PNG o WEBP). La IA la lee y te enseña lo que ha entendido. <b>No marca nada como recibido ni toca ninguna orden</b>; solo guarda la lectura como pendiente para revisarla.</p>
+  <p class="meta">Sube una foto de una página de albarán (JPG, PNG o WEBP). La IA la lee, te propone las órdenes que encajan y tú eliges con cuál se asocia. <b>No marca nada como recibido ni modifica ninguna orden</b>: la asociación se guarda aparte, como pendiente de confirmar.</p>
   <input type="file" id="f" accept="image/*" multiple>
   <button id="b" onclick="leer()">Leer</button>
   <span class="meta" id="est"></span>
@@ -45,6 +59,127 @@ function reducir(file){return new Promise((ok,ko)=>{
     c.toBlob(b=>b?ok(b):ko(new Error("No se pudo preparar la imagen")),"image/jpeg",0.85);};
   im.onerror=()=>ko(new Error("No se puede abrir "+file.name+" (¿es HEIC? usa JPG/PNG)"));
   im.src=url;});}
+
+/* ================= CRUCE CON ÓRDENES (se hace en el navegador, no cuesta nada) ================= */
+const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+const STOP=new Set("recoge recoger expo menut ample trenco muebles mueble sofa mesa colchon canape cama almma servicios para sl s.l. cb de del la el los las y en con por entrega almacen descarga tienda cliente pedido ref su s/pedido s/ref albaran".split(" "));
+const toks=s=>new Set((norm(s).match(/[a-z]{4,}/g)||[]).filter(t=>!STOP.has(t)));
+function nums(s){const out=new Set();const add=m=>{const d=m.replace(/\D/g,"");if(d.length>=3)out.add(d.replace(/^0+/,""));};
+  for(const m of String(s||"").match(/\d[\d.\-\/]*\d|\d/g)||[]){add(m);for(const p of m.split(/[\-\/ ]/))add(p);}return out;}
+const GRUPOS=[["dimaflex","Dimaflex"],["ample|trenco|flex","Ample"],["morte","Morte"],["menut","Menut"],["hogaralia|tomasella","Tomasella"],["tomuma|alcaina","Tomuma"],["tempur","Tempur"],["nucleo","Núcleo"],["masia","Masiá"],["miguel","Miguel"]];
+function grupo(t){const n=norm(t);for(const [rx,v] of GRUPOS)if(new RegExp(rx).test(n))return v;return null;}
+const TIENDA={ample:"ample",trenco:"ample",morte:"morte",menut:"menut",tomasella:"hogaralia",hogaralia:"hogaralia",tomuma:"tomuma",alcaina:"tomuma",nucleo:"nucleo",tempur:"tempur",flex:"flex",dimaflex:"dimaflex",miguel:"miguel",masia:"masia"};
+const tk=s=>{const n=norm(s);return new Set(Object.entries(TIENDA).filter(([k])=>n.includes(k)).map(([,v])=>v));};
+function lev1(a,b){if(a===b)return true;if(Math.abs(a.length-b.length)>1||Math.min(a.length,b.length)<6)return false;
+  if(a.length===b.length){let d=0;for(let i=0;i<a.length;i++)if(a[i]!==b[i])d++;return d<=1;}
+  if(a.length>b.length)[a,b]=[b,a];for(let i=0;i<b.length;i++)if(b.slice(0,i)+b.slice(i+1)===a)return true;return false;}
+const fz=(A,B)=>[...A].filter(x=>[...B].some(y=>lev1(x,y)));
+const inter=(A,B)=>[...A].filter(x=>B.has(x));
+function pct(s){return Math.round(s>=100?99:s>=65?90+(s-65)*9/35:s>=40?65+(s-40):s*65/40);}
+
+let DATOS=null, EQUIV=[["kazzano","dormisur"],["tetrys","tetris"],["gugel","tomasella"]];
+async function paginar(q){let todo=[],d=0;for(;;){const r=await q().range(d,d+999);if(r.error)throw new Error(r.error.message);todo=todo.concat(r.data);if(r.data.length<1000)break;d+=1000;}return todo;}
+async function cargarDatos(est){
+  if(DATOS)return DATOS;
+  est.textContent="Cargando órdenes para el cruce (solo la primera vez)…";
+  const desde=new Date();desde.setMonth(desde.getMonth()-9);const ds=desde.toISOString().slice(0,10);
+  const ords=await paginar(()=>client.from("ordenes").select("anyo,orden,estado,nombre_cli,num_pedido,proveedor,tienda_id,fecha_creacion").gte("fecha_creacion",ds).order("anyo").order("orden"));
+  const tiendas=await paginar(()=>client.from("tiendas").select("id,nombre"));
+  const fabs=await paginar(()=>client.from("fabricantes").select("codigo,nombre"));
+  const minPorAnyo={};ords.forEach(o=>{if(!(o.anyo in minPorAnyo)||o.orden<minPorAnyo[o.anyo])minPorAnyo[o.anyo]=o.orden;});
+  let lins=[];for(const a of Object.keys(minPorAnyo))lins=lins.concat(await paginar(()=>client.from("linorden").select("anyo,orden,linea,articulo,descripcion,cantidad,recibido,proveedor").eq("anyo",a).eq("tipolinea",1).gte("orden",minPorAnyo[a]).order("orden").order("linea")));
+  try{const e=await client.from("fabricantes_equivalentes").select("nombre_a,nombre_b");if(e.data)e.data.forEach(x=>EQUIV.push([norm(x.nombre_a),norm(x.nombre_b)]));}catch(_){}
+  const tN={};tiendas.forEach(t=>tN[t.id]=t.nombre);const fN={};fabs.forEach(f=>fN[f.codigo]=f.nombre);
+  const porOrd={};lins.forEach(l=>{(porOrd[l.anyo+"/"+l.orden]=porOrd[l.anyo+"/"+l.orden]||[]).push(Object.assign({fab:fN[l.proveedor]||""},l));});
+  const lista=ords.map(o=>{const ls=porOrd[o.anyo+"/"+o.orden]||[];const tienda=tN[o.tienda_id]||"";
+    return {o,tienda,ls,gr:grupo(tienda),nums:nums(o.num_pedido),toks:toks((o.nombre_cli||"")+" "+(o.num_pedido||"")),tset:tk(tienda),ltoks:toks(ls.map(l=>l.descripcion).join(" ")),fabs:new Set([fN[o.proveedor]||"",...ls.map(l=>l.fab)].map(norm).filter(Boolean))};});
+  DATOS={lista,fN};return DATOS;
+}
+function fabCompatible(fabAlb,fabLinea){
+  const a=norm(fabAlb),b=norm(fabLinea);
+  if(!b||/varios|tienda|texto/.test(b))return true;
+  const pa=a.split(/\W+/).filter(x=>x.length>3),pb=b.split(/\W+/).filter(x=>x.length>3);
+  if(pa.some(x=>pb.includes(x)))return true;
+  return EQUIV.some(([x,y])=>(a.includes(x)&&b.includes(y))||(a.includes(y)&&b.includes(x)));
+}
+function candidatas(L){
+  const refs=(L.refs||[]).join(" ")+" "+(L.cliente_final||"");
+  const pn=new Set([...nums(refs),...nums(L.pedido_fabricante),...(/tempur/.test(norm(L.fabricante))?nums(L.num_albaran):[])]);
+  const pt=toks(refs),ptd=tk(L.tienda_destino),gdoc=grupo(L.tienda_destino);
+  const ltx=toks((L.lineas||[]).map(l=>l.desc).join(" ")),fab=norm(L.fabricante);const out=[];
+  for(const c of DATOS.lista){
+    if(gdoc&&c.gr!==gdoc)continue;
+    let s=0;const why=[];
+    const n=inter(pn,c.nums);if(n.length){s+=40+15*Math.min(2,n.length);why.push("nº pedido "+n.join(","));}
+    const t=fz(pt,c.toks);if(t.length){s+=15*Math.min(3,t.length);why.push("nombre "+t.join(","));}
+    if(ptd.size&&inter(ptd,c.tset).length&&(n.length||t.length)){s+=10;why.push("tienda");}
+    const lt=inter(ltx,c.ltoks);if(lt.length&&(n.length||t.length)){s+=3*Math.min(5,lt.length);why.push("líneas "+lt.slice(0,3).join(","));}
+    const fb=[...c.fabs].filter(f=>f.length>3&&fab.includes(f.split(" ")[0]));if(fb.length&&(n.length||t.length)){s+=8;why.push("fabricante");}
+    if(s>0)out.push({c,s,why});
+  }
+  return out.sort((a,b)=>b.s-a.s).slice(0,4);
+}
+function buscarManual(txt){
+  const q=norm(txt).trim();if(q.length<2)return [];
+  const qn=q.replace(/\D/g,"");
+  return DATOS.lista.filter(c=>norm(c.o.nombre_cli).includes(q)||norm(c.o.num_pedido).includes(q)||norm(c.tienda).includes(q)||(qn.length>=3&&(String(c.o.orden)===qn||nums(c.o.num_pedido).has(qn)))).slice(0,8).map(c=>({c,s:0,why:["búsqueda"]}));
+}
+
+/* ================= PANTALLA DE ASOCIACIÓN ================= */
+const ESTADO={en_proceso:"en proceso",recepcionado_parcial:"recibida parcial",recepcionado_total:"recibida total",agendado:"agendada",completado:"montada",incidencia:"incidencia"};
+function cero(v){return v===0||v===null||v===undefined?null:v;}
+function pintarAsociacion(box,id,L){
+  const cont=document.createElement("div");cont.className="asoc";box.appendChild(cont);
+  const estado={sel:null};
+  function lista(titulo,items,conPct){
+    if(!items.length)return '<p class="meta">'+titulo+': ninguna orden encaja.</p>';
+    return '<b style="font-size:13px">'+titulo+'</b>'+items.map((x,i)=>{
+      const p=conPct?pct(x.s):null,cl=p>=85?"a":p>=60?"m":"b",o=x.c.o;
+      return '<div class="cand">'+(conPct?'<div class="pct '+cl+'">'+p+'%</div>':'')+'<div class="t"><b>#'+o.anyo+'/'+o.orden+'</b> · '+esc(x.c.tienda)+' · '+esc(o.nombre_cli||"(sin cliente)")+' · ref '+esc(o.num_pedido||"-")+' <span class="tag">'+esc(ESTADO[o.estado]||o.estado)+'</span><br><span class="meta">'+esc(x.why.join(" · "))+' · '+x.c.ls.length+' líneas de mercancía</span></div><button data-i="'+i+'">Elegir</button></div>';}).join("");}
+  function inicio(){
+    const cs=candidatas(L);estado.cs=cs;
+    cont.innerHTML='<div id="props">'+lista("Órdenes propuestas",cs,true)+'</div><div style="margin:10px 0"><span class="meta">¿No es ninguna? Busca por cliente, nº de pedido o nº de orden: </span><input type="text" id="bq" placeholder="ej. nadia, 3846, 2362" style="width:220px"> <button class="sec" id="bb">Buscar</button></div><div id="bres"></div><div id="panel"></div><div id="guardadas"></div>';
+    cont.querySelector("#props").onclick=e=>{const b=e.target.closest("button[data-i]");if(b)elegir(estado.cs[b.dataset.i]);};
+    cont.querySelector("#bb").onclick=()=>{const r=buscarManual(cont.querySelector("#bq").value);estado.rs=r;cont.querySelector("#bres").innerHTML=lista("Resultados",r,false);};
+    cont.querySelector("#bres").onclick=e=>{const b=e.target.closest("button[data-i]");if(b)elegir(estado.rs[b.dataset.i]);};
+  }
+  function elegir(x){
+    const c=x.c,o=c.o,ltx=L.lineas||[];
+    const bultos0=cero(L.bultos_mano)??cero(L.bultos_impresos)??"",peso0=cero(L.peso_kg)??"";
+    const montada=o.estado==="completado";
+    let h='<div class="panel"><b>Orden #'+o.anyo+'/'+o.orden+'</b> · '+esc(c.tienda)+' · '+esc(o.nombre_cli||"")+' <span class="tag">'+esc(ESTADO[o.estado]||o.estado)+'</span>';
+    if(montada)h+='<div class="err">Esta orden ya está montada. Solo admitiría una incidencia (reposición), no una entrada normal. Todavía no está disponible aquí.</div>';
+    h+='<p class="meta" style="margin:6px 0">Marca las líneas de la orden que corresponden a este albarán. Las de otro fabricante no se pueden asociar.</p>';
+    c.ls.forEach(l=>{const ok=fabCompatible(L.fabricante,l.fab);
+      const lt=toks(l.descripcion),pre=ok&&ltx.some(a=>inter(toks(a.desc),lt).length);
+      h+='<label class="lin'+(ok?'':' off')+'"><input type="checkbox" data-l="'+l.linea+'" '+(ok?'':'disabled ')+(pre&&!montada?'checked':'')+'> <span>'+l.cantidad+' × '+esc(l.descripcion||l.articulo)+' <span class="tag">'+esc(l.fab||"sin fabricante")+'</span> '+(l.recibido==="S"?'<span class="tag v">ya recibida</span>':'<span class="tag r">pendiente</span>')+'</span></label>';});
+    if(!c.ls.length)h+='<p class="meta">Esta orden no tiene líneas de mercancía.</p>';
+    h+='<div style="margin-top:8px">Bultos: <input type="number" id="pb" min="0" value="'+bultos0+'" style="width:70px"> &nbsp; Peso total kg: <input type="number" id="pp" min="0" step="0.01" value="'+peso0+'" style="width:90px"> &nbsp; <button id="pg" '+(montada?'disabled':'')+'>Guardar asociación</button> <button class="sec" id="pc">Cancelar</button></div><div id="msg"></div></div>';
+    const p=cont.querySelector("#panel");p.innerHTML=h;
+    p.querySelector("#pc").onclick=()=>p.innerHTML="";
+    p.querySelector("#pg").onclick=()=>guardar(c,p);
+  }
+  async function guardar(c,p){
+    const ticks=[...p.querySelectorAll("input[data-l]:checked")].map(i=>+i.dataset.l);
+    const msg=p.querySelector("#msg");
+    if(!ticks.length){msg.innerHTML='<div class="err">Marca al menos una línea de la orden.</div>';return;}
+    const B=parseInt(p.querySelector("#pb").value||"0",10),P=parseFloat(p.querySelector("#pp").value||"0");
+    const filas=ticks.map((ln,i)=>({lectura_id:id,anyo:c.o.anyo,orden:c.o.orden,linea:ln,lineas_albaran:L.lineas||[],
+      bultos:B?Math.floor(B/ticks.length)+(i<B%ticks.length?1:0):null,peso_kg:P?Math.round(P/ticks.length*100)/100:null}));
+    const r=await client.from("albaranes_lecturas_grupos").insert(filas).select("id,anyo,orden,linea");
+    if(r.error){msg.innerHTML='<div class="err">No se pudo guardar: '+esc(r.error.message)+'</div>';return;}
+    if(c.o.tienda_id)await client.from("albaranes_lecturas").update({tienda_id:c.o.tienda_id}).eq("id",id);
+    p.innerHTML="";anotar(c,r.data);
+  }
+  function anotar(c,filas){
+    const g=cont.querySelector("#guardadas"),d=document.createElement("div");d.className="ok";
+    d.innerHTML='Guardado: orden <b>#'+c.o.anyo+'/'+c.o.orden+'</b> ('+esc(c.o.nombre_cli||"")+'), líneas '+filas.map(f=>f.linea).join(", ")+' (pendiente de confirmar, no se ha marcado como recibido). <button class="rojo">Quitar</button>';
+    d.querySelector("button").onclick=async()=>{const r=await client.from("albaranes_lecturas_grupos").delete().in("id",filas.map(f=>f.id));if(r.error)alert(r.error.message);else d.remove();};
+    g.appendChild(d);
+  }
+  inicio();
+}
+
 async function leer(){
   const {data:s}=await client.auth.getSession();
   if(!s.session){location.href="login.html";return;}
@@ -69,11 +204,12 @@ async function leer(){
        +(r.data.duplicados&&r.data.duplicados.length?'<div class="err">Ojo: este albarán (mismo fabricante y número) ya se había leído '+r.data.duplicados.length+' vez/veces.</div>':'')
        +'<div class="res"><div><img src="'+esc(sig.data&&sig.data.signedUrl)+'"></div><div>'
        +'<p><b>'+esc(L.fabricante)+'</b> → '+esc(L.tienda_destino)+'<br>Albarán '+esc(L.num_albaran)+' · '+esc(L.fecha_albaran)+'<br>Cliente: '+esc(L.cliente_final)+'<br>Refs: '+esc((L.refs||[]).join(" | "))+'</p>'
-       +'<p>Bultos a mano: <b>'+esc(L.bultos_mano)+'</b> · impresos: '+esc(L.bultos_impresos)+' · peso: '+esc(L.peso_kg)+' kg<br>Ubicación: <b>'+esc(L.ubicacion)+'</b> · sello recibido: '+esc(L.fecha_sello_recibido)+'</p>'
+       +'<p>Bultos a mano: <b>'+esc(cero(L.bultos_mano)??"–")+'</b> · impresos: '+esc(cero(L.bultos_impresos)??"–")+' · peso: '+esc(cero(L.peso_kg)??"–")+' kg<br>Ubicación: <b>'+esc(L.ubicacion)+'</b> · sello recibido: '+esc(L.fecha_sello_recibido)+'</p>'
        +'<p>'+(L.lineas||[]).map(l=>esc(l.cant)+' × '+esc(l.cod)+' '+esc(l.desc)).join("<br>")+'</p>'
        +(L.avisos&&L.avisos.length?'<p class="meta">Avisos: '+esc(L.avisos.join(" · "))+'</p>':'')
        +'</div></div><details><summary class="meta">Ver lectura completa</summary><pre>'+esc(JSON.stringify(L,null,2))+'</pre></details>';
-    }catch(e){box.innerHTML='<b>'+esc(files[i].name)+'</b><div class="err">'+esc(e.message)+'</div>';}
+      if(L.es_albaran){await cargarDatos(est);pintarAsociacion(box,r.data.id,L);}
+    }catch(e){box.innerHTML+='<div class="err">'+esc(files[i].name)+': '+esc(e.message)+'</div>';}
   }
   est.textContent="Terminado.";b.disabled=false;
 }
