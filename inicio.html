@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - Inicio</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+header{display:flex;align-items:center;gap:12px;padding:14px 24px;background:var(--card);border-bottom:1px solid var(--border);}
+header .logo{font-size:22px;font-weight:800;color:var(--primary);} header .quien{color:var(--muted);font-size:14px;flex:1;}
+header button{background:#fff;border:1px solid var(--border);border-radius:8px;padding:8px 14px;cursor:pointer;font-size:14px;}
+main{max-width:900px;margin:0 auto;padding:28px 20px;}
+h1{font-size:20px;margin:0 0 18px;}
+#botones{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:16px;}
+a.boton{display:block;background:var(--card);border:1px solid #bfdbfe;border-left:5px solid var(--primary);border-radius:12px;padding:18px;text-decoration:none;color:var(--text);box-shadow:0 6px 14px -10px rgba(30,41,59,.3);}
+a.boton:hover{background:#eff6ff;}
+a.boton .ico{font-size:28px;} a.boton b{display:block;font-size:16px;margin:6px 0 2px;color:#1e3a8a;} a.boton span{font-size:13px;color:var(--muted);}
+</style>
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="ALMMA"><script src="pwa.js" defer></script>
+</head>
+<body>
+<header><div class="logo">ALMMA</div><div class="quien" id="quien"></div><button onclick="logout()">Salir</button></header>
+<main><h1>¿Qué quieres hacer?</h1><div id="botones"></div></main>
+<script>
+const client = supabase.createClient(
+  "https://uamgbtbsxbrgymhqalak.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k"
+);
+const B = (ico, t, d, href) => ({ ico, t, d, href });
+
+async function init() {
+  const { data: { user } } = await client.auth.getUser();
+  if (!user) { location.href = "login.html"; return; }
+
+  let botones = [];
+  const { data: st } = await client.from("staff").select("nombre, es_admin, es_montador, solo_deca, solo_montajes").eq("user_id", user.id).maybeSingle();
+  if (st) {
+    // cuentas restringidas: van directas a lo suyo
+    if (st.solo_montajes) { location.href = "mi-dia.html"; return; }
+    if (st.solo_deca) { location.href = "deca.html"; return; }
+    document.getElementById("quien").textContent = st.nombre || "";
+    botones = [
+      B("📋", "Órdenes", "Alta, consulta y edición de pedidos", "pedidos.html"),
+      B("📦", "Entradas Almacén", "Registrar mercancía recibida", "recepcion.html"),
+      B("✅", "Punteo", "Repaso de lo que falta por llegar", "punteo.html"),
+      B("🗺️", "Rutas", "Montajes de la semana y montadores", "rutas.html"),
+      B("🧾", "Facturación", "Pendientes, borradores y emitidas", "facturas.html"),
+      B("🛠️", "DeCA", "Pantalla de DeCA", "deca.html"),
+      B("⚙️", "Sistema", "Tiendas, fabricantes, artículos…", "sistema.html"),
+    ];
+    if (st.es_montador) botones.push(B("📱", "Mi día", "Mis montajes de hoy", "mi-dia.html"));
+    if (st.es_admin) botones.push(B("🔐", "Administración", "Cuentas y permisos", "admin.html"));
+  } else {
+    const { data: dep } = await client.from("dependientes").select("es_admin_tienda, nombre").eq("user_id", user.id).maybeSingle();
+    if (!dep) { await client.auth.signOut(); location.href = "login.html"; return; }
+    document.getElementById("quien").textContent = dep.nombre || "";
+    if (dep.es_admin_tienda) {
+      botones = [
+        B("🏬", "Mi tienda", "Órdenes, facturas, montajes y equipo", "tienda.html"),
+        B("➕", "Nuevo pedido", "Crear un pedido", "mis-pedidos.html"),
+      ];
+    } else {
+      botones = [
+        B("➕", "Nuevo pedido", "Crear un pedido", "mis-pedidos.html"),
+        B("📋", "Mis pedidos", "Pedidos de mi tienda", "mis-pedidos.html"),
+        B("🚚", "Montajes", "Próximos montajes y realizados", "montajes_tienda.html"),
+      ];
+    }
+  }
+  document.getElementById("botones").innerHTML = botones.map(b =>
+    '<a class="boton" href="' + b.href + '"><div class="ico">' + b.ico + '</div><b>' + b.t + '</b><span>' + b.d + '</span></a>').join("");
+}
+async function logout() { await client.auth.signOut(); location.href = "login.html"; }
+init();
+</script>
+</body>
+</html>
