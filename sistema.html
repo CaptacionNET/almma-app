@@ -140,6 +140,7 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
 
 <div class="barra">
   <input id="buscador" type="text" placeholder="Buscar..." oninput="buscarEnCatalogo()">
+  <label id="lbl_antiguos" style="display:none;font-size:13px;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="chk_antiguos" onchange="cargarCatalogo()" style="width:auto;"> Ver antiguos (no usados en los últimos 3 años)</label>
   <div class="spacer" style="flex:1;"></div>
   <button id="btn_nuevo" onclick="abrirNuevo()">+ Nuevo</button>
 </div>
@@ -324,9 +325,12 @@ function cambiarCatalogo(cat) {
   document.getElementById("buscador").style.display = esArticulos ? "none" : "";
   document.getElementById("filtros_articulos").style.display = esArticulos ? "flex" : "none";
   if (esArticulos) prepararFiltrosArticulos();
+  document.getElementById("lbl_antiguos").style.display = (cat === "fabricantes" || cat === "dependientes") ? "inline-flex" : "none";
+  document.getElementById("chk_antiguos").checked = false;
   cargarCatalogo();
 }
 
+let ocultosAntiguos = 0;
 let catalogoCompleto = [];   // lista entera del catálogo abierto: el buscador filtra siempre sobre ella
 async function cargarCatalogo() {
   const cfg = CATALOGOS[catalogoActivo];
@@ -337,8 +341,30 @@ async function cargarCatalogo() {
     return;
   }
   avisoBox.textContent = "Cargando...";
-  const { data, error } = await client.from(cfg.tabla).select("*").order(cfg.orden).limit(1000);
+  // se pide en trozos de 1000 (el servidor no da más de golpe) hasta 5000 filas
+  let data = [], desde = 0, error = null;
+  for (;;) {
+    const r = await client.from(cfg.tabla).select("*").order(cfg.orden).range(desde, desde + 999);
+    if (r.error) { error = r.error; break; }
+    data = data.concat(r.data);
+    if (r.data.length < 1000 || data.length >= 5000) break;
+    desde += 1000;
+  }
   if (error) { avisoBox.textContent = "Error: " + error.message; return; }
+
+  // fabricantes y vendedores: por defecto solo los usados en los últimos 3 años (migracion/81)
+  ocultosAntiguos = 0;
+  if ((catalogoActivo === "fabricantes" || catalogoActivo === "dependientes") && !document.getElementById("chk_antiguos").checked) {
+    const rpc = catalogoActivo === "fabricantes" ? "fabricantes_recientes" : "dependientes_recientes";
+    const { data: usados, error: eU } = await client.rpc(rpc);
+    if (!eU && Array.isArray(usados)) {
+      const set = new Set(usados);
+      const clave = catalogoActivo === "fabricantes" ? "codigo" : "id";
+      const total = data.length;
+      data = data.filter(f => set.has(f[clave]));
+      ocultosAntiguos = total - data.length;
+    } else console.warn("No se pudo filtrar por uso reciente (¿falta el SQL 81?):", eU);
+  }
 
   if (catalogoActivo === "dependientes") {
     const tiendas = await cargarTiendas();
@@ -346,7 +372,7 @@ async function cargarCatalogo() {
     data.forEach(d => { d._tienda = porId[d.tienda_id] || ""; d._acceso = d.user_id ? "Sí" : "No"; });
   }
 
-  avisoBox.textContent = `${data.length} registros.`;
+  avisoBox.textContent = `${data.length} registros.` + (ocultosAntiguos ? ` (${ocultosAntiguos} antiguos ocultos: marca «Ver antiguos» para verlos)` : "");
   catalogoCompleto = data;
   renderTabla(cfg, data);
 }
@@ -458,6 +484,7 @@ async function buscarEnCatalogo() {
   const ptexto = _sa(texto).split(/\s+/).filter(Boolean);
   const filtradas = filas.filter(f => { const todo = _sa(cfg.buscarCampos.map(c => f[c] || "").join(" ")); return ptexto.every(p => todo.includes(p)); });
   tabla.setData(filtradas);
+  if (!filtradas.length && ocultosAntiguos) document.getElementById("aviso_carga").textContent = `Sin resultados entre los usados. Hay ${ocultosAntiguos} antiguos ocultos: marca «Ver antiguos».`;
 }
 
 async function abrirEditar(registro) {
