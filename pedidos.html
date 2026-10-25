@@ -1257,6 +1257,13 @@ async function abrirPanel(orden) {
   ["ch_fecha_prev_recepcion", "ch_fecha_recepcion", "ch_fecha_prev_montaje", "ch_fecha_montaje"].forEach(marcarFechaVacia);
   document.getElementById("ch_horamont").value = o.horamont || "";
   document.getElementById("ch_hora_montaje").value = horaInput(o.fecha_montaje);
+  // montaje cerrado: la fecha y hora son las de la firma del cliente y no se tocan
+  montajeCerrado = ["completado", "terminado_incidencia"].includes(o.estado) && !!o.fecha_montaje;
+  ["ch_fecha_montaje", "ch_hora_montaje"].forEach(id => {
+    const el = document.getElementById(id);
+    el.disabled = montajeCerrado;
+    el.title = montajeCerrado ? "Montaje cerrado: la fecha y hora son las de la firma del cliente" : "";
+  });
   await llenarSelectEstado("ch_estado", o.estado || "en_proceso");
   await llenarSelectTipoLinea();
   mostrarNuevaLinea(false);
@@ -1304,6 +1311,7 @@ async function eliminarOrdenActiva() {
   await cargarPedidos();
 }
 
+let montajeCerrado = false;
 async function guardarCabecera() {
   if (!pedidoActivo) return;
   const valores = {
@@ -1321,7 +1329,7 @@ async function guardarCabecera() {
     fecha_prev_recepcion: document.getElementById("ch_fecha_prev_recepcion").value || null,
     fecha_recepcion: document.getElementById("ch_fecha_recepcion").value || null,
     fecha_prev_montaje: document.getElementById("ch_fecha_prev_montaje").value || null,
-    fecha_montaje: combinarFechaHora(document.getElementById("ch_fecha_montaje").value, document.getElementById("ch_hora_montaje").value),
+    ...(montajeCerrado ? {} : { fecha_montaje: combinarFechaHora(document.getElementById("ch_fecha_montaje").value, document.getElementById("ch_hora_montaje").value) }),
     horamont: document.getElementById("ch_horamont").value.trim() || null,
     estado: document.getElementById("ch_estado").value,
     importe_total: document.getElementById("ch_importe_total").value ? parseFloat(document.getElementById("ch_importe_total").value) : null,
@@ -1393,6 +1401,7 @@ async function guardarObservaciones() {
   const { error } = await client.from("ordenes").update({ observaciones })
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden);
   if (error) { alert("No se pudo guardar: " + error.message); return; }
+  await cargarHistorial(pedidoActivo);
   alert("Observaciones guardadas.");
 }
 
@@ -1944,6 +1953,7 @@ async function crearIncidencia(avisarTienda) {
   document.getElementById("inc_tipo").value = "";
   document.getElementById("inc_descripcion").value = "";
   await cargarIncidencias();
+  cargarHistorial(pedidoActivo);
   document.getElementById("ch_estado").value = "incidencia";
   cargarPedidos();
 
@@ -1971,7 +1981,16 @@ async function cargarHistorial(o) {
     partes.push(`<div class="item">➡ Continúa en <a href="#" onclick="irAOrden(${s.anyo},${s.orden});return false;"><strong>${s.anyo}/${s.orden}</strong></a> — ${s.nombre_cli || ""} (${s.estado})</div>`);
   });
 
-  cont.innerHTML = partes.join("") || '<div class="meta">Sin órdenes relacionadas.</div>';
+  const { data: ob } = await client.from("ordenes").select("observaciones").eq("anyo", o.anyo).eq("orden", o.orden).maybeSingle();
+  if (ob && ob.observaciones) partes.push(`<div class="item">📝 <strong>Observaciones</strong><div class="meta" style="white-space:pre-wrap;">${escMont(ob.observaciones)}</div></div>`);
+
+  const { data: incs } = await client.from("incidencias").select("tipo, descripcion, estado, created_at")
+    .eq("anyo", o.anyo).eq("orden", o.orden).order("created_at", { ascending: false });
+  (incs || []).forEach(i => {
+    partes.push(`<div class="item">⚠️ <strong>${escMont(i.tipo) || "Incidencia"}</strong> (${escMont(i.estado)}) — ${new Date(i.created_at).toLocaleString("es-ES")}<div class="meta">${escMont(i.descripcion)}</div></div>`);
+  });
+
+  cont.innerHTML = partes.join("") || '<div class="meta">Sin historial.</div>';
 }
 
 async function irAOrden(anyo, orden) {

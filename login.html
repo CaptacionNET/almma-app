@@ -36,6 +36,14 @@ button:disabled{opacity:.6;cursor:default;}
 
     <p id="error" class="error"></p>
 
+    <form id="passForm" style="display:none">
+      <p style="font-size:14px;margin:0 0 16px;">Es tu primer acceso. Te recomendamos cambiar la contraseña por una tuya.</p>
+      <div class="field"><label for="pass1">Nueva contraseña</label><input id="pass1" type="password" autocomplete="new-password" minlength="6"></div>
+      <div class="field"><label for="pass2">Repite la contraseña</label><input id="pass2" type="password" autocomplete="new-password" minlength="6"></div>
+      <button id="passBtn" type="submit">Cambiar contraseña</button>
+      <button id="passSkip" type="button" style="background:transparent;color:var(--muted);">En otro momento</button>
+    </form>
+
     <form id="loginForm">
       <div class="field">
         <label for="email">Email</label>
@@ -75,6 +83,8 @@ button:disabled{opacity:.6;cursor:default;}
       const { data: { user } } = await client.auth.getUser();
       if (!user) return;
 
+      if (!user.user_metadata?.pass_revisada) { mostrarCambioPass(); return; }
+
       const { data: staffRow } = await client.from("staff").select("user_id, solo_deca, solo_montajes").eq("user_id", user.id).maybeSingle();
       if (staffRow) { window.location.href = destino(staffRow.solo_deca ? "deca.html" : staffRow.solo_montajes ? "mi-dia.html" : "inicio.html"); return; }
 
@@ -89,6 +99,28 @@ button:disabled{opacity:.6;cursor:default;}
 
     // Si ya hay una sesión guardada (p. ej. al abrir la app instalada), entra directo sin pedir la contraseña
     client.auth.getSession().then(({ data }) => { if (data.session) entrarSegunRol(); });
+
+    function mostrarCambioPass() {
+      form.style.display = "none";
+      document.getElementById("passForm").style.display = "block";
+    }
+    // marca la cuenta como revisada (se haya cambiado la contraseña o no) y sigue al destino de su rol
+    async function terminarPass(datos) {
+      const { error } = await client.auth.updateUser({ ...datos, data: { pass_revisada: true } });
+      if (error) { mostrarError("No se pudo guardar: " + error.message); return false; }
+      return true;
+    }
+    document.getElementById("passForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      errorBox.style.display = "none";
+      const p1 = document.getElementById("pass1").value, p2 = document.getElementById("pass2").value;
+      if (p1.length < 6) { mostrarError("La contraseña debe tener al menos 6 caracteres."); return; }
+      if (p1 !== p2) { mostrarError("Las dos contraseñas no coinciden."); return; }
+      if (await terminarPass({ password: p1 })) await entrarSegunRol();
+    });
+    document.getElementById("passSkip").addEventListener("click", async () => {
+      if (await terminarPass({})) await entrarSegunRol();
+    });
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
