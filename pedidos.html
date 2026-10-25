@@ -1533,7 +1533,7 @@ async function cargarLineas() {
       const recibida = !!l.recibido_at;
       const boton = l.tipolinea === 4 ? ""   // las líneas de importes no se reciben: no llevan botón
         : recibida
-        ? `<span class="pill-recibida">${new Date(l.recibido_at).toLocaleDateString("es-ES")}</span> <button class="secondary btn-mini" onclick="marcarRecibida(${l.linea}, false)">Deshacer</button>${albPorLinea[l.linea] ? ` <button class="secondary btn-mini" onclick="verAlbaranTransportista(${l.linea})">Ver albarán</button>` : ""}`
+        ? `<span class="pill-recibida">${new Date(l.recibido_at).toLocaleDateString("es-ES")}</span>${albPorLinea[l.linea] ? ` <button class="secondary btn-mini" onclick="verAlbaranTransportista(${l.linea})">Ver albarán</button>` : ""}`
         : `<button class="btn-mini" onclick="marcarRecibida(${l.linea}, true)">Marcar recibida</button>`;
       const claseTipo = [1, 2, 3, 4].includes(l.tipolinea) ? `lin-t${l.tipolinea}` : "";
       const pendiente = l.tipolinea !== 4 && !l.recibido_at && l.recibido !== "S";
