@@ -233,7 +233,7 @@ function cardOrden(i,id){const o=ordenObj(id,i),d=DOCS[i];const c=d.top.find(t=>
   h+=`<div class="acciones">${id!=='NUEVA'?`<button class="sec2 peq" onclick="verOrden(${o.i})">👁 Ver orden</button>`:''}<button class="sec2 peq" onclick="quita('${id}')">✕ Quitar esta orden</button></div></div>`;return h;}
 
 function pintaPanel(){
-  const d=DOCS[cur],s=ST[cur];let h='';autoPeso(cur);
+  const d=DOCS[cur],s=ST[cur];let h=chipsHermanos(d);autoPeso(cur);
   h+=`<div class="sec"><h4><span class="num">1</span>Datos leídos del albarán <span style="font-weight:400;color:var(--muted);font-size:12px">(se pueden corregir)</span></h4><div class="grid">`;
   CAMPOS.forEach(([k,t])=>{const v=val(cur,k);h+=`<div class="campo ${dudoso(cur,k)?'dud':''} ${s.vals[k]!==undefined?'edit':''}"><label>${t}</label><input value="${esc(v)}" placeholder="${k==='bultos_mano'?'no pone xB a mano':'no se ha podido leer'}" onchange="ST[cur].vals['${k}']=this.value;pinta()"></div>`;});
   h+=`</div>`;
@@ -241,7 +241,7 @@ function pintaPanel(){
   if(d.pagina)h+=`<div class="avisos" style="margin-top:8px">Página «${esc(d.pagina)}»: ${String(d.pagina).startsWith('1/')?'puede haber más páginas del mismo albarán.':'comprueba que esté agrupada con las demás.'}</div>`;
   h+=`<div class="avisos" style="margin-top:8px"><b>Avisos del lector</b> <span class="chip ${d.modelo==='Opus 5.5'?'c-ok':'c-gr'}">leído con ${esc(d.modelo||'')}</span><div>${d.dudas?esc(d.dudas):'<i>Sin avisos.</i>'}</div><div style="font-size:11px;margin-top:4px">Se guarda con el albarán para poder revisarlo siempre.</div><div class="grid" style="margin-top:6px"><div class="campo"><label>Nota interna</label><input value="${esc(d.nota_interna||'')}" placeholder="nota para otros compañeros…" onchange="notaDB(${cur},this.value)"></div><div class="campo" style="align-self:end"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" style="width:auto" ${d.revisado?'checked':''} onchange="revDB(${cur},this.checked)"> Aviso revisado</label></div></div></div>`;
   if((d.duplicados||[]).length)h+=`<div class="avisos" style="margin-top:8px;background:#fef2f2;border-color:#fecaca;color:#7f1d1d"><b>Ojo: este albarán (mismo fabricante y número) ya se había leído ${d.duplicados.length} vez/veces antes.</b> Comprueba que no lo estás registrando dos veces.</div>`;
-  if((d.clientes_distintos||0)>=2)h+=`<div class="avisos" style="margin-top:8px;background:#fef2f2;border-color:#fecaca;color:#7f1d1d"><b>Este albarán lleva ${d.clientes_distintos} clientes finales distintos.</b> Añade una orden por cliente con «Añadir también» o la búsqueda.</div>`;
+  if(d.reparto&&!d.reparto.ok){h+='</div>'+repartoHTML(cur);document.getElementById('pbody').innerHTML=h;document.getElementById('pfoot').innerHTML=repartoPie(cur);return;}
   h+=`</div>`;
   h+=`<div class="sec"><h4><span class="num">2</span>Órdenes a las que se asocia</h4>`;
   if(d.grupo)h+=`<div class="avisos" style="margin-bottom:10px;background:#eff6ff;border-color:#bfdbfe;color:#1e3a8a"><b>Tienda del albarán: ${esc(d.grupo)}.</b> Solo se pueden asociar órdenes de esta tienda (sus referencias: ${refsGrupo(d.grupo).map(esc).join(' · ')}). Nunca de otra.</div>`;
@@ -382,6 +382,9 @@ function docDesdeFila(f,url,dups){
   let r=null;try{r=localStorage.getItem('almma_rot_'+f.id);}catch(_){}
   d.rot=r!==null?Number(r):([90,180,270].includes(L.giro_horario)?L.giro_horario:0);
   if(d.rot)setTimeout(()=>{const i=DOCS.indexOf(d);if(i>=0)aplicaRot(i);},0);
+  d.clientes=(L.clientes||[]).filter(c=>c&&c.nombre);
+  if(d.clientes.length>=2){const asig=d.lineas.map(()=>-1);d.clientes.forEach((c,ci)=>(c.lineas||[]).forEach(k=>{if(k>=0&&k<asig.length)asig[k]=ci;}));
+    d.reparto={ok:false,cl:d.clientes.map(c=>({nombre:c.nombre,ref:c.ref||''})),asig};}
   d.top=candidatas(d);d.cls=clasifica(d.top);return d;
 }
 async function cargarPendientes(){
@@ -434,9 +437,9 @@ async function docsOrden(o){const k=o.a+'/'+o.i;if(DOCORD[k]!==undefined)return;
 function notaDB(i,v){DOCS[i].nota_interna=v;client.from("albaranes_lecturas").update({nota_interna:v||null}).eq("id",DOCS[i].id).then(r=>{if(r.error)toast('No se guardó la nota: '+r.error.message);});}
 async function revDB(i,v){DOCS[i].revisado=v;const u=(await client.auth.getUser()).data.user;client.from("albaranes_lecturas").update({revisado:v,revisado_por:v?u.id:null,revisado_en:v?new Date().toISOString():null}).eq("id",DOCS[i].id).then(r=>{if(r.error)toast('No se guardó: '+r.error.message);});}
 function aIso(v){const m=String(v||'').match(/(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/);if(!m)return null;let [,d,mo,y]=m;if(y.length===2)y='20'+y;const f=new Date(Date.UTC(+y,+mo-1,+d));return f.getUTCFullYear()==+y&&f.getUTCMonth()==+mo-1&&f.getUTCDate()==+d?y+'-'+mo.padStart(2,'0')+'-'+d.padStart(2,'0'):null;}
-async function descartar(){const d=DOCS[cur];if(!confirm('¿Descartar esta lectura? (No toca ninguna orden; deja de salir en la lista.)'))return;
+async function descartar(){const d=DOCS[cur];if(!confirm(d.esHijo?'¿Descartar el albarán COMPLETO (todos sus clientes)? No toca ninguna orden.':'¿Descartar esta lectura? (No toca ninguna orden; deja de salir en la lista.)'))return;
   const r=await client.from("albaranes_lecturas").update({estado:'descartada'}).eq("id",d.id);if(r.error)return toast('No se pudo descartar: '+r.error.message);
-  ST[cur].descartada=true;ST[cur].hecho=true;toast('Lectura descartada.');siguiente();}
+  DOCS.forEach((x,i)=>{if(x===d||(d.grupoHerm&&x.grupoHerm===d.grupoHerm)){ST[i].descartada=true;ST[i].hecho=true;}});toast('Lectura descartada.');siguiente();}
 let confirmando=false;
 async function confirma(){
   if(confirmando)return;const s=ST[cur],d=DOCS[cur];if(s.hecho)return;
@@ -463,7 +466,9 @@ async function confirma(){
   const gr=await client.from("albaranes_lecturas_grupos").insert(ops.map(x=>({lectura_id:d.id,anyo:x.o.a,orden:x.o.i,linea:x.l[4],lineas_albaran:x.g.a.map(k=>d.lineas[k]),bultos:x.bultos,peso_kg:x.peso})));
   if(gr.error)errs.push('No se guardó el detalle del casado: '+gr.error.message);
   const o1=ops[0].o,be=bultosEf(cur);
-  await client.from("albaranes_lecturas").update({estado:errs.length?'pendiente':'confirmada',tienda_id:o1.tid||null,num_albaran:alb,fecha_albaran:aIso(val(cur,'fecha_albaran')),fecha_recibido:iso,ubicacion:ubi,bultos_mano:Number(val(cur,'bultos_mano'))||null,bultos_impresos:Number(val(cur,'bultos_impresos'))||null,peso_kg:Number(val(cur,'peso_kg'))||null}).eq("id",d.id);
+  const up={estado:(errs.length||hermPend(d))?'pendiente':'confirmada',tienda_id:o1.tid||null,num_albaran:alb,fecha_albaran:aIso(val(cur,'fecha_albaran')),fecha_recibido:iso,ubicacion:ubi};
+  if(!d.esHijo){up.bultos_mano=Number(val(cur,'bultos_mano'))||null;up.bultos_impresos=Number(val(cur,'bultos_impresos'))||null;up.peso_kg=Number(val(cur,'peso_kg'))||null;}
+  await client.from("albaranes_lecturas").update(up).eq("id",d.id);
   confirmando=false;
   if(errs.length){alert('Hubo problemas:\n\n'+errs.join('\n')+'\n\nRevísalo en Entradas Almacén antes de repetir.');pinta();return;}
   s.hecho=true;toast('Entrada registrada: '+ops.length+' línea(s) marcadas como recibidas.');siguiente();
@@ -488,6 +493,37 @@ function aplicaRot(i){const d=DOCS[i];if(!d)return;
     try{d.imgView=c.toDataURL('image/jpeg',0.85);}catch(_){toast('No se pudo girar la imagen.');return;}
     if(i===cur)pintaVisor();};
   im.onerror=()=>toast('No se pudo girar la imagen.');im.src=d.img;}
+
+/* ====== ALBARÁN CON VARIOS CLIENTES: primero se confirma el reparto, luego un paso por cliente ====== */
+function repartoHTML(i){const d=DOCS[i],R=d.reparto;
+  const opts=v=>R.cl.map((c,ci)=>'<option value="'+ci+'" '+(v===ci?'selected':'')+'>'+esc(c.nombre)+'</option>').join('')+'<option value="-1" '+(v===-1?'selected':'')+'>— de nadie (ignorar) —</option>';
+  let h='<div class="sec"><h4><span class="num">2</span>Este albarán lleva '+R.cl.length+' clientes: ¿el reparto es correcto?</h4><p class="nota" style="margin:0 0 10px">Hemos detectado esto. Si alguna línea está en el cliente equivocado, cámbiala. Después irás cliente por cliente, y de cada uno solo verás sus líneas.</p>';
+  R.cl.forEach((c,ci)=>{const ks=R.asig.map((a,k)=>a===ci?k:-1).filter(k=>k>=0);
+    h+='<div class="orden" style="margin-bottom:10px;border-color:'+COL[ci%7]+'"><div class="t">'+(ci+1)+'. '+esc(c.nombre)+(c.ref?' <span style="font-weight:400;font-size:12px;color:var(--muted)">· '+esc(c.ref)+'</span>':'')+'</div>'+
+      (ks.length?ks.map(k=>'<div class="lin" style="cursor:default"><span class="d"><b>'+(d.lineas[k].cant||1)+'×</b> '+esc(d.lineas[k].desc)+'<div class="cod">'+esc(d.lineas[k].cod||'')+'</div></span><select style="width:170px" onchange="moverLinea('+i+','+k+',this.value)">'+opts(ci)+'</select></div>').join(''):'<div class="meta" style="color:var(--warn);font-size:12px">Sin líneas: este cliente se omitirá.</div>')+'</div>';});
+  const ning=R.asig.map((a,k)=>a===-1?k:-1).filter(k=>k>=0);
+  if(ning.length)h+='<div class="orden" style="border-color:#cbd5e1;background:#f9fafb"><div class="t" style="font-size:14px">Sin cliente (se ignoran)</div>'+ning.map(k=>'<div class="lin" style="cursor:default"><span class="d"><b>'+(d.lineas[k].cant||1)+'×</b> '+esc(d.lineas[k].desc)+'</span><select style="width:170px" onchange="moverLinea('+i+','+k+',this.value)">'+opts(-1)+'</select></div>').join('')+'</div>';
+  return h+'</div>';}
+function repartoPie(i){const R=DOCS[i].reparto,n=R.cl.filter((c,ci)=>R.asig.includes(ci)).length;
+  return '<div class="pie"><div class="info">'+(n?'Se crearán '+n+' paso(s), uno por cliente.':'Asigna al menos una línea a un cliente.')+'</div><button class="sec2" onclick="descartar()">Descartar lectura</button><button onclick="confirmaReparto()" '+(n?'':'disabled')+'>✔ Sí, es correcto: empezar con el primer cliente</button></div>';}
+function moverLinea(i,k,v){DOCS[i].reparto.asig[k]=Number(v);pintaPanel();}
+function confirmaReparto(){const d=DOCS[cur],R=d.reparto;const gid='g'+Date.now();
+  const hijos=R.cl.map((c,ci)=>({c,idxs:R.asig.map((a,k)=>a===ci?k:-1).filter(k=>k>=0)})).filter(h=>h.idxs.length);
+  if(!hijos.length)return toast('Asigna al menos una línea a un cliente.');
+  const tot=[val(cur,'bultos_mano')||val(cur,'bultos_impresos'),val(cur,'peso_kg')];
+  const nuevos=hijos.map((h,n)=>{const x=Object.assign({},d);x.reparto=null;x.esHijo=true;x.grupoHerm=gid;x.herm={n:n+1,t:hijos.length};
+    x.lineas=h.idxs.map(k=>d.lineas[k]);x.cliente_final=h.c.nombre;
+    const toks=[...ntoks(h.c.nombre)];
+    x.refs=[h.c.nombre,h.c.ref].filter(Boolean).concat((d.refs||[]).filter(r=>toks.some(t=>norm(r).includes(t))&&r!==h.c.nombre));
+    x.bultos_impresos=null;x.bultos_mano=null;x.peso_kg=null;
+    x.dudas=(d.dudas?d.dudas+' · ':'')+'Albarán completo con '+hijos.length+' clientes'+(tot[0]?': '+tot[0]+' bultos en total':'')+(tot[1]?', '+tot[1]+' kg':'')+'. Reparte los bultos entre los clientes.';
+    x.nota='Cliente '+(n+1)+'/'+hijos.length+': '+h.c.nombre;x.top=candidatas(x);x.cls=clasifica(x.top);return x;});
+  DOCS.splice(cur,1,...nuevos);ST.splice(cur,1,...nuevos.map(()=>null));nuevos.forEach((_,j)=>initDoc(cur+j));pinta();
+  toast('Reparto confirmado. Paso 1 de '+hijos.length+': '+nuevos[0].cliente_final+'.');}
+function chipsHermanos(d){if(!d.grupoHerm)return '';
+  const hs=DOCS.map((x,i)=>({x,i})).filter(o=>o.x.grupoHerm===d.grupoHerm);
+  return '<div class="sec" style="padding:10px 14px"><div style="font-size:12px;color:var(--muted);margin-bottom:6px">Este albarán tiene varios clientes. Vas por el '+d.herm.n+' de '+d.herm.t+':</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+hs.map(o=>'<button class="'+(o.i===cur?'':'sec2')+' peq" onclick="ir('+o.i+')">'+(ST[o.i].hecho?'✔ ':'')+o.x.herm.n+'. '+esc(o.x.cliente_final)+'</button>').join('')+'</div></div>';}
+function hermPend(d){return !!d.grupoHerm&&DOCS.some((x,i)=>x!==d&&x.grupoHerm===d.grupoHerm&&!ST[i].hecho);}
 
 iniciar();
 </script>
