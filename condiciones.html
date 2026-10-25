@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - Condiciones de uso y tratamiento de datos</title>
+<style>
+body{margin:0;background:#f5f6fa;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:#1f2430;}
+.hoja{max-width:780px;margin:24px auto;background:#fff;border:1px solid #e2e4eb;border-radius:8px;padding:24px 30px;}
+.barra{max-width:780px;margin:16px auto 0;text-align:right;} button{background:#2563eb;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;}
+@media print{body{background:#fff}.barra{display:none}.hoja{border:none;margin:0;padding:0}}
+</style>
+<style id="estilo_c"></style>
+<link rel="manifest" href="manifest.webmanifest">
+</head>
+<body>
+<div class="barra"><button onclick="window.print()">Imprimir / guardar en PDF</button></div>
+<div class="hoja c-caja" id="texto"></div>
+<script src="condiciones.js"></script>
+<script>
+document.getElementById("estilo_c").textContent = CONDICIONES_CSS;
+document.getElementById("texto").innerHTML = CONDICIONES_HTML;
+</script>
+</body>
+</html>

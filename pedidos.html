@@ -416,6 +416,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
         <select id="ch_estado"></select>
       </div>
       <div class="campo"><label>Bultos (total líneas)</label><div id="ch_bultos">0</div></div>
+      <div class="campo"><label>Peso kg (total líneas)</label><div id="ch_peso">0</div></div>
     </div>
 
     <h4 style="margin-bottom:6px;">Importes y facturación</h4>
@@ -513,6 +514,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
       <div class="campo lf-4"><label>Nº Albarán proveedor</label><input id="ln_albaran"></div>
       <div class="campo lf-4"><label>Ubicación</label><input id="ln_ubicacion"></div>
       <div class="campo lf-2"><label>Bultos</label><input id="ln_bultos" type="number" value="0"></div>
+      <div class="campo lf-2"><label>Peso (kg)</label><input id="ln_peso" type="number" step="0.01" min="0"></div>
       <div class="campo lf-2" style="align-self:end;"><label style="display:flex;gap:6px;align-items:center;margin:0 0 8px;"><input id="ln_control_stock" type="checkbox" style="width:auto;"> Control de stock</label></div>
     </div>
     <button class="btn-mini" style="font-size:14px;padding:8px 16px;" id="ln_btn_guardar" onclick="anyadirLineaOrden()">+ Añadir línea</button>
@@ -1509,11 +1511,11 @@ async function verFotoMontaje(path) {
 
 async function cargarLineas() {
   const { data: lineas } = await client.from("linorden")
-    .select("linea, tipolinea, articulo, descripcion, cantidad, importe, porcentaje, importe_cobrar, ubicacion, albaran, bultos, control_stock, recibido, recibido_at")
+    .select("linea, tipolinea, articulo, descripcion, cantidad, importe, porcentaje, importe_cobrar, ubicacion, albaran, bultos, peso_kg, control_stock, recibido, recibido_at")
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).order("linea");
 
   const tbody = document.getElementById("tabla_lineas");
-  tbody.innerHTML = "<tr><th></th><th>Artículo</th><th>Cant.</th><th>Importe</th><th>%</th><th>A cobrar</th><th>Ubicación</th><th>Albarán prov.</th><th>Recibido</th><th></th></tr>" +
+  tbody.innerHTML = "<tr><th></th><th>Artículo</th><th>Cant.</th><th>Importe</th><th>%</th><th>A cobrar</th><th>Ubicación</th><th>Bultos</th><th>Peso kg</th><th>Albarán prov.</th><th>Recibido</th><th></th></tr>" +
     (lineas || []).map(l => {
       const recibida = !!l.recibido_at;
       const boton = l.tipolinea === 4 ? ""   // las líneas de importes no se reciben: no llevan botón
@@ -1530,6 +1532,8 @@ async function cargarLineas() {
         <td>${l.porcentaje !== null && l.porcentaje !== undefined ? Math.round(l.porcentaje * 100) / 100 : ""}</td>
         <td>${l.importe_cobrar ?? ""}</td>
         <td>${l.ubicacion || ""} <button class="secondary btn-mini" onclick="editarUbicacion(${l.linea}, '${(l.ubicacion || '').replace(/'/g, "\\'")}')">✎</button></td>
+        <td>${l.bultos ?? ""}</td>
+        <td>${l.peso_kg ?? ""}</td>
         <td>${l.albaran || ""}</td>
         <td>${boton}</td>
         <td><button class="secondary btn-mini" onclick="editarLinea(${l.linea})">Editar</button></td>
@@ -1538,6 +1542,8 @@ async function cargarLineas() {
 
   const totalBultos = (lineas || []).reduce((acc, l) => acc + (l.bultos || 0), 0);
   document.getElementById("ch_bultos").textContent = totalBultos;
+  const totalPeso = (lineas || []).reduce((acc, l) => acc + (Number(l.peso_kg) || 0), 0);
+  document.getElementById("ch_peso").textContent = Math.round(totalPeso * 100) / 100;
 }
 
 async function editarUbicacion(linea, actual) {
@@ -1634,6 +1640,7 @@ function limpiarFormularioLinea() {
   document.getElementById("ln_porcentaje").value = "100";
   document.getElementById("ln_cantidad").value = "1";
   document.getElementById("ln_bultos").value = "0";
+  document.getElementById("ln_peso").value = "";
   document.getElementById("ln_control_stock").checked = false;
   fabricanteSeleccionado = null;
   articuloSeleccionado = null;
@@ -1641,7 +1648,7 @@ function limpiarFormularioLinea() {
 
 async function editarLinea(linea) {
   const { data: l, error } = await client.from("linorden")
-    .select("linea, tipolinea, proveedor, articulo, descripcion, cantidad, importe, porcentaje, albaran, ubicacion, bultos, control_stock")
+    .select("linea, tipolinea, proveedor, articulo, descripcion, cantidad, importe, porcentaje, albaran, ubicacion, bultos, peso_kg, control_stock")
     .eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).eq("linea", linea).maybeSingle();
   if (error || !l) { alert("No se pudo cargar la línea: " + (error?.message || "no existe")); return; }
   limpiarFormularioLinea();
@@ -1665,6 +1672,7 @@ async function editarLinea(linea) {
   document.getElementById("ln_albaran").value = l.albaran || "";
   document.getElementById("ln_ubicacion").value = l.ubicacion || "";
   document.getElementById("ln_bultos").value = l.bultos ?? 0;
+  document.getElementById("ln_peso").value = l.peso_kg ?? "";
   document.getElementById("ln_control_stock").checked = l.control_stock === "S";
   recalcularACobrar();
   mostrarNuevaLinea(true);
@@ -1698,6 +1706,7 @@ async function anyadirLineaOrden() {
   const albaran = document.getElementById("ln_albaran").value.trim() || null;
   const ubicacion = document.getElementById("ln_ubicacion").value.trim() || null;
   const bultos = document.getElementById("ln_bultos").value ? parseInt(document.getElementById("ln_bultos").value, 10) : null;
+  const peso_kg = document.getElementById("ln_peso").value ? parseFloat(document.getElementById("ln_peso").value) : null;
   const control_stock = document.getElementById("ln_control_stock").checked ? "S" : "N";
   const porcentaje = parseFloat(document.getElementById("ln_porcentaje").value);
   const descripcionManual = document.getElementById("ln_descripcion").value.trim();
@@ -1710,7 +1719,7 @@ async function anyadirLineaOrden() {
       proveedor: fabricanteSeleccionado ? parseInt(fabricanteSeleccionado.codigo, 10) : null,
       articulo: articuloSeleccionado?.articulo || null,
       descripcion: descripcionManual || articuloSeleccionado?.descripcion || null,
-      cantidad, importe, albaran, ubicacion, bultos, control_stock,
+      cantidad, importe, albaran, ubicacion, bultos, peso_kg, control_stock,
       porcentaje: isNaN(porcentaje) ? null : porcentaje,
       importe_cobrar: (importe === null || isNaN(porcentaje)) ? null : Math.round(importe * porcentaje) / 100,
     }).eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).eq("linea", lineaEditando);
@@ -1731,7 +1740,7 @@ async function anyadirLineaOrden() {
     proveedor: fabricanteSeleccionado ? parseInt(fabricanteSeleccionado.codigo, 10) : null,
     articulo: articuloSeleccionado?.articulo || null,
     descripcion: descripcionManual || articuloSeleccionado?.descripcion || null,
-    cantidad, importe, albaran, ubicacion, bultos, control_stock,
+    cantidad, importe, albaran, ubicacion, bultos, peso_kg, control_stock,
     porcentaje: isNaN(porcentaje) ? null : porcentaje,
     importe_cobrar: (importe === null || isNaN(porcentaje)) ? null : Math.round(importe * porcentaje) / 100,
   });
@@ -1746,6 +1755,7 @@ async function anyadirLineaOrden() {
   document.getElementById("ln_albaran").value = "";
   document.getElementById("ln_ubicacion").value = "";
   document.getElementById("ln_bultos").value = "0";
+  document.getElementById("ln_peso").value = "";
   document.getElementById("ln_control_stock").checked = false;
   fabricanteSeleccionado = null;
   articuloSeleccionado = null;

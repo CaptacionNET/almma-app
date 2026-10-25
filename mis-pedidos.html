@@ -164,6 +164,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
   </div>
 </div>
 
+<script src="condiciones.js"></script>
 <script>
 const client = supabase.createClient(
   "https://uamgbtbsxbrgymhqalak.supabase.co",
@@ -191,6 +192,7 @@ async function comprobarSesion() {
     return;
   }
 
+  await exigirCondiciones(client);
   dependiente = depRow;
   const { data: tRow } = await client.from("tiendas").select("nombre").eq("id", depRow.tienda_id).maybeSingle();
   document.getElementById("tienda_nombre").textContent = tRow?.nombre || "";

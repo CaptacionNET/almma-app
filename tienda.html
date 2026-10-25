@@ -52,6 +52,7 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
   <button class="tab activa" data-t="ordenes">Órdenes de la tienda</button>
   <button class="tab" data-t="facturas">Facturas</button>
   <button class="tab" data-t="montajes">Montajes</button>
+  <button class="tab" data-t="recibidos">Recibidos</button>
   <button class="tab" data-t="equipo">Mi equipo</button>
 </div>
 
@@ -78,10 +79,24 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
   </div>
   <div id="m_tabla"><span class="muted">Cargando...</span></div>
 </div>
+<div class="panel" id="p_recibidos">
+  <div class="barra">
+    <span class="muted">Mercancía de vuestros fabricantes que ha llegado a nuestro almacén, con la orden a la que corresponde.</span>
+    <span style="flex:1"></span>
+    <select id="r_periodo" onchange="cargarRecibidos()"><option value="30">Últimos 30 días</option><option value="90" selected>Últimos 90 días</option><option value="365">Último año</option></select>
+  </div>
+  <div id="r_tabla"><span class="muted">Cargando...</span></div>
+</div>
 <div id="overlay" onclick="cerrarMontaje()"></div>
 <div id="det"><div class="barra"><b id="det_t" style="font-size:16px"></b><span style="flex:1"></span><button class="secondary" onclick="cerrarMontaje()">Cerrar</button></div><div id="det_c"></div></div>
 
 <div class="panel" id="p_equipo">
+  <div class="caja"><b>Teléfonos de la tienda</b>
+    <div class="muted" style="margin:4px 0 8px">Los ven los montadores en su móvil para poder llamaros si tienen una duda con un pedido.</div>
+    <div id="tt_caja"><span class="muted">Cargando...</span></div></div>
+  <div class="caja"><b>Teléfonos de los vendedores</b>
+    <div class="muted" style="margin:4px 0 8px">El móvil de cada vendedor. Si lo dejas vacío, el montador solo podrá llamar a la tienda. Avisa a tu equipo de que el montador verá su número.</div>
+    <div id="tv_tabla"><span class="muted">Cargando...</span></div></div>
   <div class="caja"><b>Nuevo dependiente</b>
     <div class="barra" style="margin-top:8px">
       <input id="n_nombre" placeholder="Nombre"><input id="n_email" type="email" placeholder="Email">
@@ -90,6 +105,7 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
   <div id="e_tabla"><span class="muted">Cargando...</span></div>
 </div>
 
+<script src="condiciones.js"></script>
 <script>
 const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
 let ordenes = [], misTiendas = [], tiendaSel = "";
@@ -108,6 +124,7 @@ async function iniciar(){
   const { data: d, error: errD } = await client.from("dependientes").select("nombre, es_admin_tienda, tienda_id").eq("user_id", user.id).maybeSingle();
   if (errD) { document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;font-family:sans-serif"><h3>No se pudo abrir tu cuenta</h3><p>Error: ' + String(errD.message).replace(/[<>&]/g, "") + '</p><button onclick="logout()">Volver al inicio de sesión</button></div>'; return; }
   if (!d || !d.es_admin_tienda) { location.href = "mis-pedidos.html"; return; }
+  await exigirCondiciones(client);
   const { data: ts } = await client.from("tiendas").select("id, nombre").order("nombre");
   misTiendas = ts || [];
   document.getElementById("tienda_nombre").textContent = (misTiendas.find(x => x.id === d.tienda_id) || {}).nombre || "Mi tienda";
@@ -117,9 +134,9 @@ async function iniciar(){
     sel.innerHTML = '<option value="">Todas mis tiendas</option>' + misTiendas.map(t => '<option value="'+t.id+'">'+esc(t.nombre)+'</option>').join("");
   }
   document.getElementById("quien").textContent = d.nombre || user.email;
-  cargarOrdenes(); cargarFacturas(); cargarMontajes(); cargarEquipo();
+  cargarOrdenes(); cargarFacturas(); cargarMontajes(); cargarRecibidos(); cargarEquipo();
 }
-function cambiaTienda(){ tiendaSel = document.getElementById("t_sel").value; cargarOrdenes(); cargarFacturas(); cargarMontajes(); cargarEquipo(); }
+function cambiaTienda(){ tiendaSel = document.getElementById("t_sel").value; cargarOrdenes(); cargarFacturas(); cargarMontajes(); cargarRecibidos(); cargarEquipo(); }
 const multi = () => misTiendas.length > 1;
 
 /* Fechas de los buscadores: p = "o" (órdenes), "f" (facturas), "m" (montajes) */
@@ -241,7 +258,60 @@ async function llamar(cuerpo){
   if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch(_){} return { error: m }; }
   return data;
 }
+/* Recibidos: albaranes de los fabricantes que han llegado al almacén (migracion/75_la_tienda_ve_lo_recibido.sql) */
+const ESTADO_ORDEN = { en_proceso:"En proceso", recepcionado_parcial:"Recibida en parte", recepcionado_total:"Recibida completa", agendado:"Montaje agendado", completado:"Montada", incidencia:"Incidencia" };
+function fechaES(iso){ return iso ? String(iso).slice(0,10).split("-").reverse().join("/") : ""; }
+function pintarRecibidos(lista){
+  if (!lista.length) return '<span class="muted">Todavía no hay albaranes recibidos en este periodo.</span>';
+  const bloque = a => '<tr><td>' + fechaES(a.fecha_recibido) + '</td><td>' + esc(a.fabricante || "") + '</td><td>' + esc(a.num_albaran || "") + '</td>' +
+    (multi() ? '<td>' + esc(a.tienda || "") + '</td>' : "") +
+    '<td>' + (a.bultos ?? "") + '</td><td>' + (a.peso_kg ?? "") + '</td><td>' +
+    ((a.ordenes || []).length ? a.ordenes.map(o => '<div><b>Orden ' + o.anyo + '/' + o.orden + '</b>' + (o.num_pedido ? ' · ' + esc(o.num_pedido) : "") + (o.cliente ? ' · ' + esc(o.cliente) : "") +
+        ' <span class="muted">(' + esc(ESTADO_ORDEN[o.estado] || o.estado || "") + ')</span>' + (o.linea_nueva ? ' <span class="muted">· línea nueva: ' + esc(o.linea_nueva) + '</span>' : "") + '</div>').join("")
+      : '<span style="color:#b91c1c;font-weight:600">Sin orden asociada</span> <span class="muted">· no tenemos el pedido de esta mercancía: indícanoslo</span>') + '</td></tr>';
+  const cab = '<table><tr><th>Recibido</th><th>Fabricante</th><th>Albarán</th>' + (multi() ? '<th>Tienda</th>' : "") + '<th>Bultos</th><th>Peso kg</th><th>Órdenes</th></tr>';
+  const sin = lista.filter(a => !(a.ordenes || []).length), con = lista.filter(a => (a.ordenes || []).length);
+  return (sin.length ? '<h4 style="color:#b91c1c;margin:10px 0 4px">⚠ Mercancía recibida sin orden asociada (' + sin.length + ')</h4>' + cab + sin.map(bloque).join("") + '</table>' : "") +
+    (con.length ? '<h4 style="margin:14px 0 4px">Recibida y asociada a una orden (' + con.length + ')</h4>' + cab + con.map(bloque).join("") + '</table>' : "");
+}
+async function cargarRecibidos(){
+  const cont = document.getElementById("r_tabla"); cont.innerHTML = '<span class="muted">Cargando...</span>';
+  const dias = parseInt(document.getElementById("r_periodo").value, 10) || 90;
+  const desde = new Date(Date.now() - dias * 864e5).toISOString().slice(0,10);
+  const { data, error } = await client.rpc("mis_albaranes_recibidos", { p_desde: desde });
+  if (error) { cont.innerHTML = '<span class="muted">No se pudo cargar: ' + esc(error.message) + '</span>'; return; }
+  cont.innerHTML = pintarRecibidos((data || []).filter(a => !tiendaSel || a.tienda_id === tiendaSel));
+}
+
+/* Teléfonos que ve el montador en «Mi día» (funciones de migracion/74_la_tienda_mantiene_sus_telefonos.sql) */
+async function cargarTelefonos(){
+  const cajaT = document.getElementById("tt_caja"), cajaV = document.getElementById("tv_tabla");
+  const { data: ts, error: e1 } = await client.rpc("mis_telefonos_tienda");
+  if (e1) { cajaT.innerHTML = cajaV.innerHTML = '<span class="muted">No se pudieron cargar los teléfonos: ' + esc(e1.message) + '</span>'; return; }
+  const mias = (ts || []).filter(t => !tiendaSel || t.tienda_id === tiendaSel);
+  if (multi() && !tiendaSel) cajaT.innerHTML = '<span class="muted">Elige arriba la tienda concreta.</span>';
+  else cajaT.innerHTML = mias.map(t => '<div class="barra" style="margin-bottom:6px">' + (multi() ? '<b style="min-width:140px">' + esc(t.tienda) + '</b>' : '') +
+    '<label>Teléfono de la tienda <input id="tt1_' + t.tienda_id + '" value="' + esc(t.telefono) + '" placeholder="96…"></label>' +
+    '<label>Teléfono del local <input id="tt2_' + t.tienda_id + '" value="' + esc(t.telefono2) + '" placeholder="si tiene otro"></label>' +
+    '<button onclick="guardarTelTienda(\'' + t.tienda_id + '\')">Guardar</button></div>').join("") || '<span class="muted">Sin datos.</span>';
+  const { data: vs, error: e2 } = await client.rpc("mi_equipo_telefonos");
+  if (e2) { cajaV.innerHTML = '<span class="muted">No se pudieron cargar los vendedores: ' + esc(e2.message) + '</span>'; return; }
+  const lista = (vs || []).filter(v => !tiendaSel || v.tienda_id === tiendaSel);
+  cajaV.innerHTML = lista.length ? '<table><tr><th>Vendedor</th>' + (multi() ? '<th>Tienda</th>' : '') + '<th>Teléfono</th><th></th></tr>' +
+    lista.map(v => '<tr><td>' + esc(v.nombre) + (v.es_admin_tienda ? ' <span class="muted">(administrador)</span>' : '') + '</td>' + (multi() ? '<td>' + esc(v.tienda) + '</td>' : '') +
+      '<td><input id="tv_' + v.id + '" value="' + esc(v.telefono1) + '" placeholder="móvil"></td>' +
+      '<td><button onclick="guardarTelVendedor(\'' + v.id + '\')">Guardar</button></td></tr>').join("") + '</table>' : '<span class="muted">Sin vendedores.</span>';
+}
+async function guardarTelTienda(id){
+  const { error } = await client.rpc("guardar_telefonos_tienda", { p_tienda_id: id, p_telefono: document.getElementById("tt1_" + id).value, p_telefono2: document.getElementById("tt2_" + id).value });
+  alert(error ? "No se pudo guardar: " + error.message : "Teléfonos de la tienda guardados.");
+}
+async function guardarTelVendedor(id){
+  const { error } = await client.rpc("guardar_telefono_vendedor", { p_dependiente_id: id, p_telefono: document.getElementById("tv_" + id).value });
+  alert(error ? "No se pudo guardar: " + error.message : "Teléfono guardado.");
+}
 async function cargarEquipo(){
+  cargarTelefonos();
   const r = await llamar({ accion:"listar" });
   if (r.error) { document.getElementById("e_tabla").innerHTML = '<span class="muted">Error: '+esc(r.error)+'</span>'; return; }
   document.getElementById("e_tabla").innerHTML = '<table><tr><th>Nombre</th><th>Email</th><th>Tipo</th>'+(multi()?'<th>Tienda</th>':'')+'<th>Último acceso</th><th>Estado</th><th></th></tr>'+

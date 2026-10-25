@@ -272,12 +272,16 @@ async function cargarPaquete(){
       .select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, telefono2_cli, num_pedido, estado, con_incidencia, fecha_prev_montaje, horamont, obs_albaran, equipo:ordenes_montadores(montador_id, montadores(nombre)), entregas(id, firmante_nombre, firmado_at, firma_storage_path), fotos:fotos_orden(id, storage_path, categoria, comentario, created_at)")
       .gte("fecha_prev_montaje", diaN(0)).lt("fecha_prev_montaje", diaN(2)).order("fecha_prev_montaje");
     if (error) throw error;
-    const lineas = {}, docs = {};
+    const lineas = {}, docs = {}, tiendas = {};
     const porAnyo = {}; (data || []).forEach(o => (porAnyo[o.anyo] ||= []).push(o.orden));
     for (const [a, lst] of Object.entries(porAnyo)) {
       const { data: ls, error: el } = await client.from("linorden").select("anyo, orden, linea, tipolinea, descripcion, cantidad").eq("anyo", +a).in("orden", lst).neq("tipolinea", 4).order("linea");
       if (el) throw el;
       (ls || []).forEach(l => (lineas[l.anyo + "/" + l.orden] ||= []).push(l));
+      try {   // quién vendió el pedido (dependiente) y de qué tienda: lo da una función de la base de datos (el montador no lee esas tablas)
+        const { data: ts } = await client.rpc("vendedores_de_mis_montajes", { p_anyo: +a, p_ordenes: lst });
+        (ts || []).forEach(t => { tiendas[a + "/" + t.orden] = { dependiente: t.dependiente || "", tienda: t.tienda || "", tv: t.tel_dependiente || "", tt: t.tel_tienda || "", tl: t.tel_local || "" }; });
+      } catch(_){}
       try {   // documentos que la oficina ha marcado como visibles para el montador
         const { data: ds } = await client.from("documentos_orden").select("anyo, orden, storage_path, nombre").eq("anyo", +a).in("orden", lst).eq("visible_montador", true).order("created_at");
         (ds || []).forEach(d => (docs[d.anyo + "/" + d.orden] ||= []).push(d));
@@ -286,7 +290,7 @@ async function cargarPaquete(){
     const ordenes = (data || []).map(o => ({
       anyo:o.anyo, orden:o.orden, nombre_cli:o.nombre_cli, domicilio_cli:o.domicilio_cli, localidad_cli:o.localidad_cli,
       telefono_cli:o.telefono_cli, telefono2_cli:o.telefono2_cli, num_pedido:o.num_pedido, estado:o.estado, con_incidencia:!!o.con_incidencia,
-      dia:String(o.fecha_prev_montaje).slice(0,10), horamont:o.horamont, obs:o.obs_albaran,
+      dia:String(o.fecha_prev_montaje).slice(0,10), horamont:o.horamont, obs:o.obs_albaran, vendedor:(tiendas[o.anyo + "/" + o.orden] || {}).dependiente || "", tienda:(tiendas[o.anyo + "/" + o.orden] || {}).tienda || "", tel_vendedor:(tiendas[o.anyo + "/" + o.orden] || {}).tv || "", tel_tienda:(tiendas[o.anyo + "/" + o.orden] || {}).tt || "", tel_local:(tiendas[o.anyo + "/" + o.orden] || {}).tl || "",
       equipo:(o.equipo || []).map(e => e.montadores?.nombre).filter(Boolean),
       mio:!!yo && (o.equipo || []).some(e => e.montador_id === yo.id),
       hecho:(o.entregas || []).length > 0,
@@ -356,6 +360,7 @@ function pintar(){
         '<div class="fila1"><span class="hora">' + esc((o.horamont && o.horamont !== "M") ? o.horamont : "Sin hora") + '</span>' + chipEstado(o) + '</div>' +
         '<div class="nord">Orden ' + o.anyo + '/' + o.orden + (o.num_pedido ? ' · Pedido ' + esc(o.num_pedido) : '') + '</div>' +
         '<div class="cliente">' + esc(o.nombre_cli) + '</div><div class="dir">' + esc(dir) + '</div>' +
+        ((o.vendedor || o.tienda) ? '<div class="eq">🧑‍💼 Vendedor: <b>' + esc([o.vendedor, o.tienda].filter(Boolean).join(" · ")) + '</b></div>' : "") +
         (o.equipo.length > 1 && !verTodos ? '<div class="eq">Equipo: ' + esc(o.equipo.join(" + ")) + '</div>' : "") +
         '<div class="ver">Ver detalle ›</div></div>';
     }).join("");
@@ -388,6 +393,21 @@ function bloqueFirma(o){
   return '<div class="sec"><h3>✍ Firma del cliente</h3>' + (f ? '<div class="dato"><b>Firmó</b><span>' + esc(f.nombre) + (f.cuando ? " · " + new Date(f.cuando).toLocaleString("es-ES", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }) : "") + '</span></div>' + img : "") +
     (pend ? '<div style="color:#92400e;font-weight:700;margin-top:6px">⏳ ' + pend + (pend === 1 ? " firma" : " firmas") + ' por enviar</div>' : "") + '</div>';
 }
+const soloTel = x => String(x || "").replace(/[^\d+]/g, "");
+// quién vendió el pedido y cómo llamarle (vendedor / tienda / local); no sale nada si no hay datos
+function bloqueVendedor(o){
+  const tv = soloTel(o.tel_vendedor), tt = soloTel(o.tel_tienda), tl = soloTel(o.tel_local);
+  if (!o.vendedor && !o.tienda && !tv && !tt && !tl) return "";
+  const nombre = o.vendedor ? o.vendedor.split(" ")[0] : "";
+  return '<div class="sec"><h3>🧑‍💼 Quién lo vendió</h3>' +
+    (o.vendedor ? '<div class="dato"><b>Vendedor</b><span>' + esc(o.vendedor) + '</span></div>' : "") +
+    (o.tienda ? '<div class="dato"><b>Tienda</b><span>' + esc(o.tienda) + '</span></div>' : "") +
+    ((tv || tt || tl) ? '<div class="botones">' +
+      (tv ? '<a class="btn az" href="tel:' + tv + '">📞 Llamar al vendedor' + (nombre ? " (" + esc(nombre) + ")" : "") + '</a>' : "") +
+      (tt ? '<a class="btn az" href="tel:' + tt + '">📞 Llamar a la tienda</a>' : "") +
+      (tl && tl !== tt ? '<a class="btn az" href="tel:' + tl + '">📞 Llamar al local</a>' : "") +
+    '</div>' : "") + '</div>';
+}
 function pintarDetalle(){
   const o = detalleK && buscar(detalleK); if (!o) return;
   const { hecho, incid } = situacion(o);
@@ -415,6 +435,7 @@ function pintarDetalle(){
         '<a class="btn az" href="' + mapa + '" target="_blank" rel="noopener">🧭 Cómo llegar</a>' +
         (tel2 ? '<a class="btn az" href="tel:' + tel2 + '" style="grid-column:1/-1">📞 Llamar al 2.º teléfono</a>' : "") +
       '</div></div>' +
+    bloqueVendedor(o) +
     '<div class="sec"><h3>Qué hay que montar</h3>' + (arts ? '<div class="arts" style="margin:0">' + arts + '</div>' : '<div style="color:var(--gris)">Sin artículos.</div>') +
       (o.obs ? '<div class="obs">📝 ' + esc(o.obs) + '</div>' : "") + '</div>' +
     (docs.length ? '<div class="sec"><h3>📄 Documentos de la oficina (' + docs.length + ')</h3>' + tiraFotos(docs, []) + '</div>' : "") +

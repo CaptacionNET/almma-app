@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - Prueba lectura de albaranes</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:#f5f6fa;color:#1f2430;}
+header{background:#1f2430;color:#fff;padding:12px 20px;font-weight:700;}
+main{max-width:900px;margin:20px auto;padding:0 16px;}
+.card{background:#fff;border:1px solid #e2e4eb;border-radius:10px;padding:16px;margin-bottom:16px;}
+button{background:#2563eb;color:#fff;border:none;padding:9px 18px;border-radius:6px;cursor:pointer;font-size:14px;}
+button:disabled{opacity:.5;}
+.meta{color:#6b7280;font-size:13px;}
+.err{background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:8px;padding:10px;margin-top:10px;}
+pre{background:#f3f4f6;padding:10px;border-radius:6px;overflow:auto;font-size:12px;white-space:pre-wrap;}
+img{max-width:100%;max-height:320px;border:1px solid #e2e4eb;border-radius:6px;}
+.res{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+@media(max-width:700px){.res{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<header>ALMMA · Prueba de lectura de albaranes (solo oficina)</header>
+<main>
+<div class="card">
+  <p class="meta">Sube una foto de una página de albarán (JPG, PNG o WEBP). La IA la lee y te enseña lo que ha entendido. <b>No marca nada como recibido ni toca ninguna orden</b>; solo guarda la lectura como pendiente para revisarla.</p>
+  <input type="file" id="f" accept="image/*" multiple>
+  <button id="b" onclick="leer()">Leer</button>
+  <span class="meta" id="est"></span>
+</div>
+<div id="out"></div>
+</main>
+<script>
+const client = supabase.createClient(
+  "https://uamgbtbsxbrgymhqalak.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k"
+);
+function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function reducir(file){return new Promise((ok,ko)=>{
+  const url=URL.createObjectURL(file), im=new Image();
+  im.onload=()=>{const k=Math.min(1,2000/Math.max(im.width,im.height));
+    const c=document.createElement("canvas");c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);
+    c.getContext("2d").drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(url);
+    c.toBlob(b=>b?ok(b):ko(new Error("No se pudo preparar la imagen")),"image/jpeg",0.85);};
+  im.onerror=()=>ko(new Error("No se puede abrir "+file.name+" (¿es HEIC? usa JPG/PNG)"));
+  im.src=url;});}
+async function leer(){
+  const {data:s}=await client.auth.getSession();
+  if(!s.session){location.href="login.html";return;}
+  const files=[...document.getElementById("f").files];
+  if(!files.length){alert("Elige al menos una foto");return;}
+  const b=document.getElementById("b"),est=document.getElementById("est"),out=document.getElementById("out");
+  b.disabled=true;
+  for(let i=0;i<files.length;i++){
+    est.textContent="Leyendo "+(i+1)+" de "+files.length+"…";
+    const box=document.createElement("div");box.className="card";out.prepend(box);
+    try{
+      const blob=await reducir(files[i]);
+      const d=new Date(),mm=String(d.getMonth()+1).padStart(2,"0");
+      const ruta=d.getFullYear()+"/"+mm+"/"+crypto.randomUUID()+".jpg";
+      const up=await client.storage.from("albaranes").upload(ruta,blob,{contentType:"image/jpeg"});
+      if(up.error)throw new Error("Subida: "+up.error.message);
+      const r=await client.functions.invoke("leer-albaran",{body:{ruta,nombre_original:files[i].name}});
+      if(r.error){let m=r.error.message;try{const j=await r.error.context.json();m=j.error||m;}catch(_){}throw new Error(m);}
+      const L=r.data.lectura,u=L._uso||{};
+      const sig=await client.storage.from("albaranes").createSignedUrl(ruta,300);
+      box.innerHTML='<b>'+esc(files[i].name)+'</b> <span class="meta">· tokens entrada '+esc(u.entrada)+' / salida '+esc(u.salida)+' · '+esc(u.modelo)+'</span>'
+       +(r.data.duplicados&&r.data.duplicados.length?'<div class="err">Ojo: este albarán (mismo fabricante y número) ya se había leído '+r.data.duplicados.length+' vez/veces.</div>':'')
+       +'<div class="res"><div><img src="'+esc(sig.data&&sig.data.signedUrl)+'"></div><div>'
+       +'<p><b>'+esc(L.fabricante)+'</b> → '+esc(L.tienda_destino)+'<br>Albarán '+esc(L.num_albaran)+' · '+esc(L.fecha_albaran)+'<br>Cliente: '+esc(L.cliente_final)+'<br>Refs: '+esc((L.refs||[]).join(" | "))+'</p>'
+       +'<p>Bultos a mano: <b>'+esc(L.bultos_mano)+'</b> · impresos: '+esc(L.bultos_impresos)+' · peso: '+esc(L.peso_kg)+' kg<br>Ubicación: <b>'+esc(L.ubicacion)+'</b> · sello recibido: '+esc(L.fecha_sello_recibido)+'</p>'
+       +'<p>'+(L.lineas||[]).map(l=>esc(l.cant)+' × '+esc(l.cod)+' '+esc(l.desc)).join("<br>")+'</p>'
+       +(L.avisos&&L.avisos.length?'<p class="meta">Avisos: '+esc(L.avisos.join(" · "))+'</p>':'')
+       +'</div></div><details><summary class="meta">Ver lectura completa</summary><pre>'+esc(JSON.stringify(L,null,2))+'</pre></details>';
+    }catch(e){box.innerHTML='<b>'+esc(files[i].name)+'</b><div class="err">'+esc(e.message)+'</div>';}
+  }
+  est.textContent="Terminado.";b.disabled=false;
+}
+</script>
+</body>
+</html>

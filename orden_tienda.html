@@ -32,6 +32,7 @@ table{width:100%;border-collapse:collapse;font-size:13px;} th{background:#dbeafe
 <body>
 <div id="toolbar"><button onclick="volver()">&larr; Volver</button><b id="titulo" style="color:#1e3a8a">Orden</b><span style="flex:1"></span><span class="muted">Consulta (puedes adjuntar documentos)</span></div>
 <div class="wrap" id="cont"><span class="muted">Cargando...</span></div>
+<script src="condiciones.js"></script>
 <script>
 const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
 const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -62,6 +63,7 @@ function volver(){ location.href = destino; }
   if (!user) { location.href = "login.html"; return; }
   const { data: dep } = await client.from("dependientes").select("es_admin_tienda").eq("user_id", user.id).maybeSingle();
   if (!dep) { location.href = "login.html"; return; }
+  await exigirCondiciones(client);
   if (dep.es_admin_tienda) destino = "tienda.html";
   const { data: o, error } = await client.from("ordenes").select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, telefono2_cli, num_pedido, estado, fecha_creacion, fecha_prev_recepcion, fecha_recepcion, fecha_prev_montaje, horamont, fecha_montaje, con_incidencia, tiendas(nombre)").eq("anyo", anyo).eq("orden", orden).maybeSingle();
   if (error || !o) { document.getElementById("cont").innerHTML = '<span class="muted">No se encuentra esa orden o no tienes acceso a ella.</span>'; return; }

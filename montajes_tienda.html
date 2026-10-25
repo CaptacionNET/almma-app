@@ -42,6 +42,7 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
 </div>
 <div id="overlay" onclick="cerrar()"></div>
 <div id="det"><div class="barra"><b id="det_t" style="font-size:16px"></b><span style="flex:1"></span><button onclick="cerrar()">Cerrar</button></div><div id="det_c"></div></div>
+<script src="condiciones.js"></script>
 <script>
 const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
 const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -96,6 +97,7 @@ async function abrir(i){
   const { data: dep } = await client.from("dependientes").select("es_admin_tienda").eq("user_id", user.id).maybeSingle();
   if (!dep) { location.href = "login.html"; return; }
   if (dep.es_admin_tienda) { location.href = "tienda.html"; return; }  // los administradores ven Montajes dentro de tienda.html
+  await exigirCondiciones(client);
   const { count } = await client.from("tiendas").select("id", { count:"exact", head:true }); multi = count > 1;
   cargar();
 })();
