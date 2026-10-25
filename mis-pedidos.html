@@ -98,6 +98,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
   <button style="background:none;color:#2563eb;border:none;border-bottom:2px solid #2563eb;border-radius:0;font-weight:600;padding:10px 16px;cursor:pointer">Mis pedidos</button>
   <button style="background:none;color:#6b7280;border:none;border-bottom:2px solid transparent;border-radius:0;font-weight:600;padding:10px 16px;cursor:pointer" onclick="location.href='montajes_tienda.html'">Montajes</button>
 </div>
+<div id="t_tabs" style="display:none;gap:2px;padding:8px 24px 0;border-bottom:1px solid #e2e4eb;background:#eff6ff"></div>
 <div class="leyenda-listado" id="leyenda_estados"></div>
 <div class="tabla-scroll"><div id="tabla_pedidos"></div></div>
 
@@ -105,7 +106,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 <div id="modal_nuevo">
   <div class="card">
     <button class="secondary" onclick="cerrarModalNuevo()" style="float:right;">✕</button>
-    <h3 style="margin-top:0;">Nuevo pedido</h3>
+    <h3 style="margin-top:0;">Nuevo pedido<span id="nuevo_tienda" style="font-weight:400;color:#6b7280"></span></h3>
     <p id="aviso" class="aviso-ok"></p>
     <p id="error" class="error"></p>
 
@@ -174,6 +175,7 @@ const client = supabase.createClient(
 
 let tabla = null;
 let dependiente = null;
+let misTiendas = [], tiendaSel = "";
 let lineasNuevoPedido = [];
 let articuloSeleccionado = null;
 let pdfAdjunto = null; // el PDF leído con "Leer PDF": se guarda con el pedido como soporte
@@ -195,8 +197,16 @@ async function comprobarSesion() {
 
   await exigirCondiciones(client);
   dependiente = depRow;
-  const { data: tRow } = await client.from("tiendas").select("nombre").eq("id", depRow.tienda_id).maybeSingle();
-  document.getElementById("tienda_nombre").textContent = tRow?.nombre || "";
+  const { data: ts } = await client.from("tiendas").select("id, nombre").order("nombre");
+  misTiendas = ts || [];
+  tiendaSel = depRow.tienda_id;
+  document.getElementById("tienda_nombre").textContent = (misTiendas.find(x => x.id === tiendaSel) || {}).nombre || "";
+  if (misTiendas.length > 1) {
+    const tb = document.getElementById("t_tabs"); tb.style.display = "flex";
+    const estilo = a => 'border:none;border-radius:0;font-weight:600;padding:8px 16px;cursor:pointer;background:none;border-bottom:2px solid ' + (a ? '#2563eb;color:#2563eb' : 'transparent;color:#6b7280');
+    const pintar = () => { tb.innerHTML = misTiendas.map(t => '<button data-id="' + t.id + '" style="' + estilo(t.id === tiendaSel) + '">' + t.nombre.replace(/[<>&]/g, "") + '</button>').join(""); tb.querySelectorAll("button").forEach(b => b.onclick = () => { tiendaSel = b.dataset.id; pintar(); cargarPedidos(); }); };
+    pintar();
+  }
   cargarPedidos();
 }
 
@@ -216,7 +226,7 @@ async function cargarPedidos() {
   await cargarConMensaje();
   const { data, error } = await client.from("ordenes")
     .select("anyo, orden, nombre_cli, num_pedido, estado, con_incidencia, fecha_creacion")
-    .eq("tienda_id", dependiente.tienda_id)
+    .eq("tienda_id", tiendaSel || dependiente.tienda_id)
     .order("anyo", { ascending: false })
     .order("orden", { ascending: false })
     .limit(200);
@@ -242,6 +252,7 @@ async function cargarPedidos() {
 }
 
 function abrirModalNuevo() {
+  document.getElementById("nuevo_tienda").textContent = misTiendas.length > 1 ? " · " + ((misTiendas.find(x => x.id === tiendaSel) || {}).nombre || "") : "";
   lineasNuevoPedido = [];
   renderLineas();
   document.getElementById("aviso").style.display = "none";
@@ -437,6 +448,7 @@ async function crearPedido() {
     p_telefono_cli: telefono_cli,
     p_num_pedido: num_pedido,
     p_lineas: lineasNuevoPedido.map(l => ({ articulo: l.articulo, descripcion: l.descripcion, cantidad: l.cantidad })),
+    p_tienda_id: tiendaSel || null,
   });
 
   if (error) { errorBox.textContent = "No se pudo crear el pedido: " + error.message; errorBox.style.display = "block"; return; }

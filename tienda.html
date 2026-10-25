@@ -118,7 +118,7 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
   <div class="f"><label>Nombre *</label><input id="f_nombre"></div>
   <div class="f"><label>Teléfono (móvil)</label><input id="f_tel" placeholder="6…"></div>
   <div class="f"><label>Email de contacto (para avisos de sus pedidos)</label><input id="f_email" placeholder="vendedor@…"><div class="muted">Distinto del email con el que entra a la web. Hasta 3 separados por coma.</div></div>
-  <div class="f" id="f_tienda_f"><label>Tienda</label><select id="f_tienda"></select></div>
+  <div class="f" id="f_tienda_f"><label>Tiendas que puede ver (haz clic para marcar o quitar)</label><div id="f_tiendas" style="display:flex;gap:8px;flex-wrap:wrap"></div></div>
   <div class="f"><label>Rol</label><select id="f_rol"><option value="0">Vendedor</option><option value="1">Administrador de tienda (ve todo: órdenes, facturas y equipo)</option></select></div>
   <div class="caja" style="margin:14px 0 0">
     <b>Perfil de acceso a la web</b>
@@ -357,7 +357,10 @@ async function guardarEmailsTienda(id){
 }
 
 /* Equipo: vendedores (con o sin perfil de acceso) — migracion/84_equipo_de_la_tienda.sql */
-let equipo = [], cuentas = {}, idFicha = null;
+let equipo = [], cuentas = {}, idFicha = null, tiendasFicha = [];
+const nomTienda = id => (misTiendas.find(t => t.id === id) || {}).nombre || "";
+function pintarChips(){ document.getElementById("f_tiendas").innerHTML = misTiendas.map(t => { const on = tiendasFicha.includes(t.id); return '<button type="button" onclick="clicTienda(\'' + t.id + '\')" style="border-radius:20px;padding:7px 14px;border:1px solid ' + (on ? '#1e40af;background:#1e40af;color:#fff' : '#93c5fd;background:#eff6ff;color:#1e3a8a') + ';font-weight:600">' + (on ? "✓ " : "") + esc(t.nombre) + '</button>'; }).join(""); }
+function clicTienda(id){ tiendasFicha = tiendasFicha.includes(id) ? tiendasFicha.filter(x => x !== id) : tiendasFicha.concat(id); pintarChips(); }
 async function cargarEquipo(){
   cargarTelefonos(); cargarEmails();
   const [r, c] = await Promise.all([client.rpc("mi_equipo"), llamar({ accion:"listar" })]);
@@ -368,8 +371,8 @@ async function cargarEquipo(){
 }
 function pintarEquipo(){
   const ver = document.getElementById("q_ant").checked;
-  const lista = equipo.filter(x => (!tiendaSel || x.tienda_id === tiendaSel) && (ver || x.activo));
-  const ocultos = equipo.filter(x => (!tiendaSel || x.tienda_id === tiendaSel) && !x.activo).length;
+  const lista = equipo.filter(x => (!tiendaSel || x.tiendas.includes(tiendaSel)) && (ver || x.activo));
+  const ocultos = equipo.filter(x => (!tiendaSel || x.tiendas.includes(tiendaSel)) && !x.activo).length;
   const fila = x => {
     const c = x.user_id ? (cuentas[x.user_id] || {}) : null;
     const acceso = !x.user_id ? '<span class="muted">Sin perfil</span>'
@@ -378,7 +381,7 @@ function pintarEquipo(){
     const acc = '<button class="secondary" onclick="abrirFicha(\'' + x.id + '\')">Editar</button> ' +
       (!x.user_id ? '<button onclick="abrirFicha(\'' + x.id + '\', true)">Dar perfil</button>'
         : '<button class="secondary" onclick="bloqueo(\'' + x.user_id + '\',' + !!c.bloqueado + ')">' + (c.bloqueado ? "Desbloquear" : "Bloquear") + '</button> <button class="secondary" onclick="pass(\'' + x.user_id + '\')">Contraseña</button>');
-    return '<tr class="' + (c && c.bloqueado ? 'bloq' : '') + '"><td><b>' + esc(x.nombre) + '</b></td>' + (multi() ? '<td>' + esc(x.tienda) + '</td>' : '') +
+    return '<tr class="' + (c && c.bloqueado ? 'bloq' : '') + '"><td><b>' + esc(x.nombre) + '</b></td>' + (multi() ? '<td>' + x.tiendas.map(id => esc(nomTienda(id))).join(' · ') + '</td>' : '') +
       '<td>' + (x.es_admin_tienda ? '<b style="color:#1e3a8a">Administrador</b>' : 'Vendedor') + '</td><td>' + esc(x.telefono) + '</td><td>' + esc(x.email) + '</td><td>' + acceso + '</td><td style="white-space:nowrap">' + acc + '</td></tr>';
   };
   document.getElementById("e_tabla").innerHTML = lista.length
@@ -394,9 +397,8 @@ function abrirFicha(id, conPerfil){
   document.getElementById("f_nombre").value = x ? x.nombre : "";
   document.getElementById("f_tel").value = x ? (x.telefono || "") : "";
   document.getElementById("f_email").value = x ? (x.email || "") : "";
-  const sel = document.getElementById("f_tienda");
-  sel.innerHTML = misTiendas.map(t => '<option value="' + t.id + '">' + esc(t.nombre) + '</option>').join("");
-  sel.value = x ? x.tienda_id : (tiendaSel || misTiendas[0].id);
+  tiendasFicha = x ? x.tiendas.slice() : [tiendaSel || misTiendas[0].id];
+  pintarChips();
   document.getElementById("f_tienda_f").style.display = multi() ? "" : "none";
   document.getElementById("f_rol").value = x && x.es_admin_tienda ? "1" : "0";
   const tiene = x && x.user_id;
@@ -412,9 +414,11 @@ function abrirFicha(id, conPerfil){
 function cerrarFicha(){ document.getElementById("ficha_fondo").style.display = document.getElementById("ficha").style.display = "none"; }
 async function guardarFicha(){
   const v = k => document.getElementById(k).value.trim();
-  const nombre = v("f_nombre"), tel = v("f_tel"), email = v("f_email"), tienda = document.getElementById("f_tienda").value, admin = v("f_rol") === "1";
+  const nombre = v("f_nombre"), tel = v("f_tel"), email = v("f_email"), admin = v("f_rol") === "1";
   const crear = document.getElementById("f_crear").checked && document.getElementById("f_perfil_no").style.display !== "none";
   if (!nombre) { alert("Escribe el nombre."); return; }
+  if (!tiendasFicha.length) { alert("Marca al menos una tienda."); return; }
+  const tienda = tiendasFicha[0];
   if (crear && (!v("f_login") || v("f_pass").length < 10)) { alert("Para dar perfil hace falta el email de acceso y una contraseña de al menos 10 caracteres."); return; }
   const btn = document.getElementById("f_guardar"); btn.disabled = true;
   try {
@@ -430,7 +434,7 @@ async function guardarFicha(){
       const e = await client.rpc("dar_perfil", { p_id: id, p_login_email: v("f_login") });
       if (e.error) { alert("El perfil se creó pero no se pudo enlazar con el vendedor: " + e.error.message); await cargarEquipo(); cerrarFicha(); return; }
     }
-    const g = await client.rpc("guardar_miembro", { p_id: id, p_nombre: nombre, p_telefono: tel, p_email: email, p_tienda_id: tienda, p_es_admin: admin });
+    const g = await client.rpc("guardar_miembro", { p_id: id, p_nombre: nombre, p_telefono: tel, p_email: email, p_tiendas: tiendasFicha, p_es_admin: admin });
     if (g.error) { alert("No se pudo guardar: " + g.error.message); await cargarEquipo(); return; }
     cerrarFicha(); await cargarEquipo();
   } finally { btn.disabled = false; }
