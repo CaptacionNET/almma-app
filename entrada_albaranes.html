@@ -384,7 +384,7 @@ function docDesdeFila(f,url,dups){
   if(d.rot)setTimeout(()=>{const i=DOCS.indexOf(d);if(i>=0)aplicaRot(i);},0);
   d.clientes=(L.clientes||[]).filter(c=>c&&c.nombre);
   if(d.clientes.length>=2){const asig=d.lineas.map(()=>-1);d.clientes.forEach((c,ci)=>(c.lineas||[]).forEach(k=>{if(k>=0&&k<asig.length)asig[k]=ci;}));
-    d.reparto={ok:false,cl:d.clientes.map(c=>({nombre:c.nombre,ref:c.ref||''})),asig};}
+    d.reparto={ok:false,cl:d.clientes.map(c=>({nombre:c.nombre,ref:c.ref||'',ubicacion:c.ubicacion||'',bultos:c.bultos_mano||''})),asig};}
   d.top=candidatas(d);d.cls=clasifica(d.top);return d;
 }
 async function cargarPendientes(){
@@ -499,7 +499,7 @@ function repartoHTML(i){const d=DOCS[i],R=d.reparto;
   const opts=v=>R.cl.map((c,ci)=>'<option value="'+ci+'" '+(v===ci?'selected':'')+'>'+esc(c.nombre)+'</option>').join('')+'<option value="-1" '+(v===-1?'selected':'')+'>— de nadie (ignorar) —</option>';
   let h='<div class="sec"><h4><span class="num">2</span>Este albarán lleva '+R.cl.length+' clientes: ¿el reparto es correcto?</h4><p class="nota" style="margin:0 0 10px">Hemos detectado esto. Si alguna línea está en el cliente equivocado, cámbiala. Después irás cliente por cliente, y de cada uno solo verás sus líneas.</p>';
   R.cl.forEach((c,ci)=>{const ks=R.asig.map((a,k)=>a===ci?k:-1).filter(k=>k>=0);
-    h+='<div class="orden" style="margin-bottom:10px;border-color:'+COL[ci%7]+'"><div class="t" style="display:flex;gap:6px;align-items:center"><span>'+(ci+1)+'.</span><input value="'+esc(c.nombre)+'" placeholder="Nombre del cliente" onchange="setCl('+i+','+ci+',\'nombre\',this.value)" style="font-weight:700"><input value="'+esc(c.ref)+'" placeholder="Referencia / pedido (opcional)" onchange="setCl('+i+','+ci+',\'ref\',this.value)" style="width:200px"><button class="sec2 peq" title="Quitar este cliente" onclick="quitaCl('+i+','+ci+')">✕</button></div>'+
+    h+='<div class="orden" style="margin-bottom:10px;border-color:'+COL[ci%7]+'"><div class="t" style="display:flex;gap:6px;align-items:center"><span>'+(ci+1)+'.</span><input value="'+esc(c.nombre)+'" placeholder="Nombre del cliente" onchange="setCl('+i+','+ci+',\'nombre\',this.value)" style="font-weight:700"><input value="'+esc(c.ref)+'" placeholder="Referencia / pedido" onchange="setCl('+i+','+ci+',\'ref\',this.value)" style="width:150px"><input value="'+esc(c.ubicacion||'')+'" placeholder="Ubic." title="Ubicación de este cliente" onchange="setCl('+i+','+ci+',\'ubicacion\',this.value)" style="width:64px"><input type="number" min="0" value="'+esc(c.bultos||'')+'" placeholder="Bultos" title="Bultos de este cliente (a mano, xB)" onchange="setCl('+i+','+ci+',\'bultos\',this.value)" style="width:70px"><button class="sec2 peq" title="Quitar este cliente" onclick="quitaCl('+i+','+ci+')">✕</button></div>'+
       (ks.length?ks.map(k=>'<div class="lin" style="cursor:default"><span class="d"><b>'+(d.lineas[k].cant||1)+'×</b> '+esc(d.lineas[k].desc)+'<div class="cod">'+esc(d.lineas[k].cod||'')+'</div></span><select style="width:170px" onchange="moverLinea('+i+','+k+',this.value)">'+opts(ci)+'</select></div>').join(''):'<div class="meta" style="color:var(--warn);font-size:12px">Sin líneas: este cliente se omitirá.</div>')+'</div>';});
   const ning=R.asig.map((a,k)=>a===-1?k:-1).filter(k=>k>=0);
   if(ning.length)h+='<div class="orden" style="border-color:#cbd5e1;background:#f9fafb"><div class="t" style="font-size:14px">Sin cliente (se ignoran)</div>'+ning.map(k=>'<div class="lin" style="cursor:default"><span class="d"><b>'+(d.lineas[k].cant||1)+'×</b> '+esc(d.lineas[k].desc)+'</span><select style="width:170px" onchange="moverLinea('+i+','+k+',this.value)">'+opts(-1)+'</select></div>').join('')+'</div>';
@@ -515,8 +515,9 @@ function confirmaReparto(){const d=DOCS[cur],R=d.reparto;const gid='g'+Date.now(
     x.lineas=h.idxs.map(k=>d.lineas[k]);x.cliente_final=h.c.nombre;
     const toks=[...ntoks(h.c.nombre)];
     x.refs=[h.c.nombre,h.c.ref].filter(Boolean).concat((d.refs||[]).filter(r=>toks.some(t=>norm(r).includes(t))&&r!==h.c.nombre));
-    x.bultos_impresos=null;x.bultos_mano=null;x.peso_kg=null;
-    x.dudas=(d.dudas?d.dudas+' · ':'')+'Albarán completo con '+hijos.length+' clientes'+(tot[0]?': '+tot[0]+' bultos en total':'')+(tot[1]?', '+tot[1]+' kg':'')+'. Reparte los bultos entre los clientes.';
+    const sb=x.lineas.map(l=>l.bultos);x.bultos_impresos=sb.length&&sb.every(v=>v>0)?sb.reduce((p,q)=>p+q,0):null;
+    x.bultos_mano=Number(h.c.bultos)||null;x.ubicacion=h.c.ubicacion||d.ubicacion||null;x.peso_kg=null;
+    x.dudas=(d.dudas?d.dudas+' · ':'')+'Albarán completo con '+hijos.length+' clientes'+(tot[0]?': '+tot[0]+' bultos en total':'')+(tot[1]?', '+tot[1]+' kg':'')+'.';
     x.nota='Cliente '+(n+1)+'/'+hijos.length+': '+h.c.nombre;x.top=candidatas(x);x.cls=clasifica(x.top);return x;});
   DOCS.splice(cur,1,...nuevos);ST.splice(cur,1,...nuevos.map(()=>null));nuevos.forEach((_,j)=>initDoc(cur+j));pinta();
   toast('Reparto confirmado. Paso 1 de '+hijos.length+': '+nuevos[0].cliente_final+'.');}
