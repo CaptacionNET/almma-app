@@ -65,19 +65,20 @@ function volver(){ location.href = destino; }
   if (!dep) { location.href = "login.html"; return; }
   await exigirCondiciones(client);
   if (dep.es_admin_tienda) destino = "tienda.html";
-  const { data: o, error } = await client.from("ordenes").select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, telefono2_cli, num_pedido, estado, fecha_creacion, fecha_prev_recepcion, fecha_recepcion, fecha_prev_montaje, horamont, fecha_montaje, con_incidencia, tiendas(nombre)").eq("anyo", anyo).eq("orden", orden).maybeSingle();
+  const { data: o, error } = await client.from("ordenes").select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, telefono2_cli, num_pedido, estado, fecha_creacion, fecha_prev_recepcion, fecha_recepcion, fecha_prev_montaje, horamont, fecha_montaje, con_incidencia, dependiente_id, tiendas(nombre)").eq("anyo", anyo).eq("orden", orden).maybeSingle();
   if (error || !o) { document.getElementById("cont").innerHTML = '<span class="muted">No se encuentra esa orden o no tienes acceso a ella.</span>'; return; }
   document.getElementById("titulo").textContent = "Orden " + o.anyo + "/" + o.orden;
   const [li, ci] = await Promise.all([
     client.from("linorden").select("linea, tipolinea, articulo, descripcion, cantidad, recibido, ubicacion").neq("tipolinea", 4).eq("anyo", anyo).eq("orden", orden).order("linea"),
     client.from("citas_montaje").select("fecha_hora, estado").eq("anyo", anyo).eq("orden", orden).neq("estado", "cancelada").order("fecha_hora")
   ]);
+  const vend = ((await client.rpc("nombres_vendedores")).data || []).find(v => v.id === o.dependiente_id);
   const k = (a,b) => '<div><div class="k">'+a+'</div><div class="v">'+(b || "—")+'</div></div>';
   const lineas = (li.data || []).filter(l => l.tipolinea !== 4);
   document.getElementById("cont").innerHTML =
     '<div class="card"><div style="margin-bottom:10px"><span class="est">'+esc(o.estado === "completado" && o.con_incidencia ? "completado con incidencias" : (o.estado||"").replace(/_/g," "))+'</span></div><div class="grid">'+
       k("Cliente", esc(o.nombre_cli))+k("Dirección", esc([o.domicilio_cli, o.localidad_cli].filter(Boolean).join(" - ")))+
-      k("Teléfono", esc([o.telefono_cli, o.telefono2_cli].filter(Boolean).join(" / ")))+k("Referencia de pedido", esc(o.num_pedido))+
+      k("Teléfono", esc([o.telefono_cli, o.telefono2_cli].filter(Boolean).join(" / ")))+k("Referencia de pedido", esc(o.num_pedido))+k("Vendedor", esc(vend && vend.nombre))+
       k("Creada", f(o.fecha_creacion))+k("Recepción prevista", f(o.fecha_prev_recepcion))+k("Recibida en almacén", f(o.fecha_recepcion))+
       k("Montaje previsto", f(o.fecha_prev_montaje) + (o.horamont ? " · " + esc(o.horamont) : ""))+k("Montaje realizado", f(o.fecha_montaje))+
     '</div></div>'+

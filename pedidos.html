@@ -706,7 +706,12 @@ async function llenarSelectTiendaCabecera(tiendaIdActual) {
 async function llenarSelectDependiente(tiendaId, dependienteIdActual, selectId = "ch_dependiente") {
   const sel = document.getElementById(selectId);
   let query = client.from("dependientes").select("id, nombre").order("nombre");
-  if (tiendaId) query = query.eq("tienda_id", tiendaId);
+  if (tiendaId) {
+    // los de esa tienda como principal + los que la tienen como tienda extra (migracion/85)
+    const { data: ex } = await client.from("dependientes_tiendas_extra").select("dependiente_id").eq("tienda_id", tiendaId);
+    const ids = (ex || []).map(e => e.dependiente_id);
+    query = ids.length ? query.or("tienda_id.eq." + tiendaId + ",id.in.(" + ids.join(",") + ")") : query.eq("tienda_id", tiendaId);
+  }
   const { data } = await query;
   sel.innerHTML = '<option value="">-- sin asignar --</option>' +
     (data || []).map(d => `<option value="${d.id}">${d.nombre || d.id}</option>`).join("");
