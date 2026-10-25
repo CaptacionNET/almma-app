@@ -109,7 +109,7 @@ button:disabled{opacity:.4;cursor:not-allowed;}
 </head>
 <body>
 <div class="top">
-  <a href="recepcion.html" style="color:#93c5fd;text-decoration:none;font-size:13px">← Entradas Almacén</a>
+  <a href="recepcion.html" style="color:#93c5fd;text-decoration:none;font-size:13px">← Consulta almacén</a>
   <b>Entrada por albarán</b>
   <span class="maq">PRUEBA · ya registra de verdad</span>
   <span class="sp"></span><span id="est" style="font-size:12px;color:#cbd5e1"></span>
@@ -470,7 +470,7 @@ async function confirma(){
   if(!d.esHijo){up.bultos_mano=Number(val(cur,'bultos_mano'))||null;up.bultos_impresos=Number(val(cur,'bultos_impresos'))||null;up.peso_kg=Number(val(cur,'peso_kg'))||null;}
   await client.from("albaranes_lecturas").update(up).eq("id",d.id);
   confirmando=false;
-  if(errs.length){alert('Hubo problemas:\n\n'+errs.join('\n')+'\n\nRevísalo en Entradas Almacén antes de repetir.');pinta();return;}
+  if(errs.length){alert('Hubo problemas:\n\n'+errs.join('\n')+'\n\nRevísalo en Consulta almacén antes de repetir.');pinta();return;}
   s.hecho=true;toast('Entrada registrada: '+ops.length+' línea(s) marcadas como recibidas.');siguiente();
 }
 async function iniciar(){
