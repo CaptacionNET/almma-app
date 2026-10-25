@@ -476,7 +476,7 @@ async function confirma(){
 async function iniciar(){
   const {data:ses}=await client.auth.getSession();if(!ses.session){location.href='login.html';return;}
   const st=await client.from('staff').select('user_id').eq('user_id',ses.session.user.id).maybeSingle();
-  if(!st.data){document.body.innerHTML='<p style="padding:30px">Esta pantalla es solo para personal de oficina.</p>';return;}
+  if(!st.data){document.body.innerHTML='<div style="padding:30px;max-width:560px;font-family:sans-serif"><p><b>Esta pantalla es solo para personal de oficina.</b></p><p>Has entrado como <b>'+esc(ses.session.user.email||'')+'</b>'+(st.error?' (error al comprobarlo: '+esc(st.error.message)+')':', y esa cuenta no está en el personal de oficina')+'.</p><p><button onclick="client.auth.signOut().then(()=>location.href=\'login.html\')" style="padding:8px 14px">Cerrar sesión y entrar con otra cuenta</button></p></div>';return;}
   document.getElementById('lista').innerHTML='<h3>Cargando…</h3>';
   try{await cargarOrdenes();await cargarPendientes();}catch(e){toast('Error al cargar: '+e.message);}
   pinta();
