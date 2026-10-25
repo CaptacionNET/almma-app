@@ -233,7 +233,7 @@ function cardOrden(i,id){const o=ordenObj(id,i),d=DOCS[i];const c=d.top.find(t=>
   h+=`<div class="acciones">${id!=='NUEVA'?`<button class="sec2 peq" onclick="verOrden(${o.i})">👁 Ver orden</button>`:''}<button class="sec2 peq" onclick="quita('${id}')">✕ Quitar esta orden</button></div></div>`;return h;}
 
 function pintaPanel(){
-  const d=DOCS[cur],s=ST[cur];let h=chipsHermanos(d);autoPeso(cur);
+  const d=DOCS[cur],s=ST[cur];let h=chipsHermanos(d)+barraVarios(d);autoPeso(cur);
   h+=`<div class="sec"><h4><span class="num">1</span>Datos leídos del albarán <span style="font-weight:400;color:var(--muted);font-size:12px">(se pueden corregir)</span></h4><div class="grid">`;
   CAMPOS.forEach(([k,t])=>{const v=val(cur,k);h+=`<div class="campo ${dudoso(cur,k)?'dud':''} ${s.vals[k]!==undefined?'edit':''}"><label>${t}</label><input value="${esc(v)}" placeholder="${k==='bultos_mano'?'no pone xB a mano':'no se ha podido leer'}" onchange="ST[cur].vals['${k}']=this.value;pinta()"></div>`;});
   h+=`</div>`;
@@ -499,11 +499,11 @@ function repartoHTML(i){const d=DOCS[i],R=d.reparto;
   const opts=v=>R.cl.map((c,ci)=>'<option value="'+ci+'" '+(v===ci?'selected':'')+'>'+esc(c.nombre)+'</option>').join('')+'<option value="-1" '+(v===-1?'selected':'')+'>— de nadie (ignorar) —</option>';
   let h='<div class="sec"><h4><span class="num">2</span>Este albarán lleva '+R.cl.length+' clientes: ¿el reparto es correcto?</h4><p class="nota" style="margin:0 0 10px">Hemos detectado esto. Si alguna línea está en el cliente equivocado, cámbiala. Después irás cliente por cliente, y de cada uno solo verás sus líneas.</p>';
   R.cl.forEach((c,ci)=>{const ks=R.asig.map((a,k)=>a===ci?k:-1).filter(k=>k>=0);
-    h+='<div class="orden" style="margin-bottom:10px;border-color:'+COL[ci%7]+'"><div class="t">'+(ci+1)+'. '+esc(c.nombre)+(c.ref?' <span style="font-weight:400;font-size:12px;color:var(--muted)">· '+esc(c.ref)+'</span>':'')+'</div>'+
+    h+='<div class="orden" style="margin-bottom:10px;border-color:'+COL[ci%7]+'"><div class="t" style="display:flex;gap:6px;align-items:center"><span>'+(ci+1)+'.</span><input value="'+esc(c.nombre)+'" placeholder="Nombre del cliente" onchange="setCl('+i+','+ci+',\'nombre\',this.value)" style="font-weight:700"><input value="'+esc(c.ref)+'" placeholder="Referencia / pedido (opcional)" onchange="setCl('+i+','+ci+',\'ref\',this.value)" style="width:200px"><button class="sec2 peq" title="Quitar este cliente" onclick="quitaCl('+i+','+ci+')">✕</button></div>'+
       (ks.length?ks.map(k=>'<div class="lin" style="cursor:default"><span class="d"><b>'+(d.lineas[k].cant||1)+'×</b> '+esc(d.lineas[k].desc)+'<div class="cod">'+esc(d.lineas[k].cod||'')+'</div></span><select style="width:170px" onchange="moverLinea('+i+','+k+',this.value)">'+opts(ci)+'</select></div>').join(''):'<div class="meta" style="color:var(--warn);font-size:12px">Sin líneas: este cliente se omitirá.</div>')+'</div>';});
   const ning=R.asig.map((a,k)=>a===-1?k:-1).filter(k=>k>=0);
   if(ning.length)h+='<div class="orden" style="border-color:#cbd5e1;background:#f9fafb"><div class="t" style="font-size:14px">Sin cliente (se ignoran)</div>'+ning.map(k=>'<div class="lin" style="cursor:default"><span class="d"><b>'+(d.lineas[k].cant||1)+'×</b> '+esc(d.lineas[k].desc)+'</span><select style="width:170px" onchange="moverLinea('+i+','+k+',this.value)">'+opts(-1)+'</select></div>').join('')+'</div>';
-  return h+'</div>';}
+  return h+'<div class="acciones"><button class="sec2 peq" onclick="addCl('+i+')">➕ Añadir otro cliente</button>'+(d.reparto.manual?'<button class="sec2 peq" onclick="cancelaReparto('+i+')">Cancelar: es un solo cliente</button>':'')+'</div></div>';}
 function repartoPie(i){const R=DOCS[i].reparto,n=R.cl.filter((c,ci)=>R.asig.includes(ci)).length;
   return '<div class="pie"><div class="info">'+(n?'Se crearán '+n+' paso(s), uno por cliente.':'Asigna al menos una línea a un cliente.')+'</div><button class="sec2" onclick="descartar()">Descartar lectura</button><button onclick="confirmaReparto()" '+(n?'':'disabled')+'>✔ Sí, es correcto: empezar con el primer cliente</button></div>';}
 function moverLinea(i,k,v){DOCS[i].reparto.asig[k]=Number(v);pintaPanel();}
@@ -524,6 +524,14 @@ function chipsHermanos(d){if(!d.grupoHerm)return '';
   const hs=DOCS.map((x,i)=>({x,i})).filter(o=>o.x.grupoHerm===d.grupoHerm);
   return '<div class="sec" style="padding:10px 14px"><div style="font-size:12px;color:var(--muted);margin-bottom:6px">Este albarán tiene varios clientes. Vas por el '+d.herm.n+' de '+d.herm.t+':</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+hs.map(o=>'<button class="'+(o.i===cur?'':'sec2')+' peq" onclick="ir('+o.i+')">'+(ST[o.i].hecho?'✔ ':'')+o.x.herm.n+'. '+esc(o.x.cliente_final)+'</button>').join('')+'</div></div>';}
 function hermPend(d){return !!d.grupoHerm&&DOCS.some((x,i)=>x!==d&&x.grupoHerm===d.grupoHerm&&!ST[i].hecho);}
+
+function nuevoReparto(i){const d=DOCS[i];d.reparto={ok:false,manual:true,cl:[{nombre:'Cliente 1',ref:''},{nombre:'Cliente 2',ref:''}],asig:d.lineas.map(()=>0)};pinta();toast('Pon el nombre de cada cliente y reparte las líneas.');}
+function cancelaReparto(i){DOCS[i].reparto=null;pinta();}
+function setCl(i,ci,campo,v){DOCS[i].reparto.cl[ci][campo]=v.trim();pintaPanel();}
+function addCl(i){const R=DOCS[i].reparto;R.cl.push({nombre:'Cliente '+(R.cl.length+1),ref:''});pintaPanel();}
+function quitaCl(i,ci){const R=DOCS[i].reparto;if(R.cl.length<=1)return toast('Tiene que quedar al menos un cliente.');R.cl.splice(ci,1);R.asig=R.asig.map(a=>a===ci?-1:(a>ci?a-1:a));pintaPanel();}
+function barraVarios(d){if(d.reparto||d.esHijo||ST[DOCS.indexOf(d)].hecho||d.lineas.length<2)return '';
+  return '<div style="margin:12px 14px 0;text-align:right"><button class="sec2 peq" onclick="nuevoReparto(DOCS.indexOf(DOCS[cur]))">👥 Este albarán es de varios clientes: repartir las líneas</button></div>';}
 
 iniciar();
 </script>
