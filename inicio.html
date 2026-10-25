@@ -60,8 +60,12 @@ async function init() {
     document.getElementById("quien").textContent = dep.nombre || "";
     if (dep.es_admin_tienda) {
       botones = [
-        B("🏬", "Mi tienda", "Órdenes, facturas, montajes y equipo", "tienda.html"),
         B("➕", "Nuevo pedido", "Crear un pedido", "mis-pedidos.html"),
+        B("📋", "Órdenes", "Todos los pedidos de la tienda", "tienda.html#ordenes"),
+        B("🧾", "Facturas", "Facturas emitidas a la tienda", "tienda.html#facturas"),
+        B("🚚", "Montajes", "Próximos montajes y realizados", "tienda.html#montajes"),
+        B("📦", "Recibidos", "Mercancía llegada al almacén", "tienda.html#recibidos"),
+        B("👥", "Mi equipo", "Teléfonos, emails y dependientes", "tienda.html#equipo"),
       ];
     } else {
       botones = [

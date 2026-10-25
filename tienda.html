@@ -17,6 +17,7 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
 .tabs{display:flex;gap:2px;padding:12px 24px 0;border-bottom:1px solid var(--border);background:var(--card);flex-wrap:wrap;}
 .tab{background:none;color:var(--muted);padding:10px 16px;font-weight:600;border-radius:0;border-bottom:2px solid transparent;}
 .tab.activa{color:var(--primary);border-bottom-color:var(--primary);}
+.tabs.tiendas{background:#eff6ff;padding-top:8px;} .tabs.tiendas .tab{padding:8px 16px;}
 .panel{display:none;padding:20px 24px;} .panel.activa{display:block;}
 .tarjetas{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:18px;}
 .tarjeta{background:var(--card);border:1px solid #bfdbfe;border-left:5px solid #2563eb;border-radius:8px;padding:14px 16px;}
@@ -42,9 +43,9 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
 <body>
 <div id="toolbar">
   <b>ALMMA · <span id="tienda_nombre">Mi tienda</span></b>
+  <button class="secondary" onclick="location.href='inicio.html'">🏠 Inicio</button>
   <button class="secondary" onclick="location.href='mis-pedidos.html'">Nuevo pedido</button>
   <div class="spacer"></div>
-  <select id="t_sel" style="display:none" onchange="cambiaTienda()"></select>
   <span id="quien" class="muted"></span>
   <button class="secondary" onclick="logout()">Salir</button>
 </div>
@@ -55,6 +56,8 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
   <button class="tab" data-t="recibidos">Recibidos</button>
   <button class="tab" data-t="equipo">Mi equipo</button>
 </div>
+
+<div class="tabs tiendas" id="t_tabs" style="display:none"></div>
 
 <div class="panel activa" id="p_ordenes">
   <div class="barra"><input id="o_buscar" placeholder="Buscar cliente, referencia, nº..." oninput="pintarOrdenes()" style="width:320px">
@@ -122,7 +125,9 @@ async function logout(){ await client.auth.signOut(); location.href = "login.htm
 document.querySelectorAll(".tab[data-t]").forEach(b => b.onclick = () => {
   document.querySelectorAll(".tab[data-t]").forEach(x => x.classList.toggle("activa", x === b));
   document.querySelectorAll(".panel").forEach(p => p.classList.toggle("activa", p.id === "p_" + b.dataset.t));
+  history.replaceState(null, "", "#" + b.dataset.t);
 });
+function abrirSeccion(t){ const b = document.querySelector('.tab[data-t="' + t + '"]'); if (b) b.click(); }
 
 async function iniciar(){
   const { data:{ user } } = await client.auth.getUser();
@@ -136,13 +141,19 @@ async function iniciar(){
   document.getElementById("tienda_nombre").textContent = (misTiendas.find(x => x.id === d.tienda_id) || {}).nombre || "Mi tienda";
   if (misTiendas.length > 1) {
     document.getElementById("tienda_nombre").textContent = "Mis tiendas";
-    const sel = document.getElementById("t_sel"); sel.style.display = "";
-    sel.innerHTML = '<option value="">Todas mis tiendas</option>' + misTiendas.map(t => '<option value="'+t.id+'">'+esc(t.nombre)+'</option>').join("");
+    tiendaSel = (misTiendas.find(x => x.id === d.tienda_id) || misTiendas[0]).id;
+    const tb = document.getElementById("t_tabs"); tb.style.display = "";
+    tb.innerHTML = misTiendas.map(t => '<button class="tab' + (t.id === tiendaSel ? ' activa' : '') + '" data-id="' + t.id + '">' + esc(t.nombre) + '</button>').join("");
+    tb.querySelectorAll(".tab").forEach(b => b.onclick = () => {
+      tb.querySelectorAll(".tab").forEach(x => x.classList.toggle("activa", x === b));
+      cambiaTienda(b.dataset.id);
+    });
   }
+  abrirSeccion((location.hash || "").slice(1));
   document.getElementById("quien").textContent = d.nombre || user.email;
   cargarOrdenes(); cargarFacturas(); cargarMontajes(); cargarRecibidos(); cargarEquipo();
 }
-function cambiaTienda(){ tiendaSel = document.getElementById("t_sel").value; cargarOrdenes(); cargarFacturas(); cargarMontajes(); cargarRecibidos(); cargarEquipo(); }
+function cambiaTienda(id){ tiendaSel = id; cargarOrdenes(); cargarFacturas(); cargarMontajes(); cargarRecibidos(); cargarEquipo(); }
 const multi = () => misTiendas.length > 1;
 
 /* Fechas de los buscadores: p = "o" (órdenes), "f" (facturas), "m" (montajes) */
