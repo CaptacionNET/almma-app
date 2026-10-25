@@ -147,34 +147,69 @@ function pintarAsociacion(box,id,L){
     const c=x.c,o=c.o,ltx=L.lineas||[];
     const bultos0=cero(L.bultos_mano)??cero(L.bultos_impresos)??"",peso0=cero(L.peso_kg)??"";
     const montada=o.estado==="completado";
+    const opts='<option value="">(sin indicar)</option>'+ltx.map((a,i)=>'<option value="'+i+'">'+esc(a.cant+" × "+(a.cod?a.cod+" ":"")+a.desc).slice(0,70)+'</option>').join("");
     let h='<div class="panel"><b>Orden #'+o.anyo+'/'+o.orden+'</b> · '+esc(c.tienda)+' · '+esc(o.nombre_cli||"")+' <span class="tag">'+esc(ESTADO[o.estado]||o.estado)+'</span>';
     if(montada)h+='<div class="err">Esta orden ya está montada. Solo admitiría una incidencia (reposición), no una entrada normal. Todavía no está disponible aquí.</div>';
-    h+='<p class="meta" style="margin:6px 0">Marca las líneas de la orden que corresponden a este albarán. Las de otro fabricante no se pueden asociar.</p>';
+    h+='<p class="meta" style="margin:6px 0">1) Marca las líneas de la orden que han llegado en este albarán (las de otro fabricante no se pueden marcar). 2) Para cada una, di qué línea del albarán es y revisa cantidad, bultos y ubicación.</p>';
     c.ls.forEach(l=>{const ok=fabCompatible(L.fabricante,l.fab);
       const lt=toks(l.descripcion),pre=ok&&ltx.some(a=>inter(toks(a.desc),lt).length);
-      h+='<label class="lin'+(ok?'':' off')+'"><input type="checkbox" data-l="'+l.linea+'" '+(ok?'':'disabled ')+(pre&&!montada?'checked':'')+'> <span>'+l.cantidad+' × '+esc(l.descripcion||l.articulo)+' <span class="tag">'+esc(l.fab||"sin fabricante")+'</span> '+(l.recibido==="S"?'<span class="tag v">ya recibida</span>':'<span class="tag r">pendiente</span>')+'</span></label>';});
+      const ya=l.recibido==="S";
+      h+='<div class="fila" data-l="'+l.linea+'" style="border-top:1px solid #e5e7eb;padding:6px 0"><label class="lin'+(ok?'':' off')+'"><input type="checkbox" class="ck" '+(ok?'':'disabled ')+(pre&&!montada&&!ya?'checked':'')+'> <span>'+l.cantidad+' × '+esc(l.descripcion||l.articulo)+' <span class="tag">'+esc(l.fab||"sin fabricante")+'</span> '+(ya?'<span class="tag v">ya recibida</span>':'<span class="tag r">pendiente</span>')+'</span></label>'
+        +(ok?'<div class="det" style="margin-left:24px;font-size:13px">Es la línea del albarán: <select class="sl">'+opts+'</select> &nbsp;Cantidad <input type="number" class="qc" min="0" step="1" value="'+l.cantidad+'" style="width:60px"> &nbsp;Bultos <input type="number" class="qb" min="0" style="width:60px"> &nbsp;Ubicación <input type="text" class="qu" value="'+esc(L.ubicacion||"")+'" style="width:90px"></div>':'')+'</div>';});
     if(!c.ls.length)h+='<p class="meta">Esta orden no tiene líneas de mercancía.</p>';
-    h+='<div style="margin-top:8px">Bultos: <input type="number" id="pb" min="0" value="'+bultos0+'" style="width:70px"> &nbsp; Peso total kg: <input type="number" id="pp" min="0" step="0.01" value="'+peso0+'" style="width:90px"> &nbsp; <button id="pg" '+(montada?'disabled':'')+'>Guardar asociación</button> <button class="sec" id="pc">Cancelar</button></div><div id="msg"></div></div>';
+    h+='<div style="margin-top:10px;border-top:1px solid #e5e7eb;padding-top:8px">Nº albarán <input type="text" id="pa" value="'+esc(L.num_albaran||"")+'" style="width:110px"> &nbsp; Bultos totales del albarán: <input type="number" id="pb" min="0" value="'+bultos0+'" style="width:70px"> &nbsp; Peso total kg: <input type="number" id="pp" min="0" step="0.01" value="'+peso0+'" style="width:90px"> <span class="meta">(si no cambias los bultos de cada línea, se reparten a partes iguales entre las marcadas)</span></div>';
+    h+='<div style="margin-top:10px"><button id="pc2" '+(montada?'disabled':'')+'>Confirmar entrada: marcar como recibidas</button> <button class="sec" id="pg" '+(montada?'disabled':'')+'>Solo guardar la asociación</button> <button class="sec" id="pc">Cancelar</button></div><div id="msg"></div></div>';
     const p=cont.querySelector("#panel");p.innerHTML=h;
     p.querySelector("#pc").onclick=()=>p.innerHTML="";
-    p.querySelector("#pg").onclick=()=>guardar(c,p);
+    p.querySelector("#pg").onclick=()=>guardar(c,p,false);
+    p.querySelector("#pc2").onclick=()=>guardar(c,p,true);
   }
-  async function guardar(c,p){
-    const ticks=[...p.querySelectorAll("input[data-l]:checked")].map(i=>+i.dataset.l);
+  async function guardar(c,p,confirmar){
     const msg=p.querySelector("#msg");
-    if(!ticks.length){msg.innerHTML='<div class="err">Marca al menos una línea de la orden.</div>';return;}
-    const B=parseInt(p.querySelector("#pb").value||"0",10),P=parseFloat(p.querySelector("#pp").value||"0");
-    const filas=ticks.map((ln,i)=>({lectura_id:id,anyo:c.o.anyo,orden:c.o.orden,linea:ln,lineas_albaran:L.lineas||[],
-      bultos:B?Math.floor(B/ticks.length)+(i<B%ticks.length?1:0):null,peso_kg:P?Math.round(P/ticks.length*100)/100:null}));
-    const r=await client.from("albaranes_lecturas_grupos").insert(filas).select("id,anyo,orden,linea");
+    const filas=[...p.querySelectorAll(".fila")].filter(f=>f.querySelector(".ck")&&f.querySelector(".ck").checked).map(f=>{
+      const ln=+f.dataset.l,l=c.ls.find(z=>z.linea===ln),si=f.querySelector(".sl").value;
+      return {f,ln,l,alb:si===""?null:(L.lineas||[])[+si],cant:parseFloat(f.querySelector(".qc").value),bul:f.querySelector(".qb").value===""?null:parseInt(f.querySelector(".qb").value,10),ubi:f.querySelector(".qu").value.trim()||null};});
+    if(!filas.length){msg.innerHTML='<div class="err">Marca al menos una línea de la orden.</div>';return;}
+    const B=parseInt(p.querySelector("#pb").value||"0",10),P=parseFloat(p.querySelector("#pp").value||"0"),nAlb=p.querySelector("#pa").value.trim()||null;
+    const sinBultos=filas.filter(x=>x.bul===null);
+    sinBultos.forEach((x,i)=>{x.bul=B?Math.floor(B/sinBultos.length)+(i<B%sinBultos.length?1:0):null;});
+    filas.forEach(x=>{x.peso=P?Math.round(P/filas.length*100)/100:null;});
+    if(confirmar){
+      const sinUbi=filas.filter(x=>!x.ubi).length,yaRec=filas.filter(x=>x.l.recibido==="S").length;
+      let t="Vas a marcar como RECIBIDAS "+filas.length+" línea(s) de la orden #"+c.o.anyo+"/"+c.o.orden+" ("+(c.o.nombre_cli||"")+").\nEsto modifica la orden y crea la entrada de almacén.";
+      if(sinUbi)t+="\n\n¡Atención! "+sinUbi+" línea(s) sin ubicación.";
+      if(yaRec)t+="\n\n¡Atención! "+yaRec+" línea(s) ya estaban recibidas (se volvería a registrar la entrada).";
+      if(!confirm(t+"\n\n¿Confirmar?"))return;
+    }
+    const grupos=filas.map(x=>({lectura_id:id,anyo:c.o.anyo,orden:c.o.orden,linea:x.ln,lineas_albaran:x.alb?[x.alb]:(L.lineas||[]),bultos:x.bul,peso_kg:x.peso}));
+    const r=await client.from("albaranes_lecturas_grupos").insert(grupos).select("id,anyo,orden,linea");
     if(r.error){msg.innerHTML='<div class="err">No se pudo guardar: '+esc(r.error.message)+'</div>';return;}
-    if(c.o.tienda_id)await client.from("albaranes_lecturas").update({tienda_id:c.o.tienda_id}).eq("id",id);
-    p.innerHTML="";anotar(c,r.data);
+    const upd={};if(c.o.tienda_id)upd.tienda_id=c.o.tienda_id;
+    if(confirmar){
+      const uid=(await client.auth.getUser()).data.user.id,errs=[];
+      for(const x of filas){
+        const val={ubicacion:x.ubi,bultos:x.bul,albaran:nAlb,recibido:"S",recibido_at:new Date().toISOString(),recibido_por:uid};
+        if(!isNaN(x.cant))val.cantidad=x.cant;if(x.peso!==null)val.peso_kg=x.peso;
+        const u=await client.from("linorden").update(val).eq("anyo",c.o.anyo).eq("orden",c.o.orden).eq("linea",x.ln);
+        if(u.error){errs.push("Línea "+x.ln+": "+u.error.message);continue;}
+        const d=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,19);
+        const e=await client.rpc("registrar_entrada_almacen",{p_orden_anyo:c.o.anyo,p_orden_num:c.o.orden,p_orden_linea:x.ln,p_almacen:x.l.proveedor??0,p_articulo:x.l.articulo||null,p_descripcion:x.l.descripcion||null,p_cantidad:!isNaN(x.cant)?x.cant:(x.l.cantidad??1),p_ubicacion:x.ubi,p_bultos:x.bul,p_albaran:nAlb,p_num_pedido:c.o.num_pedido||null,p_tienda_id:c.o.tienda_id||null,p_fabricante:x.l.proveedor??null,p_fecha:d});
+        if(e.error)errs.push("Línea "+x.ln+" (se marcó recibida, pero no la entrada de almacén): "+e.error.message);
+        x.l.recibido="S";
+      }
+      Object.assign(upd,{estado:"confirmada",ubicacion:filas[0].ubi});
+      if(errs.length){msg.innerHTML='<div class="err">Hubo problemas:<br>'+errs.map(esc).join("<br>")+'</div>';}
+      else p.innerHTML="";
+      await client.from("albaranes_lecturas").update(upd).eq("id",id);
+      anotar(c,r.data,true);return;
+    }
+    if(Object.keys(upd).length)await client.from("albaranes_lecturas").update(upd).eq("id",id);
+    p.innerHTML="";anotar(c,r.data,false);
   }
-  function anotar(c,filas){
+  function anotar(c,filas,rec){
     const g=cont.querySelector("#guardadas"),d=document.createElement("div");d.className="ok";
-    d.innerHTML='Guardado: orden <b>#'+c.o.anyo+'/'+c.o.orden+'</b> ('+esc(c.o.nombre_cli||"")+'), líneas '+filas.map(f=>f.linea).join(", ")+' (pendiente de confirmar, no se ha marcado como recibido). <button class="rojo">Quitar</button>';
-    d.querySelector("button").onclick=async()=>{const r=await client.from("albaranes_lecturas_grupos").delete().in("id",filas.map(f=>f.id));if(r.error)alert(r.error.message);else d.remove();};
+    d.innerHTML='Guardado: orden <b>#'+c.o.anyo+'/'+c.o.orden+'</b> ('+esc(c.o.nombre_cli||"")+'), líneas '+filas.map(f=>f.linea).join(", ")+' '+(rec?'<b>marcadas como RECIBIDAS</b> (entrada de almacén registrada; si te has equivocado, se corrige en Entradas Almacén).':'(solo asociación guardada: NO se ha marcado como recibido). <button class="rojo">Quitar</button>');
+    const qb=d.querySelector("button");if(qb)qb.onclick=async()=>{const r=await client.from("albaranes_lecturas_grupos").delete().in("id",filas.map(f=>f.id));if(r.error)alert(r.error.message);else d.remove();};
     g.appendChild(d);
   }
   inicio();
