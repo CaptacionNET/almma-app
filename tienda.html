@@ -306,7 +306,7 @@ function pintarRecibidos(lista){
   const bloque = a => '<tr><td>' + fechaES(a.fecha_recibido) + '</td><td>' + esc(a.fabricante || "") + '</td><td>' + esc(a.num_albaran || "") + '</td>' +
     (multi() ? '<td>' + esc(a.tienda || "") + '</td>' : "") +
     '<td>' + (a.bultos ?? "") + '</td><td>' + (a.peso_kg ?? "") + '</td><td>' +
-    ((a.ordenes || []).length ? a.ordenes.map(o => '<div><b>Orden ' + o.anyo + '/' + o.orden + '</b>' + (o.num_pedido ? ' · ' + esc(o.num_pedido) : "") + (o.cliente ? ' · ' + esc(o.cliente) : "") +
+    ((a.ordenes || []).length ? a.ordenes.map(o => '<div><a href="orden_tienda.html?anyo=' + o.anyo + '&orden=' + o.orden + '"><b>Orden ' + o.anyo + '/' + o.orden + '</b></a>' + (o.num_pedido ? ' · ' + esc(o.num_pedido) : "") + (o.cliente ? ' · ' + esc(o.cliente) : "") +
         ' <span class="muted">(' + esc(ESTADO_ORDEN[o.estado] || o.estado || "") + ')</span>' + (o.linea_nueva ? ' <span class="muted">· línea nueva: ' + esc(o.linea_nueva) + '</span>' : "") + '</div>').join("")
       : '<span style="color:#b91c1c;font-weight:600">Sin orden asociada</span> <span class="muted">· no tenemos el pedido de esta mercancía: indícanoslo</span>') + '</td></tr>';
   const cab = '<table><tr><th>Recibido</th><th>Fabricante</th><th>Albarán</th>' + (multi() ? '<th>Tienda</th>' : "") + '<th>Bultos</th><th>Peso kg</th><th>Órdenes</th></tr>';
