@@ -193,7 +193,7 @@ const gDe=(i,t,x)=>ST[i].grupos.findIndex(g=>g[t].includes(x));
 
 function pintaLista(){
   const act=DOCS.filter((d,i)=>!ST[i].hecho).length;
-  let h='<h3>Albaranes por confirmar ('+act+')</h3><div class="resumen">Sube fotos arriba a la derecha. Los ya confirmados salen en gris.</div>';
+  let h='<h3>Albaranes por confirmar ('+act+')</h3><div class="resumen">Sube fotos arriba a la derecha. Los ya confirmados salen en gris.<div style="margin-top:6px"><button class="sec2 peq" onclick="verDescartados()">🗑 Ver descartados</button></div></div>';
   DOCS.forEach((d,i)=>{const [t,c]=estado(i);
     h+=`<button class="doc ${i==cur?'act':''}" onclick="ir(${i})"><div class="n">${esc((d.fabricante||'¿?').slice(0,34))}</div><div class="s">${esc(String(d.num_albaran||'—').slice(0,22))} · ${esc(d.fecha_albaran||'')}</div><div class="s">${esc(d.nota||'')}</div><div style="margin-top:4px"><span class="chip ${c}">${t}</span></div></button>`;});
   if(ALIAS_L.length)h+=`<div class="resumen" style="border-top:1px solid var(--border)"><b>Equivalencias de fabricante anotadas (${ALIAS_L.length})</b>${ALIAS_L.map((a,k)=>`<div style="margin-top:6px;font-size:12px">«${esc(a.lf)}» = «${esc(a.df.slice(0,24))}» <button class="sec2 peq" onclick="desmarca(${k})">↩ Deshacer</button></div>`).join('')}</div>`;
@@ -533,6 +533,31 @@ function addCl(i){const R=DOCS[i].reparto;R.cl.push({nombre:'Cliente '+(R.cl.len
 function quitaCl(i,ci){const R=DOCS[i].reparto;if(R.cl.length<=1)return toast('Tiene que quedar al menos un cliente.');R.cl.splice(ci,1);R.asig=R.asig.map(a=>a===ci?-1:(a>ci?a-1:a));pintaPanel();}
 function barraVarios(d){if(d.reparto||d.esHijo||ST[DOCS.indexOf(d)].hecho||d.lineas.length<2)return '';
   return '<div style="margin:12px 14px 0;text-align:right"><button class="sec2 peq" onclick="nuevoReparto(DOCS.indexOf(DOCS[cur]))">👥 Este albarán es de varios clientes: repartir las líneas</button></div>';}
+
+/* ====== DESCARTADOS: verlos y recuperarlos ====== */
+async function verDescartados(){
+  const m=document.getElementById('modal');
+  m.innerHTML='<div class="mbox"><b>Cargando descartados…</b></div>';m.style.display='flex';
+  const r=await client.from("albaranes_lecturas").select("id,archivo,creado_en,lectura").eq("estado","descartada").order("creado_en",{ascending:false}).limit(60);
+  if(r.error){m.innerHTML='<div class="mbox">No se pudo cargar: '+esc(r.error.message)+'<div class="acciones"><button class="sec2 peq" onclick="cierraModal()">Cerrar</button></div></div>';return;}
+  const rows=r.data||[];
+  const sg=rows.length?await client.storage.from("albaranes").createSignedUrls(rows.map(x=>x.archivo),3600):{data:[]};
+  const url={};(sg.data||[]).forEach(x=>{url[x.path]=x.signedUrl;});
+  m.innerHTML='<div class="mbox"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">Albaranes descartados ('+rows.length+')</h3><button class="sec2 peq" onclick="cierraModal()">✕ Cerrar</button></div><p class="nota" style="margin:6px 0 10px">Se muestran los últimos 60. «Recuperar» lo devuelve a la lista de pendientes.</p>'+
+    (rows.length?'<table class="tb"><tr><th></th><th>Fabricante</th><th>Albarán</th><th>Cliente</th><th>Descartado</th><th></th></tr>'+rows.map(x=>{const L=x.lectura||{};
+      return '<tr><td>'+(url[x.archivo]?'<a href="'+esc(url[x.archivo])+'" target="_blank"><img src="'+esc(url[x.archivo])+'" style="width:54px;height:54px;object-fit:cover;border-radius:4px"></a>':'')+'</td><td>'+esc(L.fabricante||'—')+'</td><td>'+esc(L.num_albaran||'—')+'<div class="mini" style="font-size:11px;color:var(--muted)">'+esc(L.fecha_albaran||'')+'</div></td><td>'+esc(L.cliente_final||(L.refs||[])[0]||'')+'</td><td>'+esc((x.creado_en||'').slice(0,10).split('-').reverse().join('/'))+'</td><td><button class="peq" onclick="recuperar(\''+x.id+'\')">Recuperar</button></td></tr>';}).join('')+'</table>':'<p>No hay ningún albarán descartado.</p>')+'</div>';
+}
+function cierraModal(){document.getElementById('modal').style.display='none';}
+async function recuperar(id){
+  const u=await client.from("albaranes_lecturas").update({estado:'pendiente'}).eq("id",id);
+  if(u.error)return toast('No se pudo recuperar: '+u.error.message);
+  const r=await client.from("albaranes_lecturas").select("id,archivo,modelo,lectura,nota_interna,revisado").eq("id",id).single();
+  if(r.error||!r.data)return toast('Recuperado, pero no se pudo cargar: recarga la página.');
+  const sg=await client.storage.from("albaranes").createSignedUrl(r.data.archivo,3600);
+  await cargarOrdenes();
+  const d=docDesdeFila(r.data,sg.data&&sg.data.signedUrl);DOCS.push(d);initDoc(DOCS.length-1);
+  cierraModal();ir(DOCS.length-1);toast('Albarán recuperado: vuelve a estar pendiente.');
+}
 
 iniciar();
 </script>
