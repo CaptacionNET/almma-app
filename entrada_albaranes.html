@@ -313,7 +313,7 @@ function siguiente(){const n=DOCS.findIndex((d,i)=>i>cur&&!ST[i].hecho);if(n>=0)
 /* ====== CONEXIÓN Y DATOS REALES ====== */
 const client = supabase.createClient(
   "https://uamgbtbsxbrgymhqalak.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k"
+  "<div><label>Hasta</label><inputid=fm_hastatype=dateonchange=cargarMovimientos()></div>"
 );
 let DOCS=[],ORD=[],ORDM={},ROWS=[],AV=[];
 const CARGA={ordenes:false};
@@ -438,7 +438,7 @@ function notaDB(i,v){DOCS[i].nota_interna=v;client.from("albaranes_lecturas").up
 async function revDB(i,v){DOCS[i].revisado=v;const u=(await client.auth.getUser()).data.user;client.from("albaranes_lecturas").update({revisado:v,revisado_por:v?u.id:null,revisado_en:v?new Date().toISOString():null}).eq("id",DOCS[i].id).then(r=>{if(r.error)toast('No se guardó: '+r.error.message);});}
 function aIso(v){const m=String(v||'').match(/(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/);if(!m)return null;let [,d,mo,y]=m;if(y.length===2)y='20'+y;const f=new Date(Date.UTC(+y,+mo-1,+d));return f.getUTCFullYear()==+y&&f.getUTCMonth()==+mo-1&&f.getUTCDate()==+d?y+'-'+mo.padStart(2,'0')+'-'+d.padStart(2,'0'):null;}
 async function descartar(){const d=DOCS[cur];if(!confirm(d.esHijo?'¿Descartar el albarán COMPLETO (todos sus clientes)? No toca ninguna orden.':'¿Descartar esta lectura? (No toca ninguna orden; deja de salir en la lista.)'))return;
-  const r=await client.from("albaranes_lecturas").update({estado:'descartada'}).eq("id",d.id);if(r.error)return toast('No se pudo descartar: '+r.error.message);
+  const uidD=(await client.auth.getUser()).data.user.id;const r=await client.from("albaranes_lecturas").update({estado:'descartada',descartado_por:uidD,descartado_en:new Date().toISOString()}).eq("id",d.id);if(r.error)return toast('No se pudo descartar: '+r.error.message);
   DOCS.forEach((x,i)=>{if(x===d||(d.grupoHerm&&x.grupoHerm===d.grupoHerm)){ST[i].descartada=true;ST[i].hecho=true;}});toast('Lectura descartada.');siguiente();}
 let confirmando=false;
 async function confirma(){
@@ -454,7 +454,7 @@ async function confirma(){
   let t='Vas a marcar como RECIBIDAS '+ops.length+' línea(s) de '+[...new Set(ops.map(x=>'#'+x.o.a+'/'+x.o.i))].join(', ')+'.\nRecibido el '+(iso?iso.split('-').reverse().join('/'):'hoy')+(ubi?' · ubicación «'+ubi+'»':'')+'.\nEsto modifica las órdenes y crea las entradas de almacén.';
   if(!ubi)t+='\n\n¡Atención! No hay ubicación.';if(yaRec)t+='\n\n¡Atención! '+yaRec+' línea(s) ya estaban recibidas (se sobrescribirían sus datos).';
   if(!confirm(t+'\n\n¿Confirmar?'))return;
-  confirmando=true;const uid=(await client.auth.getUser()).data.user.id,errs=[];
+  confirmando=true;const uid=(await client.auth.getUser()).data.user.id,errs=[],ahoraIso=new Date().toISOString();
   for(const x of ops){
     const val1={ubicacion:ubi,bultos:x.bultos,albaran:alb,recibido:'S',recibido_at:cuando,recibido_por:uid};if(x.peso!==null)val1.peso_kg=x.peso;
     const u=await client.from("linorden").update(val1).eq("anyo",x.o.a).eq("orden",x.o.i).eq("linea",x.l[4]);
@@ -463,10 +463,10 @@ async function confirma(){
     if(e.error)errs.push('Línea '+x.l[4]+' de la orden '+x.o.i+' (marcada recibida, pero sin entrada de almacén): '+e.error.message);
     x.l[2]='S';
   }
-  const gr=await client.from("albaranes_lecturas_grupos").insert(ops.map(x=>({lectura_id:d.id,anyo:x.o.a,orden:x.o.i,linea:x.l[4],lineas_albaran:x.g.a.map(k=>d.lineas[k]),bultos:x.bultos,peso_kg:x.peso})));
+  const gr=await client.from("albaranes_lecturas_grupos").insert(ops.map(x=>({lectura_id:d.id,anyo:x.o.a,orden:x.o.i,linea:x.l[4],lineas_albaran:x.g.a.map(k=>d.lineas[k]),bultos:x.bultos,peso_kg:x.peso,casado_por:uid,casado_en:ahoraIso})));
   if(gr.error)errs.push('No se guardó el detalle del casado: '+gr.error.message);
   const o1=ops[0].o,be=bultosEf(cur);
-  const up={estado:(errs.length||hermPend(d))?'pendiente':'confirmada',tienda_id:o1.tid||null,num_albaran:alb,fecha_albaran:aIso(val(cur,'fecha_albaran')),fecha_recibido:iso,ubicacion:ubi};
+  const up={estado:(errs.length||hermPend(d))?'pendiente':'confirmada',tienda_id:o1.tid||null,num_albaran:alb,fecha_albaran:aIso(val(cur,'fecha_albaran')),fecha_recibido:iso,ubicacion:ubi,confirmado_por:uid,confirmado_en:ahoraIso};
   if(!d.esHijo){up.bultos_mano=Number(val(cur,'bultos_mano'))||null;up.bultos_impresos=Number(val(cur,'bultos_impresos'))||null;up.peso_kg=Number(val(cur,'peso_kg'))||null;}
   await client.from("albaranes_lecturas").update(up).eq("id",d.id);
   confirmando=false;
@@ -549,7 +549,7 @@ async function verDescartados(){
 }
 function cierraModal(){document.getElementById('modal').style.display='none';}
 async function recuperar(id){
-  const u=await client.from("albaranes_lecturas").update({estado:'pendiente'}).eq("id",id);
+  const u=await client.from("albaranes_lecturas").update({estado:'pendiente',descartado_por:null,descartado_en:null}).eq("id",id);
   if(u.error)return toast('No se pudo recuperar: '+u.error.message);
   const r=await client.from("albaranes_lecturas").select("id,archivo,modelo,lectura,nota_interna,revisado").eq("id",id).single();
   if(r.error||!r.data)return toast('Recuperado, pero no se pudo cargar: recarga la página.');

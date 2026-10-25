@@ -1517,12 +1517,19 @@ async function cargarLineas() {
   // albarán del transportista con el que se casó cada línea (si se registró con "Entrada por albarán")
   const albPorLinea = {};
   try {
-    const { data: gr } = await client.from("albaranes_lecturas_grupos").select("linea, lectura_id").eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden);
+    const { data: gr } = await client.from("albaranes_lecturas_grupos").select("linea, lectura_id, casado_por, casado_en").eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).order("casado_en", { ascending: true, nullsFirst: true });
     const ids = [...new Set((gr || []).map(g => g.lectura_id))];
     if (ids.length) {
-      const { data: lec } = await client.from("albaranes_lecturas").select("id, archivo, estado, creado_en").in("id", ids).eq("estado", "confirmada").order("creado_en");
-      const arch = {}; (lec || []).forEach(x => arch[x.id] = x.archivo);
-      (gr || []).forEach(g => { if (arch[g.lectura_id]) albPorLinea[g.linea] = arch[g.lectura_id]; });
+      const { data: lec } = await client.from("albaranes_lecturas").select("id, archivo, estado, creado_por, creado_en").in("id", ids).eq("estado", "confirmada");
+      const info = {}; (lec || []).forEach(x => info[x.id] = x);
+      for (const g of (gr || [])) {
+        const x = info[g.lectura_id]; if (!x) continue;
+        albPorLinea[g.linea] = { archivo: x.archivo, casado_por: g.casado_por, casado_en: g.casado_en, subido_por: x.creado_por, subido_en: x.creado_en };
+      }
+      for (const v of Object.values(albPorLinea)) {
+        v.casadoNombre = await nombrePorUserId(v.casado_por);
+        v.subidoNombre = await nombrePorUserId(v.subido_por);
+      }
     }
   } catch (_) { /* si no existe la tabla o no hay permiso, simplemente no hay enlace */ }
   window._albPorLinea = albPorLinea;
@@ -1533,7 +1540,7 @@ async function cargarLineas() {
       const recibida = !!l.recibido_at;
       const boton = l.tipolinea === 4 ? ""   // las líneas de importes no se reciben: no llevan botón
         : recibida
-        ? `<span class="pill-recibida">${new Date(l.recibido_at).toLocaleDateString("es-ES")}</span>${albPorLinea[l.linea] ? ` <button class="secondary btn-mini" onclick="verAlbaranTransportista(${l.linea})">Ver albarán</button>` : ""}`
+        ? `<span class="pill-recibida">${new Date(l.recibido_at).toLocaleDateString("es-ES")}</span>${albPorLinea[l.linea] ? ` <button class="secondary btn-mini" onclick="verAlbaranTransportista(${l.linea})">Ver albarán</button>${textoQuienAlbaran(albPorLinea[l.linea])}` : ""}`
         : `<button class="btn-mini" onclick="marcarRecibida(${l.linea}, true)">Marcar recibida</button>`;
       const claseTipo = [1, 2, 3, 4].includes(l.tipolinea) ? `lin-t${l.tipolinea}` : "";
       const pendiente = l.tipolinea !== 4 && !l.recibido_at && l.recibido !== "S";
@@ -1559,8 +1566,16 @@ async function cargarLineas() {
   document.getElementById("ch_peso").textContent = Math.round(totalPeso * 100) / 100;
 }
 
+function textoQuienAlbaran(v) {
+  const f = (t) => t ? new Date(t).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+  const partes = [];
+  if (v.casadoNombre && v.casado_en) partes.push(`Linkado por ${v.casadoNombre} el ${f(v.casado_en)}`);
+  if (v.subidoNombre && v.subido_en) partes.push(`albarán subido por ${v.subidoNombre} el ${f(v.subido_en)}`);
+  return partes.length ? `<div class="meta" style="font-size:11px;margin-top:3px;">${partes.join(" · ")}</div>` : "";
+}
+
 async function verAlbaranTransportista(linea) {
-  const ruta = (window._albPorLinea || {})[linea];
+  const ruta = ((window._albPorLinea || {})[linea] || {}).archivo;
   if (!ruta) return;
   const { data, error } = await client.storage.from("albaranes").createSignedUrl(ruta, 300);
   if (error) { alert("No se pudo abrir el albarán: " + error.message); return; }

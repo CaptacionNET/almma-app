@@ -134,6 +134,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 <div class="pestanas">
   <button id="tabbtn_recepcion" class="activa" onclick="cambiarPestana('recepcion')">Recepción</button>
   <button id="tabbtn_movimientos" onclick="cambiarPestana('movimientos')">Últimas entradas registradas</button>
+  <button id="tabbtn_albaranes" onclick="cambiarPestana('albaranes')">Albaranes del día</button>
 </div>
 
 <div id="pestana_recepcion">
@@ -210,6 +211,19 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 
 </div>
 
+<div id="pestana_albaranes" style="display:none;">
+  <div class="tabla-scroll" style="margin-top:20px;">
+    <h4 style="margin:0 0 8px;">Albaranes leídos con la IA</h4>
+    <div class="filtros-entradas">
+      <div><label>Día</label><input id="fa_dia" type="date" onchange="cargarAlbaranesDelDia()"></div>
+      <button class="secondary btn-mini" style="padding:8px 12px;" onclick="document.getElementById('fa_dia').value=hoyLocal();cargarAlbaranesDelDia()">Hoy</button>
+      <button class="btn-mini" style="padding:8px 12px;" onclick="window.location.href='entrada_albaranes.html'">Abrir «Entrada por albarán» →</button>
+      <span id="aviso_albaranes" class="meta" style="align-self:center;"></span>
+    </div>
+    <div id="tabla_albaranes"></div>
+  </div>
+</div>
+
 <div id="pestana_movimientos" style="display:none;">
   <div class="tabla-scroll" style="margin-top:20px;">
     <h4 style="margin:0 0 8px;">Últimas entradas registradas</h4>
@@ -278,8 +292,60 @@ function cambiarPestana(p) {
   document.getElementById("pestana_recepcion").style.display = p === "recepcion" ? "block" : "none";
   document.getElementById("pestana_movimientos").style.display = p === "movimientos" ? "block" : "none";
   document.getElementById("tabbtn_recepcion").classList.toggle("activa", p === "recepcion");
+  document.getElementById("pestana_albaranes").style.display = p === "albaranes" ? "block" : "none";
   document.getElementById("tabbtn_movimientos").classList.toggle("activa", p === "movimientos");
+  document.getElementById("tabbtn_albaranes").classList.toggle("activa", p === "albaranes");
   if (p === "movimientos") cargarMovimientos();
+  if (p === "albaranes") { const d = document.getElementById("fa_dia"); if (!d.value) d.value = hoyLocal(); cargarAlbaranesDelDia(); }
+}
+
+// --- albaranes del día (lectura con IA, migracion/72 y 78) ---
+const nombresAlb = {};
+function hoyLocal() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+async function nombreStaff(id) {
+  if (!id) return "";
+  if (nombresAlb[id] !== undefined) return nombresAlb[id];
+  const { data } = await client.from("staff").select("nombre").eq("user_id", id).maybeSingle();
+  nombresAlb[id] = (data && data.nombre) || "—";
+  return nombresAlb[id];
+}
+function hm(t) { return t ? new Date(t).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : ""; }
+function escAlb(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+async function cargarAlbaranesDelDia() {
+  const caja = document.getElementById("tabla_albaranes"), aviso = document.getElementById("aviso_albaranes");
+  const dia = document.getElementById("fa_dia").value || hoyLocal();
+  const [y, m, d] = dia.split("-").map(Number);
+  const desde = new Date(y, m - 1, d).toISOString(), hasta = new Date(y, m - 1, d + 1).toISOString();
+  caja.innerHTML = '<div class="meta">Cargando…</div>';
+  const { data: lecs, error } = await client.from("albaranes_lecturas")
+    .select("id, archivo, estado, creado_por, creado_en, confirmado_por, confirmado_en, descartado_por, descartado_en, lectura, ubicacion")
+    .gte("creado_en", desde).lt("creado_en", hasta).order("creado_en", { ascending: false });
+  if (error) { caja.innerHTML = `<div class="error" style="display:block">No se pudo cargar: ${escAlb(error.message)}</div>`; return; }
+  const filas = (lecs || []).filter(l => l.lectura && l.lectura.es_albaran !== false);
+  const ids = filas.map(l => l.id);
+  let grupos = [];
+  if (ids.length) { const r = await client.from("albaranes_lecturas_grupos").select("lectura_id, anyo, orden, linea").in("lectura_id", ids); grupos = r.data || []; }
+  const ordenesDe = {};
+  grupos.forEach(g => { const k = g.lectura_id; (ordenesDe[k] = ordenesDe[k] || {}); const o = `${g.anyo}/${g.orden}`; (ordenesDe[k][o] = ordenesDe[k][o] || []).push(g.linea); });
+  for (const l of filas) { l._sube = await nombreStaff(l.creado_por); l._proc = await nombreStaff(l.estado === "descartada" ? l.descartado_por : l.confirmado_por); }
+  const cuenta = { pendiente: 0, confirmada: 0, descartada: 0 }; filas.forEach(l => cuenta[l.estado] = (cuenta[l.estado] || 0) + 1);
+  aviso.textContent = `${filas.length} albarán(es) · ${cuenta.confirmada} confirmados · ${cuenta.pendiente} pendientes · ${cuenta.descartada} descartados`;
+  if (!filas.length) { caja.innerHTML = '<div class="meta" style="padding:10px 0;">No se subió ningún albarán ese día.</div>'; return; }
+  const chip = { pendiente: ["Pendiente", "#fef3c7", "#b45309"], confirmada: ["Confirmado", "#dcfce7", "#15803d"], descartada: ["Descartado", "#e5e7eb", "#4b5563"] };
+  caja.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
+    <tr style="background:#eff6ff;color:#1e3a8a;text-align:left;"><th style="padding:6px 8px;">Subido</th><th>Fabricante</th><th>Albarán</th><th>Cliente</th><th>Estado</th><th>Subido por</th><th>Procesado por</th><th>Órdenes</th><th></th></tr>` +
+    filas.map(l => {
+      const L = l.lectura || {}, c = chip[l.estado] || chip.pendiente;
+      const ords = Object.entries(ordenesDe[l.id] || {}).map(([o, ls]) => `<a href="pedidos.html?anyo=${o.split("/")[0]}&orden=${o.split("/")[1]}">${o}</a> <span class="meta">(línea ${ls.join(", ")})</span>`).join("<br>") || '<span class="meta">—</span>';
+      const cuando = l.estado === "descartada" ? l.descartado_en : l.confirmado_en;
+      const proc = l.estado === "pendiente" ? '<span class="meta">sin procesar</span>' : `${escAlb(l._proc)}<div class="meta" style="font-size:11px;">${l.estado === "descartada" ? "descartó" : "confirmó"} a las ${hm(cuando)}</div>`;
+      return `<tr style="border-bottom:1px solid #e2e4eb;vertical-align:top;"><td style="padding:6px 8px;">${hm(l.creado_en)}</td><td>${escAlb((L.fabricante || "—").slice(0, 32))}</td><td>${escAlb(L.num_albaran || "—")}</td><td>${escAlb(String(L.cliente_final || (L.refs || [])[0] || "").slice(0, 30))}</td><td><span style="background:${c[1]};color:${c[2]};border-radius:10px;padding:1px 8px;font-size:11px;font-weight:600;">${c[0]}</span></td><td>${escAlb(l._sube)}</td><td>${proc}</td><td>${ords}</td><td><button class="secondary btn-mini" onclick="verAlbaranDia('${escAlb(l.archivo)}')">Ver albarán</button></td></tr>`;
+    }).join("") + "</table>";
+}
+async function verAlbaranDia(ruta) {
+  const { data, error } = await client.storage.from("albaranes").createSignedUrl(ruta, 300);
+  if (error) { alert("No se pudo abrir el albarán: " + error.message); return; }
+  window.open(data.signedUrl, "_blank");
 }
 
 async function logout() {
