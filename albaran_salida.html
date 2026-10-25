@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ALMMA - Albarán de salida</title>
+<title>ALMMA - Albarán de entrega</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{--text:#1f2430;--muted:#6b7280;--line:#cfd6e4;}
@@ -31,7 +31,7 @@ td{padding:7px 8px;border-bottom:1px solid #e6eaf2;vertical-align:top;}
 td.num,th.num{text-align:right;white-space:nowrap;}
 .obs{margin-top:14px;padding:8px 12px;border:1px solid var(--line);border-radius:6px;}
 .firmas{margin-top:auto;padding-top:30px;display:flex;gap:20px;break-inside:avoid;}
-.firma{flex:1;border:1px solid var(--text);border-radius:4px;height:38mm;padding:6px 10px;font-size:12px;}
+.firma{width:50%;border:1px solid var(--text);border-radius:4px;height:38mm;padding:6px 10px;font-size:12px;}
 .firma .sub{color:var(--muted);font-size:11px;margin-top:2px;}
 .nota{margin-top:10px;font-size:11px;color:var(--muted);}
 @page{size:A4;margin:0;}
@@ -68,8 +68,8 @@ async function iniciar() {
   const { data: t } = o.tienda_id ? await client.from("tiendas").select("*").eq("id", o.tienda_id).maybeSingle() : { data: null };
   document.getElementById("hojas").innerHTML = hoja(o, t || {}, lins || []);
   const ref = `${anyo}/${orden}`;
-  document.title = "Albarán de salida " + ref;
-  estado("Albarán de salida de la orden " + ref);
+  document.title = "Albarán de entrega " + ref;
+  estado("Albarán de entrega de la orden " + ref);
 }
 
 function hoja(o, t, lins) {
@@ -89,7 +89,7 @@ function hoja(o, t, lins) {
         ${t.nombre_comercial && t.nombre && t.nombre !== t.nombre_comercial ? `<br>${esc(t.nombre)}` : ""}
         ${t.cif ? `<br>CIF: ${esc(t.cif)}` : ""}${t.direccion ? `<br>${esc(t.direccion)}` : ""}${loc ? `<br>${loc}` : ""}
         ${t.telefono ? `<br>Tel.: ${esc(t.telefono)}` : ""}${t.email ? `<br>${esc(t.email)}` : ""}</div>
-      <div class="titulo"><div class="tipo">ALBARÁN DE SALIDA</div>
+      <div class="titulo"><div class="tipo">ALBARÁN DE ENTREGA</div>
         <div class="num">Orden ${o.anyo}/${o.orden}</div>
         <div style="color:var(--muted);margin-top:2px;">Fecha: ${fechaES(hoy)}</div></div>
     </div>
@@ -110,7 +110,6 @@ function hoja(o, t, lins) {
     ${o.obs_albaran ? `<div class="obs"><b>Observaciones:</b> ${esc(o.obs_albaran)}</div>` : ""}
     <div class="firmas">
       <div class="firma">Firma y DNI de quien recoge / recibe la mercancía<div class="sub">Nombre:</div></div>
-      <div class="firma">Firma de ${esc(t.nombre_comercial || t.nombre || "la tienda")}<div class="sub">Fecha:</div></div>
     </div>
     <div class="nota">Con su firma, el firmante confirma haber recibido la mercancía relacionada en buen estado, salvo anotación en contrario.</div>
   </div>`;
