@@ -417,7 +417,7 @@ async function subir(files){
       const up=await client.storage.from("albaranes").upload(ruta,blob,{contentType:"image/jpeg"});
       if(up.error)throw new Error("Subida: "+up.error.message);
       const r=await client.functions.invoke("leer-albaran",{body:{ruta,nombre_original:files[n].name}});
-      if(r.error){let m=r.error.message;try{const j=await r.error.context.json();m=j.error||m;}catch(_){}throw new Error(m);}
+      if(r.error){let m=r.error.message;try{const j=await r.error.context.json();m=(j.error||m)+(j.detalle?' ['+j.detalle+']':'');}catch(_){}throw new Error(m);}
       if(!r.data.lectura.es_albaran){toast(files[n].name+': no parece una página de albarán (portada o en blanco). Se ha guardado igualmente.');continue;}
       const sg=await client.storage.from("albaranes").createSignedUrl(ruta,3600);
       const d=docDesdeFila({id:r.data.id,modelo:r.data.lectura._uso&&r.data.lectura._uso.modelo,lectura:r.data.lectura},sg.data&&sg.data.signedUrl,r.data.duplicados);
