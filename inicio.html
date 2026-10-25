@@ -54,6 +54,11 @@ async function init() {
     ];
     if (st.es_montador) botones.push(B("📱", "Mi día", "Mis montajes de hoy", "mi-dia.html"));
     if (st.es_admin) botones.push(B("🔐", "Administración", "Cuentas y permisos", "admin.html"));
+    // Contabilidad: solo con permiso «acceso_finanzas» (Arturo y José). Consulta aparte: si el SQL 90 aún no está, no pasa nada.
+    try {
+      const { data: fz } = await client.from("staff").select("acceso_finanzas").eq("user_id", user.id).maybeSingle();
+      if (fz && fz.acceso_finanzas) botones.push(B("📒", "Contabilidad", "Ingresos, gastos, cobros, IVA y libro mayor", "contabilidad.html"));
+    } catch (e) { /* sin permiso o columna aún no creada */ }
   } else {
     const { data: dep } = await client.from("dependientes").select("es_admin_tienda, nombre").eq("user_id", user.id).maybeSingle();
     if (!dep) { await client.auth.signOut(); location.href = "login.html"; return; }
