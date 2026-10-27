@@ -164,6 +164,19 @@ header .quien{font-size:.8rem;opacity:.85;flex:1;white-space:nowrap;overflow:hid
   </div>
 </div>
 
+<div class="pantalla" id="p_cobro">
+  <h2>Registrar cobro</h2>
+  <div id="c_cliente" style="color:var(--gris);margin-bottom:10px"></div>
+  <div class="dato"><b>Pendiente de pago</b><span id="c_pendiente"></span></div>
+  <label for="c_importe">Importe cobrado (€) — puedes cambiarlo</label>
+  <input id="c_importe" type="number" inputmode="decimal" step="0.01" min="0" style="width:100%;font-size:1.4rem;padding:14px;border:2px solid #cbd5e1;border-radius:12px">
+  <div class="botones" style="margin-top:18px">
+    <button class="btn az" onclick="guardarCobro('efectivo')">💶 EFECTIVO</button>
+    <button class="btn az" onclick="guardarCobro('datafono')">💳 DATÁFONO</button>
+  </div>
+  <div class="botones" style="margin-top:10px"><button class="btn pl" onclick="cerrarPantalla('p_cobro')">Atrás</button></div>
+</div>
+
 <div class="pantalla" id="p_incid">
   <h2>¿Qué ha pasado?</h2>
   <div id="i_cliente" style="color:var(--gris);margin-bottom:10px"></div>
@@ -269,7 +282,7 @@ async function cargarPaquete(){
     else { document.getElementById("quien").textContent = "Oficina"; if (!verTodos) verEquipos(true); }
     // los montadores solo reciben lo suyo (lo decide la seguridad de la base de datos); el administrador recibe todos los equipos
     const { data, error } = await client.from("ordenes")
-      .select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, telefono2_cli, num_pedido, estado, con_incidencia, fecha_prev_montaje, horamont, obs_albaran, equipo:ordenes_montadores(montador_id, montadores(nombre)), entregas(id, firmante_nombre, firmado_at, firma_storage_path), fotos:fotos_orden(id, storage_path, categoria, comentario, created_at)")
+      .select("anyo, orden, importe_pendiente, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, telefono2_cli, num_pedido, estado, con_incidencia, fecha_prev_montaje, horamont, obs_albaran, equipo:ordenes_montadores(montador_id, montadores(nombre)), entregas(id, firmante_nombre, firmado_at, firma_storage_path), fotos:fotos_orden(id, storage_path, categoria, comentario, created_at)")
       .gte("fecha_prev_montaje", diaN(0)).lt("fecha_prev_montaje", diaN(2)).order("fecha_prev_montaje");
     if (error) throw error;
     const lineas = {}, docs = {}, tiendas = {};
@@ -288,7 +301,7 @@ async function cargarPaquete(){
       } catch(_){}
     }
     const ordenes = (data || []).map(o => ({
-      anyo:o.anyo, orden:o.orden, nombre_cli:o.nombre_cli, domicilio_cli:o.domicilio_cli, localidad_cli:o.localidad_cli,
+      anyo:o.anyo, orden:o.orden, pendiente:Math.max(Number(o.importe_pendiente) || 0, 0), nombre_cli:o.nombre_cli, domicilio_cli:o.domicilio_cli, localidad_cli:o.localidad_cli,
       telefono_cli:o.telefono_cli, telefono2_cli:o.telefono2_cli, num_pedido:o.num_pedido, estado:o.estado, con_incidencia:!!o.con_incidencia,
       dia:String(o.fecha_prev_montaje).slice(0,10), horamont:o.horamont, obs:o.obs_albaran, vendedor:(tiendas[o.anyo + "/" + o.orden] || {}).dependiente || "", tienda:(tiendas[o.anyo + "/" + o.orden] || {}).tienda || "", tel_vendedor:(tiendas[o.anyo + "/" + o.orden] || {}).tv || "", tel_tienda:(tiendas[o.anyo + "/" + o.orden] || {}).tt || "", tel_local:(tiendas[o.anyo + "/" + o.orden] || {}).tl || "",
       equipo:(o.equipo || []).map(e => e.montadores?.nombre).filter(Boolean),
@@ -361,6 +374,7 @@ function pintar(){
         '<div class="nord">Orden ' + o.anyo + '/' + o.orden + (o.num_pedido ? ' · Pedido ' + esc(o.num_pedido) : '') + '</div>' +
         '<div class="cliente">' + esc(o.nombre_cli) + '</div><div class="dir">' + esc(dir) + '</div>' +
         ((o.vendedor || o.tienda) ? '<div class="eq">🧑‍💼 Vendedor: <b>' + esc([o.vendedor, o.tienda].filter(Boolean).join(" · ")) + '</b></div>' : "") +
+        (pendienteReal(o) ? '<div class="eq" style="color:var(--rojo)">💶 Pendiente de pago: <b>' + euros(pendienteReal(o)) + '</b></div>' : "") +
         (o.equipo.length > 1 && !verTodos ? '<div class="eq">Equipo: ' + esc(o.equipo.join(" + ")) + '</div>' : "") +
         '<div class="ver">Ver detalle ›</div></div>';
     }).join("");
@@ -395,6 +409,35 @@ function bloqueFirma(o){
 }
 const soloTel = x => String(x || "").replace(/[^\d+]/g, "");
 // quién vendió el pedido y cómo llamarle (vendedor / tienda / local); no sale nada si no hay datos
+/* ---------- Cobros en casa del cliente (efectivo o datáfono) ---------- */
+const euros = n => (Math.round(n * 100) / 100).toFixed(2).replace(".", ",") + " €";
+const pendienteReal = o => Math.max(Math.round((o.pendiente - enCola(o, "cobro").reduce((a, c) => a + c.importe, 0)) * 100) / 100, 0);
+function bloqueCobro(o){
+  const pen = pendienteReal(o), colas = enCola(o, "cobro");
+  if (!pen && !colas.length) return "";
+  return '<div class="sec"><h3>💶 Pendiente de pago</h3>' +
+    '<div class="cliente" style="color:' + (pen ? "var(--rojo)" : "var(--verde)") + '">' + (pen ? euros(pen) : "Todo cobrado") + '</div>' +
+    colas.map(c => '<div class="dato"><b>' + (c.forma === "efectivo" ? "Efectivo" : "Datáfono") + '</b><span>' + euros(c.importe) + ' · pendiente de enviar</span></div>').join("") +
+    (pen ? '<div class="botones"><button class="btn gr" onclick="abrirCobro(\'' + o.anyo + '/' + o.orden + '\')">💶 REGISTRAR COBRO</button></div>' : "") + '</div>';
+}
+let ordenCobro = null;
+function abrirCobro(k){
+  ordenCobro = buscar(k);
+  document.getElementById("c_cliente").textContent = ordenCobro.nombre_cli + " · orden " + ordenCobro.anyo + "/" + ordenCobro.orden;
+  document.getElementById("c_pendiente").textContent = euros(pendienteReal(ordenCobro));
+  document.getElementById("c_importe").value = pendienteReal(ordenCobro).toFixed(2);
+  document.getElementById("p_cobro").style.display = "block";
+}
+async function guardarCobro(forma){
+  const o = ordenCobro, importe = Math.round(parseFloat(String(document.getElementById("c_importe").value).replace(",", ".")) * 100) / 100;
+  if (!(importe > 0)) { toast("Pon el importe que has cobrado"); return; }
+  if (importe > pendienteReal(o) + 0.004 && !confirm("Has puesto " + euros(importe) + ", más de lo que queda pendiente (" + euros(pendienteReal(o)) + "). ¿Es correcto?")) return;
+  if (!confirm("Cobrado " + euros(importe) + " en " + (forma === "efectivo" ? "EFECTIVO" : "DATÁFONO") + ". ¿Confirmar?")) return;
+  await colaAdd({ tipo:"cobro", anyo:o.anyo, orden:o.orden, importe, forma, cobro_id:crypto.randomUUID(), ts:Date.now() });
+  cola = await colaAll(); cerrarPantalla("p_cobro"); pintar(); pintarDetalle(); estadoBarra();
+  toast(navigator.onLine ? "✔ Cobro registrado" : "✔ Cobro guardado. Se enviará cuando haya cobertura", 5000);
+  enviarCola(false);
+}
 function bloqueVendedor(o){
   const tv = soloTel(o.tel_vendedor), tt = soloTel(o.tel_tienda), tl = soloTel(o.tel_local);
   if (!o.vendedor && !o.tienda && !tv && !tt && !tl) return "";
@@ -436,6 +479,7 @@ function pintarDetalle(){
         (tel2 ? '<a class="btn az" href="tel:' + tel2 + '" style="grid-column:1/-1">📞 Llamar al 2.º teléfono</a>' : "") +
       '</div></div>' +
     bloqueVendedor(o) +
+    bloqueCobro(o) +
     '<div class="sec"><h3>Qué hay que montar</h3>' + (arts ? '<div class="arts" style="margin:0">' + arts + '</div>' : '<div style="color:var(--gris)">Sin artículos.</div>') +
       (o.obs ? '<div class="obs">📝 ' + esc(o.obs) + '</div>' : "") + '</div>' +
     (docs.length ? '<div class="sec"><h3>📄 Documentos de la oficina (' + docs.length + ')</h3>' + tiraFotos(docs, []) + '</div>' : "") +
@@ -607,6 +651,9 @@ async function enviarUno(it){
       const { error } = await client.from("entregas").insert({ anyo:it.anyo, orden:it.orden, firmante_nombre:it.nombre, firma_storage_path:it.path, observaciones:it.obs, montador_id:uid });
       if (error) throw error;
     }
+  } else if (it.tipo === "cobro") {   // la base de datos apunta el cobro y descuenta el pendiente; si se repite no cobra dos veces
+    const { error } = await client.rpc("registrar_cobro_montador", { p_id:it.cobro_id, p_anyo:it.anyo, p_orden:it.orden, p_importe:it.importe, p_forma:it.forma });
+    if (error) throw error;
   } else if (it.tipo === "incidencia") {
     if (!it.incidencia_id) {   // la base de datos registra el aviso y decide el estado de la orden (Incidencia / Completado con incidencias)
       const { data, error } = await client.rpc("registrar_incidencia_montador", { p_anyo:it.anyo, p_orden:it.orden, p_tipo:it.motivo, p_descripcion:it.texto });
@@ -643,7 +690,7 @@ async function enviarCola(manual){
   if (hubo && !cola.length) { toast("✔ Todo enviado a la oficina"); cargarPaquete(); }
 }
 function abrirPendientes(){
-  const c = document.getElementById("pend_cuerpo"), nom = { foto:"Foto", firma:"Firma de terminado", incidencia:"Aviso de problema" };
+  const c = document.getElementById("pend_cuerpo"), nom = { foto:"Foto", firma:"Firma de terminado", incidencia:"Aviso de problema", cobro:"Cobro" };
   c.innerHTML = cola.length ? cola.map(it => '<div class="tarjeta" style="border-left-color:' + (it.error ? "var(--rojo)" : "var(--naranja)") + '"><b>' + nom[it.tipo] + '</b> · orden ' + it.anyo + '/' + it.orden +
       (it.error ? '<br><span style="color:var(--rojo);font-size:.85rem">No se ha podido enviar: ' + esc(it.error) + '<br>Enséñaselo a la oficina.</span>' : '<br><span style="color:var(--gris);font-size:.85rem">Esperando cobertura</span>') + '</div>').join("")
     : '<div class="vacio">✔ No hay nada pendiente. Todo está enviado.</div>';

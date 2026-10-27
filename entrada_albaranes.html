@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ALMMA - Entrada por albarán</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 :root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;--ok:#15803d;--okbg:#f0fdf4;--warn:#b45309;--warnbg:#fffbeb;--bad:#dc2626;--badbg:#fef2f2;}
 *{box-sizing:border-box;}
@@ -114,7 +115,7 @@ button:disabled{opacity:.4;cursor:not-allowed;}
   <b>Entrada por albarán</b>
   <span class="maq">PRUEBA · ya registra de verdad</span>
   <span class="sp"></span><span id="est" style="font-size:12px;color:#cbd5e1"></span>
-  <label class="drop" id="subirbtn">⬆ Subir fotos de albaranes<input type="file" accept="image/*" multiple style="display:none" onchange="subir(this.files);this.value=''"></label>
+  <label class="drop" id="subirbtn">⬆ Subir fotos o PDF de albaranes<input type="file" accept="image/*,application/pdf,.pdf" multiple style="display:none" onchange="subir(this.files);this.value=''"></label>
 </div>
 <div class="app">
   <aside class="col" id="lista"></aside>
@@ -166,7 +167,7 @@ function motivos(why){return (why||[]).map(w=>{
   if(w==='fabricante')return 'Fabricante compatible';return w;});}
 
 const ST=[];const MOVS=[];
-function initDoc(i){const d=DOCS[i];ST[i]={ords:[],grupos:[],ign:[],extra:[],edit:{},xn:0,hecho:false,vals:{},sel:{a:[],o:[]},buscar:false,nueva:{tienda:'',cliente:d.cliente_final||'',pedido:'',tipo:'orden',origen:''}};
+function initDoc(i){const d=DOCS[i];ST[i]={ords:[],grupos:[],ign:[],extra:[],edit:{},xn:0,hecho:false,vals:{},sel:{a:[],o:[]},buscar:false,nueva:{tienda:'',cliente:d.cliente_final||'',pedido:'',tipo:'orden',origen:'',tipo_orden:1,telefono:'',domicilio:'',localidad:''}};
   if((d.cls==='casa solo'||d.cls==='revisar')&&d.top.length){const o=ORDM[d.top[0].id];if(!bloq(o)){ST[i].ords=[o.i];ST[i].grupos=autoGrupos(i);}}}
 function ordenObj(id,i){ if(id==='NUEVA'){const n=ST[i].nueva;return {i:'NUEVA',t:n.tienda||'(elegir tienda)',c:n.cliente,p:n.pedido,e:'nueva',l:(DOCS[i].lineas||[]).map(l=>[l.desc,l.cant||1,'',DOCS[i].fabricante])};} return ORDM[id]; }
 function olines(o,i){const ed=ST[i].edit||{};const nu=o.i==='NUEVA';
@@ -227,8 +228,8 @@ function cardOrden(i,id){const o=ordenObj(id,i),d=DOCS[i];const c=d.top.find(t=>
   const tit=id==='NUEVA'?(n.tipo==='incidencia'?'INCIDENCIA NUEVA de la orden '+n.origen:'ORDEN NUEVA creada por ALMMA'):'Orden '+o.i;
   let h=`<div class="orden" style="margin-bottom:10px">${c?`<span class="score" style="background:${pct(c.score)>=90?'#dcfce7':'#fef3c7'};color:${pct(c.score)>=90?'var(--ok)':'var(--warn)'}">${pct(c.score)} % de coincidencia</span>`:''}<div class="t">${tit}</div><div class="m">${esc(o.t)} · ${esc(o.c)} · pedido «${esc(o.p)}» · ${chipEst(o)}${o.d?' · creada '+o.d:''}</div>`;
   if(id==='NUEVA'){const T=d.grupo?refsGrupo(d.grupo):[...new Set(ORD.map(x=>x.t).filter(Boolean))].slice(0,60);
-    h+=`<div class="avisos" style="margin-top:8px;background:#f5f3ff;border-color:#ddd6fe;color:#4c1d95">${n.tipo==='incidencia'?'Entrará como incidencia vinculada a la orden '+n.origen+'.':'La tienda aún no nos ha pasado el pedido del cliente: esta orden quedará <b>sin PDF ni datos del cliente</b> y aparecerá en su pestaña «Mercancía recibida» para que los complete.'}</div>`;
-    h+=`<div class="grid" style="margin-top:10px"><div class="campo"><label>Tienda</label><select onchange="ST[${i}].nueva.tienda=this.value;pinta()"><option value="">— elegir —</option>${T.map(t=>`<option ${n.tienda==t?'selected':''}>${esc(t)}</option>`).join('')}</select></div><div class="campo"><label>Cliente final</label><input value="${esc(n.cliente)}" onchange="ST[${i}].nueva.cliente=this.value;pinta()"></div><div class="campo"><label>Nº pedido de la tienda</label><input value="${esc(n.pedido)}" onchange="ST[${i}].nueva.pedido=this.value;pinta()"></div></div>`;}
+    h+=`<div class="avisos" style="margin-top:8px;background:#f5f3ff;border-color:#ddd6fe;color:#4c1d95">${n.tipo==='incidencia'?'Entrará como incidencia vinculada a la orden '+n.origen+'.':'La tienda aún no nos ha pasado el pedido del cliente: esta orden se creará con los datos que pongas aquí (los que falten quedan en blanco) y con una <b>línea de importes</b> vacía para rellenar.'}</div>`;
+    h+=`<div class="grid" style="margin-top:10px"><div class="campo"><label>Tienda</label><select onchange="ST[${i}].nueva.tienda=this.value;pinta()"><option value="">— elegir —</option>${T.map(t=>`<option ${n.tienda==t?'selected':''}>${esc(t)}</option>`).join('')}</select></div><div class="campo"><label>Cliente final</label><input value="${esc(n.cliente)}" onchange="ST[${i}].nueva.cliente=this.value;pinta()"></div><div class="campo"><label>Nº pedido de la tienda</label><input value="${esc(n.pedido)}" onchange="ST[${i}].nueva.pedido=this.value;pinta()"></div><div class="campo"><label>Tipo de orden</label><select onchange="ST[${i}].nueva.tipo_orden=this.value"><option value="1" ${n.tipo_orden==1?'selected':''}>1 · se factura a la tienda</option><option value="2" ${n.tipo_orden==2?'selected':''}>2 · al fabricante</option><option value="3" ${n.tipo_orden==3?'selected':''}>3 · a un vendedor</option></select></div><div class="campo"><label>Teléfono</label><input value="${esc(n.telefono)}" onchange="ST[${i}].nueva.telefono=this.value"></div><div class="campo"><label>Domicilio</label><input value="${esc(n.domicilio)}" onchange="ST[${i}].nueva.domicilio=this.value"></div><div class="campo"><label>Localidad</label><input value="${esc(n.localidad)}" onchange="ST[${i}].nueva.localidad=this.value"></div></div><div class="avisos" style="margin-top:8px">Lo que no sepas, déjalo en blanco. Después, en pedidos.html, usa «Completar con pedido de la tienda» para que la IA rellene el resto y añada las líneas que falten.</div>`;}
   else if(c)h+=`<ul class="razones">${motivos(c.why).map(x=>`<li class="y">${esc(x)}</li>`).join('')}</ul><div style="font-size:11px;color:var(--muted)">Porcentaje estimado con la prueba real: a partir del 90 % casi siempre acierta.</div>`;
   if(o.e==='recepcionado_total')h+=`<div class="avisos" style="margin-top:8px">Esta orden ya figura como <b>Recep. total</b>: si llegan más cosas, añádelas como línea nueva o incidencia.</div>`;
   h+=`<div class="acciones">${id!=='NUEVA'?`<button class="sec2 peq" onclick="verOrden(${o.i})">👁 Ver orden</button>`:''}<button class="sec2 peq" onclick="quita('${id}')">✕ Quitar esta orden</button></div></div>`;return h;}
@@ -249,10 +250,10 @@ function pintaPanel(){
   s.ords.forEach(id=>h+=cardOrden(cur,id));
   const otras=d.top.filter(t=>!s.ords.includes(t.id));
   const tie=d.top.length>1&&d.top[0].score-d.top[1].score<10;
-  if(!s.ords.length)h+=`<div class="vacio"><b>${d.cls==='sin orden'?'No hay ninguna orden con este número ni este cliente.':d.cls==='dudoso'?'Solo hay candidatas poco seguras.':'La orden propuesta no admite mercancía nueva.'}</b> ${d.cls!=='sin orden'&&d.cls!=='dudoso'?'':'Es probable que la tienda aún no nos haya pasado el pedido.'}<div class="acciones"><button onclick="ST[cur].buscar=true;pinta()">🔍 Buscar a mano</button><button class="sec2" onclick="nueva('orden')">➕ Crear orden nueva (próximamente)</button></div></div>`;
+  if(!s.ords.length)h+=`<div class="vacio"><b>${d.cls==='sin orden'?'No hay ninguna orden con este número ni este cliente.':d.cls==='dudoso'?'Solo hay candidatas poco seguras.':'La orden propuesta no admite mercancía nueva.'}</b> ${d.cls!=='sin orden'&&d.cls!=='dudoso'?'':'Es probable que la tienda aún no nos haya pasado el pedido.'}<div class="acciones"><button onclick="ST[cur].buscar=true;pinta()">🔍 Buscar a mano</button><button class="sec2" onclick="nueva('orden')">➕ Crear orden nueva</button></div></div>`;
   if(tie&&otras.length)h+=`<div class="avisos" style="margin-bottom:8px">Hay varias órdenes con porcentaje parecido: ábrelas con «Ver orden» y elige mirando las líneas.</div>`;
   if(otras.length){h+=`<div style="margin:6px 0;font-size:12px;color:var(--muted)">${s.ords.length?'Otras posibles:':'Candidatas encontradas:'}</div>`;otras.forEach(t=>h+=candHTML(ORDM[t.id],t));}
-  h+=`<div class="acciones"><button class="sec2" onclick="ST[cur].buscar=!ST[cur].buscar;pinta()">🔍 Buscar otra orden</button>${!s.ords.includes('NUEVA')?'<button class="sec2" onclick="nueva(\'orden\')">➕ Orden nueva (próximamente)</button>':''}</div>`;
+  h+=`<div class="acciones"><button class="sec2" onclick="ST[cur].buscar=!ST[cur].buscar;pinta()">🔍 Buscar otra orden</button>${!s.ords.includes('NUEVA')?'<button class="sec2" onclick="nueva(\'orden\')">➕ Orden nueva</button>':''}</div>`;
   if(s.buscar)h+=`<div class="busca"><input id="q" placeholder="Buscar por nº de orden, cliente o nº de pedido (solo órdenes de ${d.grupo||'cualquier tienda'})" oninput="pintaRes()"><label style="font-size:12px;color:var(--muted);display:block;margin-top:6px"><input type="checkbox" id="abiertas" style="width:auto" onchange="pintaRes()"> Ocultar órdenes montadas</label><div class="res" id="res"></div></div>`;
   h+=`</div>`;
   if(s.ords.length){
@@ -302,7 +303,40 @@ function addLinea(k){toast('Añadir líneas nuevas a una orden desde aquí aún 
 function quita(id){const s=ST[cur];id=String(id);s.ords=s.ords.filter(x=>String(x)!==id);s.grupos=s.grupos.filter(g=>!g.o.some(k=>k.startsWith(id+'#')));s.extra=s.extra.filter(e=>String(e.oid)!==id);pinta();}
 function usa(id){if(!okTienda(ORDM[id],cur))return toast('Ese albarán es de '+DOCS[cur].grupo+': no puede ir a una orden de otra tienda.');if(bloq(ORDM[id]))return toast('Esa orden ya está montada: solo admite incidencias.');const s=ST[cur];s.ords=[id];s.extra=[];s.grupos=autoGrupos(cur);s.buscar=false;s.sel={a:[],o:[]};pinta();toast('Orden elegida. Revisa el casado de líneas.');}
 function anade(id){if(!okTienda(ORDM[id],cur))return toast('Ese albarán es de '+DOCS[cur].grupo+': no puede ir a una orden de otra tienda.');if(bloq(ORDM[id]))return toast('Esa orden ya está montada: solo admite incidencias.');const s=ST[cur];if(!s.ords.includes(id))s.ords.push(id);const aut=autoGrupos(cur);aut.forEach(g=>{if(g.o.some(k=>k.startsWith(id+'#'))&&!g.a.some(x=>s.grupos.some(h=>h.a.includes(x))))s.grupos.push(g);});s.buscar=false;pinta();}
-function nueva(tipo,origen){toast('Crear órdenes o incidencias nuevas desde aquí aún no está disponible: hazlo en pedidos.html y vuelve a buscarla.');}
+function nueva(tipo,origen){
+  if(tipo!=='orden')return toast('Crear incidencias nuevas desde aquí aún no está disponible: hazlo en pedidos.html y vuelve a buscarla.');
+  const s=ST[cur];if(s.ords.includes('NUEVA'))return;
+  const d=DOCS[cur],n=s.nueva;
+  // se rellena con todo lo que el lector sacó del albarán; lo demás se deja en blanco para que lo pongas tú
+  if(!n.tienda&&d.grupo){const T=refsGrupo(d.grupo);if(T.length)n.tienda=T[0];}
+  if(!n.cliente)n.cliente=d.cliente_final||((d.clientes||[])[0]||{}).nombre||'';
+  if(!n.pedido){const r=(d.refs||[]).find(x=>/\d{3,}/.test(x)),m=r&&String(r).match(/[A-Za-z]*\d[\w\-\/]{2,}/);n.pedido=m?m[0]:'';}
+  s.nueva.tipo='orden';s.ords.push('NUEVA');s.buscar=false;
+  autoGrupos(cur).forEach(g=>{if(g.o.some(k=>k.startsWith('NUEVA#'))&&!g.a.some(x=>s.grupos.some(h=>h.a.includes(x))))s.grupos.push(g);});
+  pinta();toast('Orden nueva: completa los datos que sepas; lo que no sepas déjalo en blanco.');}
+/* crea la orden nueva en la base de datos y cambia 'NUEVA' por su número real en todo el estado */
+async function creaOrdenNueva(){
+  const s=ST[cur],d=DOCS[cur],n=s.nueva;
+  const ref=ORD.find(o=>o.t===n.tienda&&o.tid);if(!ref)throw new Error('No se encuentra la tienda «'+n.tienda+'».');
+  const r=await client.rpc("crear_orden_staff",{p_tienda_id:ref.tid,p_dependiente_id:null,p_tipo_orden:Number(n.tipo_orden)||1,p_num_pedido:n.pedido||null,p_nombre_cli:n.cliente||null,p_domicilio_cli:n.domicilio||null,p_localidad_cli:n.localidad||null,p_provincia_cli:null,p_telefono_cli:n.telefono||null,p_telefono2_cli:null,p_dni_cli:null});
+  if(r.error)throw new Error('No se pudo crear la orden: '+r.error.message);
+  const {anyo,orden}=r.data[0];
+  let fcod=null;try{const f=await client.from("fabricantes").select("codigo,nombre").ilike("nombre",d.fabricante||'¿?');if(f.data&&f.data.length)fcod=f.data[0].codigo;}catch(_){}
+  const usadas=[...new Set(s.grupos.flatMap(g=>g.o).filter(k=>String(k).startsWith('NUEVA#')))];
+  const nu=olines(ordenObj('NUEVA',cur),cur);
+  const filas=[],mapa={},lin=[];
+  usadas.forEach((key,k)=>{const l=nu.find(x=>x.key===key);if(!l)return;const linea=k+1;mapa[key]=lin.length;
+    filas.push({anyo,orden,linea,tipolinea:1,articulo:"18206",descripcion:l.desc,cantidad:l.cant||1,proveedor:fcod,porcentaje:100});
+    lin.push([l.desc,l.cant||1,'',d.fabricante||'',linea,"18206",fcod]);});
+  filas.push({anyo,orden,linea:filas.length+1,tipolinea:4,descripcion:"Montaje",cantidad:1,porcentaje:100});   // toda orden lleva su línea de importes
+  const ins=await client.from("linorden").insert(filas);
+  if(ins.error)throw new Error('La orden '+anyo+'/'+orden+' se creó, pero no sus líneas: '+ins.error.message+'. Añádelas en pedidos.html.');
+  const no={i:orden,a:anyo,tid:ref.tid,t:n.tienda,c:n.cliente||'',p:n.pedido||'',e:'en_proceso',d:new Date().toISOString().slice(0,10),l:lin};
+  no._nums=nums(no.p);no._toks=ntoks(no.c+' '+no.p);no._tset=tk(no.t);no._ltoks=ntoks('');no._fabs=new Set();
+  ORD.push(no);ORDM[orden]=no;
+  s.ords=s.ords.map(x=>x==='NUEVA'?orden:x);
+  s.grupos.forEach(g=>{g.o=g.o.map(k=>mapa[k]!==undefined?orden+'#'+mapa[k]:k);});
+  return no;}
 function pintaRes(){const q=norm((document.getElementById('q')||{value:''}).value),ab=document.getElementById('abiertas').checked;
   const r=q.length<2?[]:ORD.filter(o=>okTienda(o,cur)&&(!ab||o.e!=='completado')&&norm(o.i+' '+o.t+' '+o.c+' '+o.p).includes(q)).slice(0,25);
   document.getElementById('res').innerHTML=q.length<2?'<div style="color:var(--muted);font-size:13px">Escribe al menos 2 letras.</div>':(r.length?r.map(o=>candHTML(o,null)).join(''):'<div style="color:var(--muted);font-size:13px">Ninguna coincide. Puedes crear una orden nueva.</div>');}
@@ -396,35 +430,52 @@ async function cargarPendientes(){
   const url={};(sg.data||[]).forEach(x=>{url[x.path]=x.signedUrl;});
   rows.reverse().forEach(f=>{const d=docDesdeFila(f,url[f.archivo]||'');DOCS.push(d);initDoc(DOCS.length-1);});
 }
+/* un PDF se pasa página a página a imagen (JPG) y cada página se lee como una foto */
+async function paginasPdf(file){
+  if(!window.pdfjsLib)throw new Error("No se pudo cargar el lector de PDF (¿sin conexión?)");
+  pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise,res=[];
+  for(let n=1;n<=pdf.numPages;n++){
+    const pg=await pdf.getPage(n),v0=pg.getViewport({scale:1}),k=2000/Math.max(v0.width,v0.height),vp=pg.getViewport({scale:k});
+    const c=document.createElement("canvas");c.width=Math.round(vp.width);c.height=Math.round(vp.height);
+    await pg.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;
+    const b=await new Promise(r=>c.toBlob(r,"image/jpeg",0.85));if(!b)throw new Error("No se pudo preparar la página "+n);
+    res.push({blob:b,nombre:file.name+(pdf.numPages>1?" (pág. "+n+" de "+pdf.numPages+")":"")});}
+  return res;}
+const esPdf=f=>f.type==="application/pdf"||/\.pdf$/i.test(f.name);
 function reducir(file){return new Promise((ok,ko)=>{
   const url=URL.createObjectURL(file),im=new Image();
   im.onload=()=>{const k=Math.min(1,2000/Math.max(im.width,im.height));
     const c=document.createElement("canvas");c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);
     c.getContext("2d").drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(url);
     c.toBlob(b=>b?ok(b):ko(new Error("No se pudo preparar la imagen")),"image/jpeg",0.85);};
-  im.onerror=()=>ko(new Error("No se puede abrir "+file.name+" (¿es HEIC o PDF? De momento solo JPG, PNG o WEBP)"));
+  im.onerror=()=>ko(new Error("No se puede abrir "+file.name+" (¿es HEIC? Usa JPG, PNG, WEBP o PDF)"));
   im.src=url;});}
 async function subir(files){
   files=[...files];if(!files.length)return;
   const b=document.getElementById('subirbtn');b.style.opacity=.5;
   try{await cargarOrdenes();}catch(e){toast('No se pudieron cargar las órdenes: '+e.message);b.style.opacity=1;return;}
   let primero=-1;
-  for(let n=0;n<files.length;n++){
-    estTxt('Leyendo '+(n+1)+' de '+files.length+'…');
+  const piezas=[];
+  for(const f of files){
+    try{if(esPdf(f)){estTxt('Abriendo '+f.name+'…');piezas.push(...await paginasPdf(f));}else piezas.push({file:f,nombre:f.name});}
+    catch(e){toast(f.name+': '+e.message);}}
+  for(let n=0;n<piezas.length;n++){
+    estTxt('Leyendo '+(n+1)+' de '+piezas.length+'…');const nombre=piezas[n].nombre;
     try{
-      const blob=await reducir(files[n]);
+      const blob=piezas[n].blob||await reducir(piezas[n].file);
       const dt=new Date(),mm=String(dt.getMonth()+1).padStart(2,"0");
       const ruta=dt.getFullYear()+"/"+mm+"/"+crypto.randomUUID()+".jpg";
       const up=await client.storage.from("albaranes").upload(ruta,blob,{contentType:"image/jpeg"});
       if(up.error)throw new Error("Subida: "+up.error.message);
-      const r=await client.functions.invoke("leer-albaran",{body:{ruta,nombre_original:files[n].name}});
+      const r=await client.functions.invoke("leer-albaran",{body:{ruta,nombre_original:nombre}});
       if(r.error){let m=r.error.message;try{const j=await r.error.context.json();m=(j.error||m)+(j.detalle?' ['+j.detalle+']':'');}catch(_){}throw new Error(m);}
-      if(!r.data.lectura.es_albaran){toast(files[n].name+': no parece una página de albarán (portada o en blanco). Se ha guardado igualmente.');continue;}
+      if(!r.data.lectura.es_albaran){toast(nombre+': no parece una página de albarán (portada o en blanco). Se ha guardado igualmente.');continue;}
       const sg=await client.storage.from("albaranes").createSignedUrl(ruta,3600);
       const d=docDesdeFila({id:r.data.id,modelo:r.data.lectura._uso&&r.data.lectura._uso.modelo,lectura:r.data.lectura},sg.data&&sg.data.signedUrl,r.data.duplicados);
       DOCS.push(d);initDoc(DOCS.length-1);if(primero<0)primero=DOCS.length-1;
       pintaLista();
-    }catch(e){toast(files[n].name+': '+e.message);}
+    }catch(e){toast(nombre+': '+e.message);}
   }
   estTxt('');b.style.opacity=1;if(primero>=0)ir(primero);else pinta();
 }
@@ -444,7 +495,16 @@ async function descartar(){const d=DOCS[cur];if(!confirm(d.esHijo?'¿Descartar e
 let confirmando=false;
 async function confirma(){
   if(confirmando)return;const s=ST[cur],d=DOCS[cur];if(s.hecho)return;
-  if(s.ords.includes('NUEVA')||s.extra.length)return toast('Crear órdenes o líneas nuevas desde aquí aún no está disponible.');
+  if(s.extra.length)return toast('Añadir líneas nuevas a órdenes existentes desde aquí aún no está disponible.');
+  const crea=s.ords.includes('NUEVA');
+  if(crea){
+    if(!s.nueva.tienda)return toast('Elige la tienda de la orden nueva.');
+    const nl=new Set(s.grupos.flatMap(g=>g.o).filter(k=>String(k).startsWith('NUEVA#'))).size;
+    if(!confirm('Se va a CREAR una orden nueva:\n\nTienda: '+s.nueva.tienda+'\nCliente: '+(s.nueva.cliente||'(en blanco)')+'\nPedido: '+(s.nueva.pedido||'(en blanco)')+'\nLíneas del albarán: '+nl+' + 1 línea de importes vacía.\n\nY se marcarán como RECIBIDAS las líneas casadas. ¿Confirmar?'))return;
+    confirmando=true;
+    try{await creaOrdenNueva();}catch(e){confirmando=false;alert(e.message);pinta();return;}
+    confirmando=false;
+  }
   const ops=[];
   s.grupos.forEach(g=>{const n=g.o.length;g.o.forEach((key,j)=>{const [oid,idx]=String(key).split('#');const o=ORDM[oid],l=o&&o.l[+idx];if(!l)return;
     ops.push({o,l,g,bultos:g.b==null?null:Math.floor(g.b/n)+(j<g.b%n?1:0),peso:g.p==null?null:Math.round(g.p/n*100)/100});});});
@@ -454,7 +514,7 @@ async function confirma(){
   const yaRec=ops.filter(x=>x.l[2]==='S').length;
   let t='Vas a marcar como RECIBIDAS '+ops.length+' línea(s) de '+[...new Set(ops.map(x=>'#'+x.o.a+'/'+x.o.i))].join(', ')+'.\nRecibido el '+(iso?iso.split('-').reverse().join('/'):'hoy')+(ubi?' · ubicación «'+ubi+'»':'')+'.\nEsto modifica las órdenes y crea las entradas de almacén.';
   if(!ubi)t+='\n\n¡Atención! No hay ubicación.';if(yaRec)t+='\n\n¡Atención! '+yaRec+' línea(s) ya estaban recibidas (se sobrescribirían sus datos).';
-  if(!confirm(t+'\n\n¿Confirmar?'))return;
+  if(!crea&&!confirm(t+'\n\n¿Confirmar?'))return;
   confirmando=true;const uid=(await client.auth.getUser()).data.user.id,errs=[],ahoraIso=new Date().toISOString();
   for(const x of ops){
     const val1={ubicacion:ubi,bultos:x.bultos,albaran:alb,recibido:'S',recibido_at:cuando,recibido_por:uid};if(x.peso!==null)val1.peso_kg=x.peso;
