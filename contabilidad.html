@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ALMMA - Contabilidad</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;--ok:#15803d;--okbg:#f0fdf4;--warn:#b45309;--warnbg:#fffbeb;--bad:#dc2626;--badbg:#fef2f2;}
 *{box-sizing:border-box;}
@@ -193,7 +194,8 @@ document.getElementById('ov').addEventListener('mousedown',e=>{if(e.target.id===
 function pintaTabs(){
   const anyos=[];for(let a=ANYO_MIN;a<=Math.max(HOY.getFullYear()+1,ANYO);a++)anyos.push(a);
   document.getElementById('tabs').innerHTML=TABS.map(t=>`<button class="tab ${V.tab===t[0]?'on':''}" data-tab="${t[0]}">${t[1]}</button>`).join('')+
-    `<select id="selanyo" title="Año contable" style="margin:0 0 6px auto;font-weight:700">${anyos.map(a=>`<option ${a===ANYO?'selected':''}>${a}</option>`).join('')}</select>`;
+    `<button class="sec peq" onclick="exportarExcel()" title="Descarga toda la contabilidad del año en un Excel" style="margin:0 8px 6px auto">⬇ Excel del año</button>`+
+    `<select id="selanyo" title="Año contable" style="margin:0 0 6px 0;font-weight:700">${anyos.map(a=>`<option ${a===ANYO?'selected':''}>${a}</option>`).join('')}</select>`;
 }
 async function cambiarAnyo(a){
   try{localStorage.setItem('cont_anyo',a);}catch(e){}
@@ -201,6 +203,30 @@ async function cambiarAnyo(a){
   document.getElementById('main').innerHTML='<div class="box vacio">Cargando '+a+'…</div>';
   try{await recargar();}catch(e){alert('No se han podido cargar los datos: '+(e.message||e));}
   render();
+}
+
+/* ---------- exportar a Excel ---------- */
+function exportarExcel(){
+  if(typeof XLSX==='undefined'){alert('No se ha podido cargar el generador de Excel. Revisa la conexión y recarga la página.');return;}
+  const d=s=>s?new Date(s+'T00:00:00'):'';
+  const wb=XLSX.utils.book_new();
+  const hoja=(nombre,filas,vacio)=>{const ws=XLSX.utils.json_to_sheet(filas.length?filas:[vacio]);ws['!cols']=Object.keys(filas[0]||vacio).map(k=>({wch:Math.min(45,Math.max(k.length+2,...filas.slice(0,200).map(r=>String(r[k]==null?'':(r[k] instanceof Date?'00/00/0000':r[k])).length+2)))}));XLSX.utils.book_append_sheet(wb,ws,nombre);};
+  const F=facturas().sort((a,b)=>a.fecha<b.fecha?-1:1);
+  const resumen=[];
+  for(let m=1;m<=Math.min(MES_ACT,12);m++){const c=mesCalc(m);resumen.push({Mes:MES[m-1],'Montaje Arturo':r2(c.T.am),'Almacén Arturo':r2(c.T.aa),'Montaje José':r2(c.T.jm),'Almacén José':r2(c.T.ja),'Otros ingresos':r2(c.otrosTot),'Total ingresos':r2(c.ingresos),Gastos:r2(c.gTot),Nóminas:r2(c.nTot),Resultado:r2(c.resultado)});}
+  hoja('Resumen mensual',resumen,{Mes:'Sin datos'});
+  const liq=[];
+  for(let m=Math.max(1,S.liqDesde);m<=Math.min(MES_ACT,12);m++){const l=liquidacion(m);liq.push({Mes:MES[m-1],'Montaje Arturo':r2(l.mA),'Montaje José':r2(l.mJ),'Gastos Arturo':r2(l.gA+l.nA),'Gastos José':r2(l.gJ+l.nJ),'Neto Arturo':r2(l.netoA),'Neto José':r2(l.netoJ),Resultado:r2(l.resultado),'Mitad cada uno':r2(l.mitad),'Saldo Arturo':r2(l.saldoA),'Saldo José':r2(l.saldoJ)});}
+  hoja('Liquidación socios',liq,{Mes:'Sin datos'});
+  hoja('Facturas',F.map(f=>({'Nº factura':fnum(f.num),Fecha:d(f.fecha),Cliente:f.cli,Concepto:f.conc,Total:r2(f.total),Montaje:r2(f.mont),Almacén:r2(f.alm),Cobrado:f.cobrado,Pendiente:f.pend,Trimestre:f.trim,Socio:f.socio,'Forma de pago':f.forma,'Fecha de pago':d(f.fpago),'Días':f.dias})),{'Nº factura':''});
+  hoja('Cobros',S.cobros.slice().sort((a,b)=>a.fecha<b.fecha?-1:1).map(c=>({Fecha:d(c.fecha),Cliente:c.cli,'Nº factura':fnum(c.num),Importe:c.imp,'Forma de pago':c.forma,Observaciones:c.obs})),{Fecha:''});
+  hoja('Gastos',S.gastos.slice().sort((a,b)=>(a.fecha||'')<(b.fecha||'')?-1:1).map(g=>({Mes:MES[g.mes-1]||g.mes,Fecha:d(g.fecha),Concepto:g.conc,Proveedor:g.prov,Categoría:g.cat,Soporta:g.sop,Importe:g.imp,'IVA %':ivaGasto(g)})),{Mes:''});
+  hoja('Otros ingresos',S.otros.map(o=>({Mes:MES[o.mes-1]||o.mes,Fecha:d(o.fecha),Cliente:o.cli,Concepto:o.conc,Cobra:o.cobra,Reparto:o.rep,Importe:o.imp})),{Mes:''});
+  hoja('Nóminas',S.nom.map(n=>({Mes:MES[n.mes-1]||n.mes,Trabajador:n.nombre,Soporta:n.sop,Base:n.base,Extras:n.extras,Recogidas:n.rec,Sábados:n.sab,Embargos:n.emb,IRPF:n.irpf,Total:r2(n.base+n.extras+n.rec+n.sab+n.emb+n.irpf)})),{Mes:''});
+  hoja('Adelantos',S.adelantos.map(a=>({Mes:MES[a.mes-1]||a.mes,Trabajador:a.nombre,Fecha:d(a.fecha),Importe:a.imp,Método:a.metodo})),{Mes:''});
+  hoja('Personal',S.trab.map(w=>({Nombre:w.nombre,Soporta:w.sop,'Nómina base':w.base,Extras:w.extras,Alta:d(w.alta),Baja:d(w.baja),'Motivo baja':w.motivo})),{Nombre:''});
+  hoja('Tarifas',Object.keys(S.tarifas).sort().map(c=>({Cliente:c,'% montaje':S.tarifas[c]})),{Cliente:''});
+  XLSX.writeFile(wb,'ALMMA_contabilidad_'+ANYO+'.xlsx',{cellDates:true});
 }
 function ir(t){V.tab=t;render();window.scrollTo(0,0);}
 function render(){pintaTabs();document.getElementById('main').innerHTML=VISTAS[V.tab]();}
