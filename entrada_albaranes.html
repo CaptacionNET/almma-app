@@ -314,14 +314,38 @@ function nueva(tipo,origen){
   s.nueva.tipo='orden';s.ords.push('NUEVA');s.buscar=false;
   autoGrupos(cur).forEach(g=>{if(g.o.some(k=>k.startsWith('NUEVA#'))&&!g.a.some(x=>s.grupos.some(h=>h.a.includes(x))))s.grupos.push(g);});
   pinta();toast('Orden nueva: completa los datos que sepas; lo que no sepas déjalo en blanco.');}
+/* busca el fabricante del albarán en la base de datos; si no está, enseña los parecidos antes de proponer crearlo */
+let FABS=null;
+const lev=(a,b)=>{const m=[...Array(a.length+1)].map((_,i)=>[i,...Array(b.length).fill(0)]);for(let j=1;j<=b.length;j++)m[0][j]=j;
+  for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)m[i][j]=Math.min(m[i-1][j]+1,m[i][j-1]+1,m[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return m[a.length][b.length];};
+const palabras=t=>norm(t).replace(/[^a-z0-9]+/g,' ').split(' ').filter(w=>w.length>1&&!['sl','sa','slu','scp','cb','de','la','el','y'].includes(w));
+function parecido(a,b){const A=palabras(a),B=palabras(b);if(!A.length||!B.length)return 0;
+  const ok=A.filter(x=>B.some(y=>x===y||(Math.min(x.length,y.length)>=4&&(x.startsWith(y)||y.startsWith(x)))||(Math.min(x.length,y.length)>=5&&lev(x,y)<=Math.max(1,Math.floor(Math.min(x.length,y.length)/4))))).length;
+  return ok/Math.max(A.length,B.length)+(ok/Math.min(A.length,B.length))/10;}
+async function resuelveFabricante(nombre){
+  nombre=(nombre||'').trim();if(!nombre)return null;
+  if(!FABS)FABS=await paginar(()=>client.from("fabricantes").select("codigo,nombre,nombre_comercial").order("codigo"));
+  const n=norm(nombre).trim(),eq=[n,...FAB_EQUIV.filter(p=>p.includes(n)).flat()];
+  const exacto=FABS.find(f=>eq.includes(norm(f.nombre).trim())||eq.includes(norm(f.nombre_comercial).trim()));if(exacto)return exacto.codigo;
+  const cand=FABS.map(f=>({f,sc:Math.max(parecido(nombre,f.nombre),parecido(nombre,f.nombre_comercial))})).filter(x=>x.sc>=0.5).sort((a,b)=>b.sc-a.sc).slice(0,6);
+  if(cand.length){
+    const r=prompt('El fabricante «'+nombre+'» no está tal cual en la base de datos, pero hay parecidos:\n\n'+cand.map((x,k)=>(k+1)+') '+x.f.nombre+' (cód. '+x.f.codigo+')').join('\n')+'\n\nEscribe el número del que es,\no 0 para crear «'+nombre+'» como fabricante nuevo,\no deja vacío para dejar las líneas sin fabricante.');
+    if(r===null)throw new Error('Cancelado: elige el fabricante antes de crear la orden.');
+    const k=parseInt(r,10);if(k>=1&&k<=cand.length)return cand[k-1].f.codigo;
+    if(k!==0)return null;}
+  else if(!confirm('El fabricante «'+nombre+'» no existe en la base de datos y no hay ninguno parecido.\n\n¿Quieres crearlo?'))return null;
+  const cod=FABS.reduce((m,f)=>Math.max(m,f.codigo||0),0)+1;
+  const ins=await client.from("fabricantes").insert({codigo:cod,nombre:nombre});
+  if(ins.error)throw new Error('No se pudo crear el fabricante: '+ins.error.message);
+  FABS.push({codigo:cod,nombre,nombre_comercial:null});toast('Fabricante «'+nombre+'» creado (cód. '+cod+').');return cod;}
 /* crea la orden nueva en la base de datos y cambia 'NUEVA' por su número real en todo el estado */
 async function creaOrdenNueva(){
   const s=ST[cur],d=DOCS[cur],n=s.nueva;
   const ref=ORD.find(o=>o.t===n.tienda&&o.tid);if(!ref)throw new Error('No se encuentra la tienda «'+n.tienda+'».');
+  const fcod=await resuelveFabricante(d.fabricante);   // antes de crear nada: si se cancela, no queda ninguna orden a medias
   const r=await client.rpc("crear_orden_staff",{p_tienda_id:ref.tid,p_dependiente_id:null,p_tipo_orden:Number(n.tipo_orden)||1,p_num_pedido:n.pedido||null,p_nombre_cli:n.cliente||null,p_domicilio_cli:n.domicilio||null,p_localidad_cli:n.localidad||null,p_provincia_cli:null,p_telefono_cli:n.telefono||null,p_telefono2_cli:null,p_dni_cli:null});
   if(r.error)throw new Error('No se pudo crear la orden: '+r.error.message);
   const {anyo,orden}=r.data[0];
-  let fcod=null;try{const f=await client.from("fabricantes").select("codigo,nombre").ilike("nombre",d.fabricante||'¿?');if(f.data&&f.data.length)fcod=f.data[0].codigo;}catch(_){}
   const usadas=[...new Set(s.grupos.flatMap(g=>g.o).filter(k=>String(k).startsWith('NUEVA#')))];
   const nu=olines(ordenObj('NUEVA',cur),cur);
   const filas=[],mapa={},lin=[];
