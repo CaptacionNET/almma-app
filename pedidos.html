@@ -433,8 +433,8 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 
     <h4 style="margin-bottom:6px;">Importes y facturación</h4>
     <div class="form-grid">
-      <div class="campo"><label>Importe Total</label><input id="ch_importe_total" type="number" step="0.01"></div>
-      <div class="campo"><label>Entrega a Cuenta</label><input id="ch_entrega_a_cuenta" type="number" step="0.01"></div>
+      <div class="campo"><label>Importe Total</label><input id="ch_importe_total" type="number" step="0.01" oninput="recalcularPendiente()"></div>
+      <div class="campo"><label>Entrega a Cuenta</label><input id="ch_entrega_a_cuenta" type="number" step="0.01" oninput="recalcularPendiente()"></div>
       <div class="campo"><label>Importe Pendiente</label><input id="ch_importe_pendiente" type="number" step="0.01"><div class="meta" id="ch_cobros_montador" style="font-size:11px;margin-top:2px;"></div></div>
       <div class="campo"><label>Forma de Cobro</label><input id="ch_tipo_cobro" placeholder="ej. Efectivo, Transferencia"></div>
       <div class="campo"><label>Facturada</label><div id="ch_facturada">-</div></div>
@@ -1356,8 +1356,11 @@ async function abrirPanel(orden) {
   document.getElementById("ch_importe_total").value = o.importe_total ?? "";
   document.getElementById("ch_entrega_a_cuenta").value = o.entrega_a_cuenta ?? "";
   document.getElementById("ch_importe_pendiente").value = o.importe_pendiente ?? "";
+  window._cobrosSuma = 0;
   document.getElementById("ch_cobros_montador").textContent = "";
+  if (o.importe_pendiente == null) recalcularPendiente();
   client.from("cobros_orden").select("importe, forma, cobrado_en").eq("anyo", o.anyo).eq("orden", o.orden).order("cobrado_en").then(({ data: cb }) => {
+    window._cobrosSuma = (cb || []).reduce((a, c) => a + Number(c.importe), 0);
     if (cb && cb.length) document.getElementById("ch_cobros_montador").textContent = "Cobrado por el montador: " + cb.map(c => Number(c.importe).toFixed(2) + " € " + (c.forma === "efectivo" ? "efectivo" : "datáfono") + " (" + new Date(c.cobrado_en).toLocaleDateString("es-ES") + ")").join(" · ");
   });
   document.getElementById("ch_tipo_cobro").value = o.tipo_cobro || "";
@@ -1882,6 +1885,13 @@ function mostrarNuevaLinea(mostrar) {
   if (!mostrar) cerrarTarifa();
   document.getElementById("btn_nueva_linea").style.display = mostrar ? "none" : "inline-block";
   if (mostrar) document.getElementById("ln_articulo_buscar").focus();
+}
+
+// Pendiente = total - entrega a cuenta - lo que ya cobró el montador (se puede corregir a mano)
+function recalcularPendiente() {
+  const t = parseFloat(document.getElementById("ch_importe_total").value);
+  const e = parseFloat(document.getElementById("ch_entrega_a_cuenta").value) || 0;
+  document.getElementById("ch_importe_pendiente").value = isNaN(t) ? "" : Math.max(Math.round((t - e - (window._cobrosSuma || 0)) * 100) / 100, 0);
 }
 
 function recalcularACobrar() {
