@@ -922,7 +922,7 @@ async function leerPdfNuevaOrden() {
     poner("no_localidad_cli", data.localidad_cli);
     poner("no_num_pedido", data.num_pedido);
     const avisosTienda = await elegirTiendaYVendedorDesdePdf(data);
-    lineasPdfNuevaOrden = (data.lineas || []).map(l => ({ descripcion: l.descripcion, cantidad: l.cantidad || 1 }));
+    lineasPdfNuevaOrden = (data.lineas || []).map(l => ({ descripcion: l.descripcion, cantidad: l.cantidad || 1, fabricante: l.fabricante || null }));
     pintarLineasPdfNuevaOrden();
     pdfNuevaOrden = archivo;
     estado.textContent = "Listo. Revisa los datos y elige la tienda antes de crear. El documento se guardará con la orden.";
@@ -995,7 +995,7 @@ async function guardarPdfEnOrdenNueva(anyo, orden) {
   if (lineasPdfNuevaOrden.length) {
     const filas = lineasPdfNuevaOrden.map((l, i) => ({
       anyo, orden, linea: i + 1, tipolinea: 1, articulo: ARTICULO_GENERICO_PDF,
-      descripcion: l.descripcion, cantidad: l.cantidad || 1, porcentaje: 100,
+      descripcion: l.descripcion, cantidad: l.cantidad || 1, porcentaje: 100, proveedor: l.proveedor ?? null,
     }));
     const { error } = await client.from("linorden").insert(filas);
     if (error) fallos.push("las líneas (" + error.message + ")");
@@ -1013,11 +1013,63 @@ async function guardarPdfEnOrdenNueva(anyo, orden) {
   return fallos.join("; ");
 }
 
+// --- Fabricantes que trae el pedido: se busca en la base de datos; si no está, se enseñan los parecidos y solo se crea con permiso ---
+let FABS_PED = null, EQUIV_PED = [];
+const levFab = (a, b) => { const m = [...Array(a.length + 1)].map((_, i) => [i, ...Array(b.length).fill(0)]); for (let j = 1; j <= b.length; j++) m[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) m[i][j] = Math.min(m[i-1][j] + 1, m[i][j-1] + 1, m[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1)); return m[a.length][b.length]; };
+const palabrasFab = t => sinAcentos(t).replace(/[^a-z0-9]+/g, " ").split(" ").filter(w => w.length > 1 && !["sl", "sa", "slu", "scp", "cb", "de", "la", "el", "y"].includes(w));
+function parecidoFab(a, b) {
+  const A = palabrasFab(a), B = palabrasFab(b); if (!A.length || !B.length) return 0;
+  const ok = A.filter(x => B.some(y => x === y || (Math.min(x.length, y.length) >= 4 && (x.startsWith(y) || y.startsWith(x))) || (Math.min(x.length, y.length) >= 5 && levFab(x, y) <= Math.max(1, Math.floor(Math.min(x.length, y.length) / 4))))).length;
+  return ok / Math.max(A.length, B.length) + (ok / Math.min(A.length, B.length)) / 10;
+}
+async function resolverFabricante(nombre) {
+  nombre = (nombre || "").trim(); if (!nombre) return null;
+  if (!FABS_PED) {
+    FABS_PED = [];
+    for (let desde = 0; ; desde += 1000) {
+      const { data } = await client.from("fabricantes").select("codigo, nombre, nombre_comercial").order("codigo").range(desde, desde + 999);
+      FABS_PED.push(...(data || [])); if (!data || data.length < 1000) break;
+    }
+    try { const { data: e } = await client.from("fabricantes_equivalentes").select("nombre_a, nombre_b"); EQUIV_PED = (e || []).map(x => [sinAcentos(x.nombre_a).trim(), sinAcentos(x.nombre_b).trim()]); } catch (_) {}
+  }
+  const n = sinAcentos(nombre).trim(), eq = [n, ...EQUIV_PED.filter(p => p.includes(n)).flat()];
+  const exacto = FABS_PED.find(f => eq.includes(sinAcentos(f.nombre).trim()) || eq.includes(sinAcentos(f.nombre_comercial).trim()));
+  if (exacto) return exacto.codigo;
+  const cand = FABS_PED.map(f => ({ f, sc: Math.max(parecidoFab(nombre, f.nombre), parecidoFab(nombre, f.nombre_comercial)) })).filter(x => x.sc >= 0.5).sort((a, b) => b.sc - a.sc).slice(0, 6);
+  if (cand.length) {
+    const r = prompt(`El fabricante «${nombre}» del pedido no está tal cual en la base de datos, pero hay parecidos:\n\n` + cand.map((x, k) => `${k + 1}) ${x.f.nombre} (cód. ${x.f.codigo})`).join("\n") +
+      `\n\nEscribe el número del que es,\no 0 para crear «${nombre}» como fabricante nuevo,\no deja vacío para dejar las líneas sin fabricante.`);
+    if (r === null) throw new Error("Cancelado: elige el fabricante antes de crear la orden.");
+    const k = parseInt(r, 10);
+    if (k >= 1 && k <= cand.length) return cand[k - 1].f.codigo;
+    if (k !== 0) return null;
+  } else if (!confirm(`El fabricante «${nombre}» del pedido no existe en la base de datos y no hay ninguno parecido.\n\n¿Quieres crearlo?`)) return null;
+  const cod = FABS_PED.reduce((m, f) => Math.max(m, f.codigo || 0), 0) + 1;
+  const { error } = await client.from("fabricantes").insert({ codigo: cod, nombre });
+  if (error) throw new Error("No se pudo crear el fabricante: " + error.message);
+  FABS_PED.push({ codigo: cod, nombre, nombre_comercial: null });
+  return cod;
+}
+// pone `proveedor` (código de fabricante) a cada línea del pedido que trae fabricante
+async function resolverFabricantesLineas(lineas) {
+  const por = {};
+  for (const l of lineas) {
+    const nom = (l.fabricante || "").trim(); if (!nom) continue;
+    const k = sinAcentos(nom);
+    if (!(k in por)) por[k] = await resolverFabricante(nom);
+    l.proveedor = por[k];
+  }
+}
+
 async function crearNuevaOrden() {
   const errorBox = document.getElementById("no_error");
   errorBox.style.display = "none";
   const tiendaId = document.getElementById("no_tienda").value;
   if (!tiendaId) { errorBox.textContent = "Selecciona una tienda."; errorBox.style.display = "block"; return; }
+
+  try { await resolverFabricantesLineas(lineasPdfNuevaOrden); }
+  catch (e) { errorBox.textContent = e.message; errorBox.style.display = "block"; return; }
 
   const { data, error } = await client.rpc("crear_orden_staff", {
     p_tienda_id: tiendaId,
@@ -1089,10 +1141,11 @@ async function completarConPedido(input) {
       return !existentes.some(e => { const comunes = [...t].filter(w => e.has(w)).length; return comunes >= Math.min(2, t.size, e.size) && comunes > 0; });
     });
     const resumen = (Object.keys(cambios).length ? "Datos que se rellenarán:\n" + Object.entries(cambios).map(([k, v]) => "  · " + etiquetas[k] + ": " + v).join("\n") : "No hay datos de cabecera vacíos que rellenar.")
-      + "\n\n" + (nuevas.length ? "Líneas que se añadirán (" + nuevas.length + "):\n" + nuevas.map(l => "  · " + l.cantidad + " × " + l.descripcion).join("\n") : "No hay líneas nuevas: las del pedido ya están en la orden.")
+      + "\n\n" + (nuevas.length ? "Líneas que se añadirán (" + nuevas.length + "):\n" + nuevas.map(l => "  · " + l.cantidad + " × " + l.descripcion + (l.fabricante ? " (" + l.fabricante + ")" : "")).join("\n") : "No hay líneas nuevas: las del pedido ya están en la orden.")
       + ((data.avisos || []).length ? "\n\nAvisos de la lectura:\n" + data.avisos.map(a => "  · " + a).join("\n") : "")
       + "\n\nEl pedido también se guardará en Documentos adjuntos. ¿Aplicar?";
     if (!confirm(resumen)) { estado.textContent = ""; return; }
+    await resolverFabricantesLineas(nuevas);   // antes de tocar nada: si se cancela, no se cambia la orden
     if (Object.keys(cambios).length) {
       const { error: e1 } = await client.from("ordenes").update(cambios).eq("anyo", anyo).eq("orden", orden);
       if (e1) throw new Error("No se pudo rellenar la cabecera: " + e1.message);
@@ -1100,7 +1153,7 @@ async function completarConPedido(input) {
     if (nuevas.length) {
       const { data: ult } = await client.from("linorden").select("linea").eq("anyo", anyo).eq("orden", orden).order("linea", { ascending: false }).limit(1).maybeSingle();
       let linea = ult?.linea || 0;
-      const { error: e2 } = await client.from("linorden").insert(nuevas.map(l => ({ anyo, orden, linea: ++linea, tipolinea: 1, articulo: ARTICULO_GENERICO_PDF, descripcion: l.descripcion, cantidad: l.cantidad || 1, porcentaje: 100 })));
+      const { error: e2 } = await client.from("linorden").insert(nuevas.map(l => ({ anyo, orden, linea: ++linea, tipolinea: 1, articulo: ARTICULO_GENERICO_PDF, descripcion: l.descripcion, cantidad: l.cantidad || 1, porcentaje: 100, proveedor: l.proveedor ?? null })));
       if (e2) throw new Error("No se pudieron añadir las líneas: " + e2.message);
     }
     const ruta = `${anyo}/${orden}/documentos/${Date.now()}_${nombreSeguroArchivo(archivo)}`;
