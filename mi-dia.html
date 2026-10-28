@@ -177,6 +177,19 @@ header .quien{font-size:.8rem;opacity:.85;flex:1;white-space:nowrap;overflow:hid
   <div class="botones" style="margin-top:10px"><button class="btn pl" onclick="cerrarPantalla('p_cobro')">Atrás</button></div>
 </div>
 
+<div class="pantalla" id="p_serv">
+  <h2>Servicios adicionales</h2>
+  <div id="s_cliente" style="color:var(--gris);margin-bottom:10px"></div>
+  <p style="color:var(--gris);margin:0 0 8px">Pon la cantidad en los que hayas hecho. Los que dejes vacíos no se apuntan.</p>
+  <div id="s_lista"></div>
+  <input id="s_otros_txt" placeholder="Otros: escribe qué has hecho" style="width:100%;font-size:1.05rem;padding:12px;border:2px solid #cbd5e1;border-radius:12px;margin-top:6px">
+  <div class="botones" style="margin-top:18px">
+    <button class="btn pl" onclick="cerrarPantalla('p_serv')">Atrás</button>
+    <button class="btn gr" onclick="guardarServicio()">✔ GUARDAR</button>
+  </div>
+  <p style="color:var(--gris);font-size:.88rem">Queda apuntado en la orden y la oficina recibe el aviso.</p>
+</div>
+
 <div class="pantalla" id="p_incid">
   <h2>¿Qué ha pasado?</h2>
   <div id="i_cliente" style="color:var(--gris);margin-bottom:10px"></div>
@@ -285,7 +298,7 @@ async function cargarPaquete(){
       .select("anyo, orden, importe_pendiente, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, telefono2_cli, num_pedido, estado, con_incidencia, fecha_prev_montaje, horamont, obs_albaran, equipo:ordenes_montadores(montador_id, montadores(nombre)), entregas(id, firmante_nombre, firmado_at, firma_storage_path), fotos:fotos_orden(id, storage_path, categoria, comentario, created_at)")
       .gte("fecha_prev_montaje", diaN(0)).lt("fecha_prev_montaje", diaN(2)).order("fecha_prev_montaje");
     if (error) throw error;
-    const lineas = {}, docs = {}, tiendas = {};
+    const lineas = {}, docs = {}, tiendas = {}, servicios = {};
     const porAnyo = {}; (data || []).forEach(o => (porAnyo[o.anyo] ||= []).push(o.orden));
     for (const [a, lst] of Object.entries(porAnyo)) {
       const { data: ls, error: el } = await client.from("linorden").select("anyo, orden, linea, tipolinea, descripcion, cantidad").eq("anyo", +a).in("orden", lst).neq("tipolinea", 4).order("linea");
@@ -294,6 +307,10 @@ async function cargarPaquete(){
       try {   // quién vendió el pedido (dependiente) y de qué tienda: lo da una función de la base de datos (el montador no lee esas tablas)
         const { data: ts } = await client.rpc("vendedores_de_mis_montajes", { p_anyo: +a, p_ordenes: lst });
         (ts || []).forEach(t => { tiendas[a + "/" + t.orden] = { dependiente: t.dependiente || "", tienda: t.tienda || "", tv: t.tel_dependiente || "", tt: t.tel_tienda || "", tl: t.tel_local || "" }; });
+      } catch(_){}
+      try {   // servicios adicionales ya apuntados
+        const { data: sv } = await client.from("servicios_orden").select("anyo, orden, concepto, cantidad, descripcion, creado_en").eq("anyo", +a).in("orden", lst).order("creado_en");
+        (sv || []).forEach(x => (servicios[x.anyo + "/" + x.orden] ||= []).push(x));
       } catch(_){}
       try {   // documentos que la oficina ha marcado como visibles para el montador
         const { data: ds } = await client.from("documentos_orden").select("anyo, orden, storage_path, nombre").eq("anyo", +a).in("orden", lst).eq("visible_montador", true).order("created_at");
@@ -309,7 +326,7 @@ async function cargarPaquete(){
       hecho:(o.entregas || []).length > 0,
       firmas:(o.entregas || []).filter(e => e.firma_storage_path).sort((a,b) => String(a.firmado_at).localeCompare(String(b.firmado_at))).map(e => ({ ruta:e.firma_storage_path, nombre:e.firmante_nombre, cuando:e.firmado_at })),
       fotos:(o.fotos || []).sort((a,b) => String(a.created_at).localeCompare(String(b.created_at))),
-      docs:docs[o.anyo + "/" + o.orden] || [], lineas:lineas[o.anyo + "/" + o.orden] || []
+      docs:docs[o.anyo + "/" + o.orden] || [], servicios:servicios[o.anyo + "/" + o.orden] || [], lineas:lineas[o.anyo + "/" + o.orden] || []
     }));
     paquete = { cargado:new Date().toISOString(), ordenes };
     await kvSet("paquete", paquete);
@@ -420,6 +437,39 @@ function bloqueCobro(o){
     colas.map(c => '<div class="dato"><b>' + (c.forma === "efectivo" ? "Efectivo" : "Datáfono") + '</b><span>' + euros(c.importe) + ' · pendiente de enviar</span></div>').join("") +
     (pen ? '<div class="botones"><button class="btn gr" onclick="abrirCobro(\'' + o.anyo + '/' + o.orden + '\')">💶 REGISTRAR COBRO</button></div>' : "") + '</div>';
 }
+const SERVICIOS = ["Agujeros", "Elementos", "Cierres", "Cortes", "Tacos"];
+const textoServ = x => x.concepto === "Otros" || !x.concepto ? (x.descripcion || "Otros") + (x.cantidad ? " × " + x.cantidad : "") : x.concepto + " × " + x.cantidad;
+function bloqueServicios(o){
+  const ya = o.servicios || [], colas = enCola(o, "servicio").flatMap(c => c.items);
+  return '<div class="sec"><h3>🔧 Servicios adicionales</h3>' +
+    (ya.length || colas.length ? ya.map(x => '<div class="dato"><b>' + esc(textoServ(x)) + '</b><span></span></div>').join("") +
+      colas.map(x => '<div class="dato"><b>' + esc(textoServ(x)) + '</b><span>pendiente de enviar</span></div>').join("")
+      : '<div style="color:var(--gris);margin-bottom:8px">Ninguno apuntado.</div>') +
+    '<div class="botones"><button class="btn az" onclick="abrirServicio(\'' + o.anyo + '/' + o.orden + '\')">➕ APUNTAR SERVICIO</button></div></div>';
+}
+let ordenServ = null;
+function abrirServicio(k){
+  ordenServ = buscar(k);
+  document.getElementById("s_cliente").textContent = ordenServ.nombre_cli + " · orden " + ordenServ.anyo + "/" + ordenServ.orden;
+  document.getElementById("s_lista").innerHTML = SERVICIOS.map((n, i) => '<div class="dato" style="align-items:center"><b>' + n + '</b><input id="s_c' + i + '" type="number" inputmode="numeric" min="0" placeholder="Cant." style="width:90px;font-size:1.2rem;padding:10px;border:2px solid #cbd5e1;border-radius:12px"></div>').join("") +
+    '<div class="dato" style="align-items:center"><b>Otros</b><input id="s_cotros" type="number" inputmode="numeric" min="0" placeholder="Cant." style="width:90px;font-size:1.2rem;padding:10px;border:2px solid #cbd5e1;border-radius:12px"></div>';
+  document.getElementById("s_otros_txt").value = "";
+  document.getElementById("p_serv").style.display = "block";
+}
+async function guardarServicio(){
+  const o = ordenServ, items = [];
+  SERVICIOS.forEach((n, i) => { const c = parseInt(document.getElementById("s_c" + i).value, 10); if (c > 0) items.push({ id:crypto.randomUUID(), concepto:n, cantidad:c, descripcion:null }); });
+  const co = parseInt(document.getElementById("s_cotros").value, 10) || 0, txt = document.getElementById("s_otros_txt").value.trim();
+  if (co > 0 || txt) {
+    if (!txt) { toast("En «Otros» escribe qué has hecho"); return; }
+    items.push({ id:crypto.randomUUID(), concepto:"Otros", cantidad:co > 0 ? co : 1, descripcion:txt });
+  }
+  if (!items.length) { toast("Pon la cantidad en algún servicio"); return; }
+  await colaAdd({ tipo:"servicio", anyo:o.anyo, orden:o.orden, items, ts:Date.now() });
+  cola = await colaAll(); cerrarPantalla("p_serv"); pintar(); pintarDetalle(); estadoBarra();
+  toast(navigator.onLine ? "✔ Servicios apuntados" : "✔ Guardado. Se enviará cuando haya cobertura", 5000);
+  enviarCola(false);
+}
 let ordenCobro = null;
 function abrirCobro(k){
   ordenCobro = buscar(k);
@@ -480,6 +530,7 @@ function pintarDetalle(){
       '</div></div>' +
     bloqueVendedor(o) +
     bloqueCobro(o) +
+    bloqueServicios(o) +
     '<div class="sec"><h3>Qué hay que montar</h3>' + (arts ? '<div class="arts" style="margin:0">' + arts + '</div>' : '<div style="color:var(--gris)">Sin artículos.</div>') +
       (o.obs ? '<div class="obs">📝 ' + esc(o.obs) + '</div>' : "") + '</div>' +
     (docs.length ? '<div class="sec"><h3>📄 Documentos de la oficina (' + docs.length + ')</h3>' + tiraFotos(docs, []) + '</div>' : "") +
@@ -654,6 +705,11 @@ async function enviarUno(it){
   } else if (it.tipo === "cobro") {   // la base de datos apunta el cobro y descuenta el pendiente; si se repite no cobra dos veces
     const { error } = await client.rpc("registrar_cobro_montador", { p_id:it.cobro_id, p_anyo:it.anyo, p_orden:it.orden, p_importe:it.importe, p_forma:it.forma });
     if (error) throw error;
+  } else if (it.tipo === "servicio") {
+    for (const x of it.items) {   // cada servicio lleva su propio id: si se repite por mala cobertura no se duplica
+      const { error } = await client.rpc("registrar_servicio_montador", { p_id:x.id, p_anyo:it.anyo, p_orden:it.orden, p_concepto:x.concepto, p_cantidad:x.cantidad, p_texto:x.descripcion });
+      if (error) throw error;
+    }
   } else if (it.tipo === "incidencia") {
     if (!it.incidencia_id) {   // la base de datos registra el aviso y decide el estado de la orden (Incidencia / Completado con incidencias)
       const { data, error } = await client.rpc("registrar_incidencia_montador", { p_anyo:it.anyo, p_orden:it.orden, p_tipo:it.motivo, p_descripcion:it.texto });
@@ -690,7 +746,7 @@ async function enviarCola(manual){
   if (hubo && !cola.length) { toast("✔ Todo enviado a la oficina"); cargarPaquete(); }
 }
 function abrirPendientes(){
-  const c = document.getElementById("pend_cuerpo"), nom = { foto:"Foto", firma:"Firma de terminado", incidencia:"Aviso de problema", cobro:"Cobro" };
+  const c = document.getElementById("pend_cuerpo"), nom = { foto:"Foto", firma:"Firma de terminado", incidencia:"Aviso de problema", cobro:"Cobro", servicio:"Servicio adicional" };
   c.innerHTML = cola.length ? cola.map(it => '<div class="tarjeta" style="border-left-color:' + (it.error ? "var(--rojo)" : "var(--naranja)") + '"><b>' + nom[it.tipo] + '</b> · orden ' + it.anyo + '/' + it.orden +
       (it.error ? '<br><span style="color:var(--rojo);font-size:.85rem">No se ha podido enviar: ' + esc(it.error) + '<br>Enséñaselo a la oficina.</span>' : '<br><span style="color:var(--gris);font-size:.85rem">Esperando cobertura</span>') + '</div>').join("")
     : '<div class="vacio">✔ No hay nada pendiente. Todo está enviado.</div>';

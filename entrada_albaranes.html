@@ -597,7 +597,7 @@ function confirmaReparto(){const d=DOCS[cur],R=d.reparto;const gid='g'+Date.now(
   if(!hijos.length)return toast('Asigna al menos una línea a un cliente.');
   const tot=[val(cur,'bultos_mano')||val(cur,'bultos_impresos'),val(cur,'peso_kg')];
   const nuevos=hijos.map((h,n)=>{const x=Object.assign({},d);x.reparto=null;x.esHijo=true;x.grupoHerm=gid;x.herm={n:n+1,t:hijos.length};
-    x.lineas=h.idxs.map(k=>d.lineas[k]);x.cliente_final=h.c.nombre;
+    x.lineas=h.idxs.map(k=>d.lineas[k]);x.cliente_final=h.c.nombre;x.pedido_fabricante=h.c.ref||'';   // el pedido del fabricante es de CADA cliente: no se hereda el del albarán completo (era el del primer cliente)
     const toks=[...ntoks(h.c.nombre)];
     x.refs=[h.c.nombre,h.c.ref].filter(Boolean).concat((d.refs||[]).filter(r=>toks.some(t=>norm(r).includes(t))&&r!==h.c.nombre));
     const sb=x.lineas.map(l=>l.bultos);x.bultos_impresos=sb.length&&sb.every(v=>v>0)?sb.reduce((p,q)=>p+q,0):null;

@@ -275,7 +275,9 @@ const CATALOGOS = {
     columnasLista: ["nombre", "activo", "especial"],
     cabeceras: { nombre: "Nombre", activo: "Activo", especial: "Entrada especial (recoge…)" },
     campos: [
-      { id: "nombre", label: "Nombre", requerido: true },
+      { id: "nombre", label: "Nombre (corto: el que sale en órdenes y listas)", requerido: true },
+      { id: "nombre_completo", label: "Nombre completo (solo sale en el DeCA)" },
+      { id: "dni", label: "DNI (solo sale en el DeCA)" },
       { id: "activo", label: "Activo (sale en la lista al asignar una orden)", tipo: "checkbox" },
       { id: "especial", label: "Entrada especial (Sin montador, Recoge cliente…)", tipo: "checkbox" },
     ],

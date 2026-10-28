@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link href="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 <style>
 :root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
 *{box-sizing:border-box;}
@@ -137,6 +138,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
   <button id="tabbtn_recepcion" class="activa" onclick="cambiarPestana('recepcion')">Recepción</button>
   <button id="tabbtn_movimientos" onclick="cambiarPestana('movimientos')">Últimas entradas registradas</button>
   <button id="tabbtn_albaranes" onclick="cambiarPestana('albaranes')">Albaranes del día</button>
+  <button id="tabbtn_atienda" onclick="cambiarPestana('atienda')">Albaranes por tienda</button>
 </div>
 
 <div id="pestana_recepcion">
@@ -211,6 +213,24 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
   <div id="lista_lineas_entrada" class="mini-list"><div class="meta">Todavía no has añadido ninguna línea.</div></div>
 </div>
 
+</div>
+
+<div id="pestana_atienda" style="display:none;">
+  <div class="tabla-scroll" style="margin-top:20px;">
+    <h4 style="margin:0 0 4px;">Albaranes por tienda</h4>
+    <p class="meta" style="margin:0 0 8px;">Albaranes ya confirmados, por fecha del albarán. Marca los que quieras y descárgalos en un solo PDF para enviárselo a la tienda.</p>
+    <div class="filtros-entradas">
+      <div><label>Tienda</label><select id="at_tienda" onchange="cargarAlbaranesTienda()"><option value="">Todas las tiendas</option></select></div>
+      <div><label>Desde</label><input id="at_desde" type="date" onchange="cargarAlbaranesTienda()"></div>
+      <div><label>Hasta</label><input id="at_hasta" type="date" onchange="cargarAlbaranesTienda()"></div>
+      <button class="secondary btn-mini" style="padding:8px 12px;" onclick="atMarcar(true)">Marcar todos</button>
+      <button class="secondary btn-mini" style="padding:8px 12px;" onclick="atMarcar(false)">Quitar marcas</button>
+      <button class="btn-mini" style="padding:8px 12px;" id="at_descargar" onclick="descargarAlbaranesTienda()">⬇ Descargar seleccionados (PDF)</button>
+      <button class="secondary btn-mini" style="padding:8px 12px;" onclick="correoTienda()">✉ Preparar correo</button>
+      <span id="at_aviso" class="meta" style="align-self:center;"></span>
+    </div>
+    <div id="at_tabla"></div>
+  </div>
 </div>
 
 <div id="pestana_albaranes" style="display:none;">
@@ -297,6 +317,9 @@ function cambiarPestana(p) {
   document.getElementById("pestana_albaranes").style.display = p === "albaranes" ? "block" : "none";
   document.getElementById("tabbtn_movimientos").classList.toggle("activa", p === "movimientos");
   document.getElementById("tabbtn_albaranes").classList.toggle("activa", p === "albaranes");
+  document.getElementById("pestana_atienda").style.display = p === "atienda" ? "block" : "none";
+  document.getElementById("tabbtn_atienda").classList.toggle("activa", p === "atienda");
+  if (p === "atienda") iniciarAlbaranesTienda();
   if (p === "movimientos") cargarMovimientos();
   if (p === "albaranes") { const d = document.getElementById("fa_dia"); if (!d.value) d.value = hoyLocal(); cargarAlbaranesDelDia(); }
 }
@@ -343,6 +366,76 @@ async function cargarAlbaranesDelDia() {
       const proc = l.estado === "pendiente" ? '<span class="meta">sin procesar</span>' : `${escAlb(l._proc)}<div class="meta" style="font-size:11px;">${l.estado === "descartada" ? "descartó" : "confirmó"} a las ${hm(cuando)}</div>`;
       return `<tr style="border-bottom:1px solid #e2e4eb;vertical-align:top;"><td style="padding:6px 8px;">${hm(l.creado_en)}</td><td>${escAlb((L.fabricante || "—").slice(0, 32))}</td><td>${escAlb(L.num_albaran || "—")}</td><td>${escAlb(String(L.cliente_final || (L.refs || [])[0] || "").slice(0, 30))}</td><td><span style="background:${c[1]};color:${c[2]};border-radius:10px;padding:1px 8px;font-size:11px;font-weight:600;">${c[0]}</span></td><td>${escAlb(l._sube)}</td><td>${proc}</td><td>${ords}</td><td><button class="secondary btn-mini" onclick="verAlbaranDia('${escAlb(l.archivo)}')">Ver albarán</button></td></tr>`;
     }).join("") + "</table>";
+}
+// --- albaranes por tienda: filtrar, marcar y bajar en un PDF para mandárselos a la tienda ---
+let atFilas = [], atTiendas = null;
+async function iniciarAlbaranesTienda() {
+  if (!atTiendas) {
+    const { data } = await client.from("tiendas").select("id, nombre, email").order("nombre");
+    atTiendas = data || [];
+    document.getElementById("at_tienda").innerHTML = '<option value="">Todas las tiendas</option>' + atTiendas.map(t => `<option value="${t.id}">${escAlb(t.nombre)}</option>`).join("");
+    const d = new Date(), h = hoyLocal(); d.setDate(1);
+    document.getElementById("at_desde").value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; document.getElementById("at_hasta").value = h;
+  }
+  cargarAlbaranesTienda();
+}
+const fechaAlb = v => v ? String(v).slice(8, 10) + "/" + String(v).slice(5, 7) + "/" + String(v).slice(0, 4) : "";
+async function cargarAlbaranesTienda() {
+  const caja = document.getElementById("at_tabla"), tid = document.getElementById("at_tienda").value;
+  const desde = document.getElementById("at_desde").value, hasta = document.getElementById("at_hasta").value;
+  caja.innerHTML = '<div class="meta">Cargando…</div>';
+  let q = client.from("albaranes_lecturas").select("id, archivo, fabricante, num_albaran, fecha_albaran, creado_en, tienda_id, lectura").eq("estado", "confirmada").limit(1000);
+  if (tid) q = q.eq("tienda_id", tid);
+  if (desde && hasta) q = q.or(`and(fecha_albaran.gte.${desde},fecha_albaran.lte.${hasta}),and(fecha_albaran.is.null,creado_en.gte.${desde},creado_en.lt.${hasta}T23:59:59)`);
+  else if (desde) q = q.or(`fecha_albaran.gte.${desde},and(fecha_albaran.is.null,creado_en.gte.${desde})`);
+  else if (hasta) q = q.or(`fecha_albaran.lte.${hasta},and(fecha_albaran.is.null,creado_en.lt.${hasta}T23:59:59)`);
+  const { data, error } = await q;
+  if (error) { caja.innerHTML = `<div class="error" style="display:block">No se pudo cargar: ${escAlb(error.message)}</div>`; return; }
+  atFilas = (data || []).filter(l => l.archivo && !(l.lectura && l.lectura.es_albaran === false))
+    .map(l => Object.assign(l, { _f: l.fecha_albaran || String(l.creado_en).slice(0, 10) }))
+    .sort((a, b) => a._f.localeCompare(b._f) || String(a.creado_en).localeCompare(String(b.creado_en)));
+  const nom = Object.fromEntries((atTiendas || []).map(t => [t.id, t.nombre]));
+  document.getElementById("at_aviso").textContent = atFilas.length + " albarán(es)";
+  if (!atFilas.length) { caja.innerHTML = '<div class="meta" style="padding:10px 0;">No hay albaranes confirmados con esos filtros.</div>'; return; }
+  caja.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
+    <tr style="background:#eff6ff;color:#1e3a8a;text-align:left;"><th style="padding:6px 8px;width:30px;"></th><th>Fecha</th><th>Tienda</th><th>Fabricante</th><th>Albarán</th><th>Cliente</th><th></th></tr>` +
+    atFilas.map((l, i) => { const L = l.lectura || {};
+      return `<tr style="border-bottom:1px solid #e2e4eb;vertical-align:top;"><td style="padding:6px 8px;"><input type="checkbox" class="at_chk" data-i="${i}" style="width:auto;" onchange="atContar()"></td><td>${fechaAlb(l._f)}</td><td>${escAlb(nom[l.tienda_id] || "—")}</td><td>${escAlb((l.fabricante || L.fabricante || "—").slice(0, 32))}</td><td>${escAlb(l.num_albaran || L.num_albaran || "—")}</td><td>${escAlb(String(L.cliente_final || (L.refs || [])[0] || "").slice(0, 30))}</td><td><button class="secondary btn-mini" onclick="verAlbaranDia('${escAlb(l.archivo)}')">Ver</button></td></tr>`;
+    }).join("") + "</table>";
+}
+function atMarcar(v) { document.querySelectorAll(".at_chk").forEach(c => c.checked = v); atContar(); }
+function atSeleccion() { return [...document.querySelectorAll(".at_chk:checked")].map(c => atFilas[+c.dataset.i]); }
+function atContar() { const n = atSeleccion().length; document.getElementById("at_aviso").textContent = atFilas.length + " albarán(es)" + (n ? " · " + n + " marcado(s)" : ""); }
+async function descargarAlbaranesTienda() {
+  const sel = atSeleccion();
+  if (!sel.length) { alert("Marca primero los albaranes que quieras descargar."); return; }
+  const btn = document.getElementById("at_descargar"), txt = btn.textContent; btn.disabled = true; btn.textContent = "Preparando PDF…";
+  try {
+    const rutas = [...new Set(sel.map(l => l.archivo))];   // varias lecturas pueden salir de la misma hoja: se incluye una vez
+    const { data: urls, error } = await client.storage.from("albaranes").createSignedUrls(rutas, 600);
+    if (error) throw error;
+    const { PDFDocument } = PDFLib, doc = await PDFDocument.create(), A4 = [595, 842];
+    for (const u of urls) {
+      if (!u.signedUrl) continue;
+      const bytes = await fetch(u.signedUrl).then(r => r.arrayBuffer());
+      if (/\.pdf$/i.test(u.path || "")) { const src = await PDFDocument.load(bytes); (await doc.copyPages(src, src.getPageIndices())).forEach(p => doc.addPage(p)); continue; }
+      const blob = new Blob([bytes]), bmp = await createImageBitmap(blob), cv = document.createElement("canvas");   // cualquier imagen (jpg, png, webp) pasa por aquí a JPEG
+      cv.width = bmp.width; cv.height = bmp.height; cv.getContext("2d").drawImage(bmp, 0, 0);
+      const img = await doc.embedJpg(await new Promise(r => cv.toBlob(b => b.arrayBuffer().then(r), "image/jpeg", 0.9)));
+      const k = Math.min((A4[0] - 30) / img.width, (A4[1] - 30) / img.height), w = img.width * k, h = img.height * k;
+      doc.addPage(A4).drawImage(img, { x: (A4[0] - w) / 2, y: (A4[1] - h) / 2, width: w, height: h });
+    }
+    const tienda = (atTiendas || []).find(t => t.id === document.getElementById("at_tienda").value);
+    const nombre = "Albaranes_" + (tienda ? tienda.nombre.replace(/[^A-Za-z0-9]+/g, "_") : "varias_tiendas") + "_" + hoyLocal() + ".pdf";
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([await doc.save()], { type: "application/pdf" })); a.download = nombre; a.click();
+  } catch (e) { alert("No se pudo preparar el PDF: " + (e.message || e)); }
+  btn.disabled = false; btn.textContent = txt;
+}
+function correoTienda() {
+  const t = (atTiendas || []).find(x => x.id === document.getElementById("at_tienda").value);
+  if (!t) { alert("Elige primero una tienda en el filtro."); return; }
+  if (!t.email) { alert("Esta tienda no tiene email guardado (se puede añadir en Sistema → Tiendas)."); return; }
+  location.href = "mailto:" + t.email + "?subject=" + encodeURIComponent("Albaranes de entrada - ALMMA") + "&body=" + encodeURIComponent("Hola,\n\nTe adjunto los albaranes de la mercancía recibida.\n\nUn saludo.");
 }
 async function verAlbaranDia(ruta) {
   const { data, error } = await client.storage.from("albaranes").createSignedUrl(ruta, 300);

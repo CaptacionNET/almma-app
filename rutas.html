@@ -75,6 +75,7 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
 
 <script>
 const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
+let camiones = [], rutasCam = {};
 let miMontador = null, montadores = [], semanaIni = lunes(new Date()), ordenesSemana = [];
 
 function lunes(d){ d = new Date(d.getFullYear(), d.getMonth(), d.getDate()); const w = (d.getDay()+6)%7; d.setDate(d.getDate()-w); return d; }
@@ -90,8 +91,9 @@ async function iniciar(){
   document.getElementById("quien").textContent = st.nombre || user.email;
   if (st.es_admin) document.getElementById("btn_admin").style.display = "";
   if (st.es_montador) document.getElementById("btn_modo_mont").style.display = "";
-  const r = await client.from("montadores").select("id, nombre, activo, especial, staff_user_id").eq("activo", true).order("especial").order("nombre");
+  const r = await client.from("montadores").select("id, nombre, nombre_completo, dni, activo, especial, staff_user_id").eq("activo", true).order("especial").order("nombre");
   montadores = r.data || [];
+  try { const c = await client.from("camiones").select("id, matricula, nombre").eq("activo", true).order("matricula"); camiones = c.data || []; } catch(_){}
   miMontador = (montadores.find(m => m.staff_user_id === user.id) || {}).id || null;
   if (miMontador) document.getElementById("l_mios").style.display = "";
   cargarMontajes();
@@ -106,7 +108,9 @@ async function cargarMontajes(){
     .select("anyo, orden, nombre_cli, localidad_cli, estado, fecha_prev_montaje, horamont, ordenes_montadores(montador_id)")
     .gte("fecha_prev_montaje", iso(semanaIni)).lt("fecha_prev_montaje", iso(fin)).order("fecha_prev_montaje");
   if (error) { document.getElementById("montajes_tabla").innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
-  ordenesSemana = data || []; rellenarFiltros(); pintarMontajes();
+  ordenesSemana = data || []; rutasCam = {};
+  try { const rc = await client.from("rutas_camion").select("dia, equipo, camion_id").gte("dia", iso(semanaIni)).lt("dia", iso(fin)); (rc.data || []).forEach(x => rutasCam[x.dia + "|" + x.equipo] = x.camion_id); } catch(_){}
+  rellenarFiltros(); pintarMontajes();
 }
 const SIN_EQ = "SIN MONTADOR";
 function rellenarFiltros(){
@@ -137,7 +141,9 @@ function pintarMontajes(){
     const equipos = [...new Set(delDia.map(claveEquipo))].sort((a,b) => (a === SIN_EQ) - (b === SIN_EQ) || a.localeCompare(b));
     for (const eq of equipos) {
       const delEq = delDia.filter(o => claveEquipo(o) === eq).sort(porHora);
-      h += '<tr class="eq"><td colspan="7"><b>'+esc(eq)+'</b> <span class="muted">· '+delEq.length+' montaje'+(delEq.length>1?'s':'')+'</span> '+
+      const selCam = eq === SIN_EQ ? '' : ' Camión: <select data-d="'+d+'" data-e="'+esc(eq)+'" onchange="elegirCamion(this)"><option value="">— sin elegir —</option>'+
+        camiones.map(c => '<option value="'+c.id+'"'+(rutasCam[d+"|"+eq] === c.id ? ' selected' : '')+'>'+esc(c.matricula + (c.nombre ? " · " + c.nombre : ""))+'</option>').join("")+'</select> ';
+      h += '<tr class="eq"><td colspan="7"><b>'+esc(eq)+'</b> <span class="muted">· '+delEq.length+' montaje'+(delEq.length>1?'s':'')+'</span> '+selCam+
         (eq !== SIN_EQ ? '<button class="secondary" onclick="imprimirHoja(\''+d+'\',\''+eq.replace(/'/g,"")+'\',this)">Imprimir hoja (PDF con QR)</button>' : '')+'</td></tr>';
       for (const o of delEq) {
         const asig = o.ordenes_montadores.map(a => '<span class="chip">'+esc(nom[a.montador_id] || "?")+'<button title="Quitar" onclick="quitar('+o.anyo+','+o.orden+',\''+a.montador_id+'\')">×</button></span>').join("");
@@ -147,6 +153,12 @@ function pintarMontajes(){
     }
   }
   document.getElementById("montajes_tabla").innerHTML = h + '</table>';
+}
+async function elegirCamion(sel){
+  const dia = sel.dataset.d, equipo = sel.dataset.e;
+  const { error } = await client.from("rutas_camion").upsert({ dia, equipo, camion_id: sel.value || null });
+  if (error) { alert("No se pudo guardar el camión: " + error.message); return; }
+  rutasCam[dia + "|" + equipo] = sel.value || null;
 }
 async function anadir(anyo, orden, sel){
   if (!sel.value) return;
@@ -182,7 +194,7 @@ async function imprimirHoja(dia, equipo, btn){
     let det = [];
     for (const [a, lst] of Object.entries(porAnyo)) {
       const { data, error } = await client.from("ordenes")
-        .select("anyo, orden, nombre_cli, telefono_cli, telefono2_cli, domicilio_cli, localidad_cli, num_pedido, horamont, obs_albaran, observaciones, tiendas(nombre), linorden(linea, tipolinea, descripcion, cantidad, ubicacion, bultos, proveedor)")
+        .select("anyo, orden, nombre_cli, telefono_cli, telefono2_cli, domicilio_cli, localidad_cli, num_pedido, horamont, obs_albaran, observaciones, tiendas(nombre), linorden(linea, tipolinea, descripcion, cantidad, ubicacion, bultos, peso_kg, proveedor)")
         .eq("anyo", +a).in("orden", lst);
       if (error) throw error; det.push(...data);
     }
@@ -191,6 +203,10 @@ async function imprimirHoja(dia, equipo, btn){
     const fab = {};
     if (codigos.length) { const { data } = await client.from("fabricantes").select("codigo, nombre").in("codigo", codigos); (data||[]).forEach(f => fab[f.codigo] = f.nombre); }
 
+    const pesoTotal = Math.round(det.reduce((s, o) => s + o.linorden.filter(l => l.tipolinea !== 4).reduce((a, l) => a + (Number(l.peso_kg) || 0), 0), 0) * 100) / 100;
+    const ids = new Set(ords.flatMap(o => o.ordenes_montadores.map(a => a.montador_id)));
+    const personas = montadores.filter(m => ids.has(m.id)).slice(0, 4).map(m => (m.nombre_completo || m.nombre) + (m.dni ? "  -  DNI " + m.dni : ""));
+    const cam = camiones.find(c => c.id === rutasCam[dia + "|" + equipo]);
     const { data:{ user } } = await client.auth.getUser();
     const ruta = Date.now() + "-HOJA_" + equipo.replace(/[^A-Za-z0-9._-]/g, "_") + "_" + dia + ".pdf";
     const urlPublica = client.storage.from("deca-documentos").getPublicUrl(ruta).data.publicUrl;
@@ -200,13 +216,18 @@ async function imprimirHoja(dia, equipo, btn){
     const qr = await doc.embedPng(await fetch(generarQrDataUrl(urlPublica, 300)).then(r => r.arrayBuffer()));
     const W = 842, H = 595, M = 30, fechaLarga = new Date(dia + "T12:00").toLocaleDateString("es-ES", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
     const COL = { hora:M, orden:66, pedido:118, cli:222, tel:460, prov:548 }, L = { bul:66, ubi:100, desc:178, cant:500, fab:540 };
+    // hasta el 05/06/2026 la empresa facturaba con el CIF de la sociedad; desde el 06/06/2026 con el de Arturo Vera Sierra
+    const cif = dia >= "2026-06-06" ? "22690383D - Arturo Vera Sierra" : "E98819030";
     let page, y;
     const t = (s, x, yy, sz = 8.5, f = F) => page.drawText(limpiar(s), { x, y: yy, size: sz, font: f, color: rgb(0,0,0) });
     const nueva = () => {
       page = doc.addPage([W, H]);
-      t("C/.San Isidro 73 - 46133 - Meliana - Valencia   CIF: E98819030", M, H-30, 8);
+      t("C/.San Isidro 73 - 46133 - Meliana - Valencia   CIF: " + cif, M, H-30, 8);
       t("ALBARANES DIARIOS", M, H-48, 14, B); t("muebles almma", M+160, H-48, 10);
       t(fechaLarga, M, H-64, 10); t(equipo, M, H-82, 13, B);
+      t("MONTADORES:", 400, H-38, 8, B); personas.forEach((s, i) => t(s, 400, H-50 - i*11, 9));
+      t("CAMION: " + (cam ? cam.matricula : "________________"), M+200, H-82, 11, B);
+      t("PESO TOTAL: " + pesoTotal.toLocaleString("es-ES") + " kg", M+200, H-64, 11, B);
       page.drawImage(qr, { x: W-M-70, y: H-M-60, width: 70, height: 70 });
       y = H-104;
       page.drawRectangle({ x: M, y: y-4, width: W-2*M, height: 14, color: rgb(.86,.92,.99) });
@@ -223,7 +244,7 @@ async function imprimirHoja(dia, equipo, btn){
       const obs = o.obs_albaran || o.observaciones ? envolver(F, 8.5, "Observaciones: " + (o.obs_albaran || o.observaciones), 232) : [];
       const lineas = o.linorden.filter(l => l.tipolinea !== 4).sort((a,b) => a.linea - b.linea).map(l => ({ ubi: l.ubicacion || "", desc: envolver(F, 8.5, l.descripcion || "", 320), cant: l.cantidad ?? "", fab: envolver(F, 8.5, fab[l.proveedor] || "", 210), bul: l.bultos ?? "" }));
       const hCab = 12 + (nom.length + dir.length + obs.length) * 10.5, hLin = lineas.reduce((s,l) => s + Math.max(l.desc.length, l.fab.length) * 10.5, 0);
-      if (y - (hCab + hLin) < 36 && y < H-130) nueva();
+      if (y - (hCab + hLin + 30) < 36 && y < H-130) nueva();
       t(o.horamont || "-", COL.hora, y, 9, B); t(o.anyo + "/" + o.orden, COL.orden, y, 9, B);
       ped.forEach((s,i) => t(s, COL.pedido, y - i*10.5, 8.5));
       nom.forEach((s,i) => t(s, COL.cli, y - i*10.5, 9, B));
@@ -237,9 +258,12 @@ async function imprimirHoja(dia, equipo, btn){
         l.desc.forEach((s,i) => t(s, L.desc, y - i*10.5)); l.fab.forEach((s,i) => t(s, L.fab, y - i*10.5));
         y -= Math.max(l.desc.length, l.fab.length) * 10.5;
       }
+      if (y < 60) nueva();   // cuadro para anotar a mano las observaciones de ESTA orden
+      page.drawRectangle({ x: M, y: y-24, width: W-2*M, height: 26, borderColor: rgb(.45,.45,.45), borderWidth: .8 });
+      t("OBSERVACIONES:", M+4, y-7, 7.5, B); y -= 32;
       page.drawLine({ start:{x:M,y:y+3}, end:{x:W-M,y:y+3}, thickness:.5, color:rgb(.6,.6,.6) }); y -= 10;
     }
-    const pags = doc.getPages(); pags.forEach((p,i) => p.drawText("Página "+(i+1)+" de "+pags.length, { x: W-M-150, y: H-M-72, size: 8, font: F }));
+    const pags = doc.getPages(); pags.forEach((p,i) => p.drawText("Página "+(i+1)+" de "+pags.length, { x: W-M-80, y: 14, size: 8, font: F }));
     const bytes = await doc.save();
     const { error: eu } = await client.storage.from("deca-documentos").upload(ruta, new Blob([bytes], { type:"application/pdf" }), { contentType:"application/pdf" });
     if (eu) throw eu;

@@ -67,6 +67,7 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
   <button class="tab" data-t="usuarios">Usuarios y accesos</button>
   <button class="tab" data-t="control">Control del sistema</button>
   <button class="tab" data-t="tarifas">Tarifas</button>
+  <button class="tab" data-t="camiones">Camiones</button>
 </div>
 
 <div class="panel activa" id="p_resumen">
@@ -130,6 +131,18 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
   <div id="tf_editor" class="caja" style="display:none;margin-top:14px"></div>
 </div>
 
+<div class="panel" id="p_camiones">
+  <p class="muted" style="margin-top:0">Los camiones de la empresa. En «Listado de rutas» se elige cuál lleva cada equipo cada día, y su matrícula sale en la hoja de ruta (DeCA).</p>
+  <div class="caja" style="margin-bottom:14px">
+    <div class="barra" style="margin-bottom:0">
+      <input id="cm_matricula" placeholder="Matrícula (p. ej. 1234 ABC)" style="width:200px">
+      <input id="cm_nombre" placeholder="Nombre / descripción (opcional)" style="width:260px">
+      <button onclick="anadirCamion()">Añadir camión</button>
+    </div>
+  </div>
+  <div id="cm_tabla"><span class="muted">Cargando...</span></div>
+</div>
+
 <script>
 const client =supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
 let miMontador = null, montadores = [], semanaIni = lunes(new Date()), ordenesSemana = [];
@@ -155,7 +168,33 @@ async function iniciar(){
   const r = await client.from("montadores").select("id, nombre, activo, especial, staff_user_id").eq("activo", true).order("especial").order("nombre");
   montadores = r.data || [];
   miMontador = (montadores.find(m => m.staff_user_id === user.id) || {}).id || null;
-  cargarResumen(); cargarUsuarios(); cargarControl(); cargarTarifas();
+  cargarResumen(); cargarUsuarios(); cargarControl(); cargarTarifas(); cargarCamiones();
+}
+
+/* ---------- Camiones (matrícula de cada vehículo) ---------- */
+async function cargarCamiones(){
+  const el = document.getElementById("cm_tabla");
+  const { data, error } = await client.from("camiones").select("id, matricula, nombre, activo").order("matricula");
+  if (error) { el.innerHTML = '<span class="muted">Falta ejecutar el SQL 96 en Supabase.</span>'; return; }
+  if (!data.length) { el.innerHTML = '<span class="muted">Todavía no hay camiones. Añade el primero arriba.</span>'; return; }
+  el.innerHTML = '<table><tr><th>Matrícula</th><th>Nombre</th><th>Activo</th><th></th></tr>' + data.map(c =>
+    '<tr><td><input value="'+esc(c.matricula)+'" onchange="guardarCamion(\''+c.id+'\',{matricula:this.value.trim()})"></td>'
+    + '<td><input value="'+esc(c.nombre||"")+'" onchange="guardarCamion(\''+c.id+'\',{nombre:this.value.trim()||null})"></td>'
+    + '<td><input type="checkbox" '+(c.activo?"checked":"")+' onchange="guardarCamion(\''+c.id+'\',{activo:this.checked})"></td>'
+    + '<td><button class="secondary" onclick="borrarCamion(\''+c.id+'\')">Borrar</button></td></tr>').join("") + '</table>';
+}
+async function anadirCamion(){
+  const matricula = document.getElementById("cm_matricula").value.trim().toUpperCase();
+  if (!matricula) { alert("Escribe la matrícula."); return; }
+  const r = await client.from("camiones").insert({ matricula, nombre: document.getElementById("cm_nombre").value.trim() || null });
+  if (r.error) { alert(r.error.message); return; }
+  document.getElementById("cm_matricula").value = ""; document.getElementById("cm_nombre").value = "";
+  cargarCamiones();
+}
+async function guardarCamion(id, campos){ const r = await client.from("camiones").update(campos).eq("id", id); if (r.error) alert(r.error.message); }
+async function borrarCamion(id){
+  if (!confirm("¿Borrar este camión? Las rutas que lo tenían elegido se quedan sin camión. (Si solo está fuera de servicio, mejor desmarca «Activo».)")) return;
+  const r = await client.from("camiones").delete().eq("id", id); if (r.error) alert(r.error.message); else cargarCamiones();
 }
 
 /* ---------- Tarifas (PDF de consulta, asignadas a tiendas) ---------- */

@@ -213,6 +213,11 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
   <button class="secondary" onclick="logout()">Salir</button>
 </div>
 
+<details id="aviso_servicios" style="display:none;margin:12px 24px 0;background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:8px 14px;">
+  <summary style="cursor:pointer;font-weight:600;color:#92400e;" id="aviso_servicios_t"></summary>
+  <div id="aviso_servicios_l" style="margin-top:8px;font-size:13px;"></div>
+</details>
+
 <div class="barra">
   <div class="campo-mini" style="max-width:90px;">
     <label>Año desde</label>
@@ -443,6 +448,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
     <div class="form-grid">
       <div class="campo" style="grid-column:1/3;"><label>Texto Factura</label><input id="ch_textofactura"></div>
       <div class="campo" style="grid-column:1/3;"><label>Texto Albarán</label><input id="ch_obs_albaran"></div>
+      <div class="campo" style="grid-column:1/3;"><label>Servicios adicionales del montador</label><div class="meta" id="ch_servicios" style="font-size:13px;">-</div></div>
     </div>
 
     <div style="display:flex;gap:10px;margin-top:10px;">
@@ -653,6 +659,7 @@ async function comprobarSesion() {
   if (staffRow.solo_montajes) { window.location.href = "montador.html"; return; }
   staffUserId = staffRow.user_id;
   await llenarSelectEstado("filtro_estado", "");
+  cargarAvisoServicios();
   await cargarPedidos();   // sin filtros no carga nada: avisa de que hay que buscar
   document.getElementById("anyo_desde").value = new Date().getFullYear();   // "Año desde" ya puesto; solo hay que pulsar Buscar
 
@@ -1416,6 +1423,11 @@ async function abrirPanel(orden) {
     window._cobrosSuma = (cb || []).reduce((a, c) => a + Number(c.importe), 0);
     if (cb && cb.length) document.getElementById("ch_cobros_montador").textContent = "Cobrado por el montador: " + cb.map(c => Number(c.importe).toFixed(2) + " € " + (c.forma === "efectivo" ? "efectivo" : "datáfono") + " (" + new Date(c.cobrado_en).toLocaleDateString("es-ES") + ")").join(" · ");
   });
+  document.getElementById("ch_servicios").textContent = "-";
+  client.from("servicios_orden").select("id, concepto, cantidad, descripcion, creado_en, revisado").eq("anyo", o.anyo).eq("orden", o.orden).order("creado_en").then(({ data: sv }) => {
+    if (sv && sv.length) document.getElementById("ch_servicios").innerHTML = sv.map(x => "<b>" + escMont(x.concepto === "Otros" || !x.concepto ? (x.descripcion || "Otros") : x.concepto) + "</b> × " + (x.cantidad ?? 1) + " <span class='muted'>(" + new Date(x.creado_en).toLocaleDateString("es-ES") + ")</span>").join("<br>");
+    if (sv && sv.some(x => !x.revisado)) client.from("servicios_orden").update({ revisado: true }).eq("anyo", o.anyo).eq("orden", o.orden).then(() => cargarAvisoServicios());
+  });
   document.getElementById("ch_tipo_cobro").value = o.tipo_cobro || "";
   document.getElementById("ch_facturada").textContent = o.facturada === "S" ? "Sí" : "No";
   document.getElementById("ch_pendiente_facturar").checked = !!o.pendiente_facturar;
@@ -1525,6 +1537,27 @@ async function guardarCabecera() {
 // --- equipo de montadores de la orden (varias personas, con casillas) ---
 let montadoresAsignadosOriginal = [];
 
+/* Aviso encima de los filtros: órdenes donde el montador ha apuntado servicios adicionales que la oficina aún no ha visto.
+   Se quita solo al abrir la orden (o con «Marcar visto»). */
+async function cargarAvisoServicios(){
+  const box = document.getElementById("aviso_servicios");
+  const { data, error } = await client.from("servicios_orden").select("anyo, orden, concepto, cantidad, descripcion").eq("revisado", false).order("creado_en");
+  if (error || !data || !data.length) { box.style.display = "none"; return; }
+  const por = {}; data.forEach(x => (por[x.anyo + "/" + x.orden] ||= []).push(x));
+  const claves = Object.keys(por);
+  document.getElementById("aviso_servicios_t").textContent = "🔧 Órdenes con servicios adicionales (" + claves.length + ")";
+  document.getElementById("aviso_servicios_l").innerHTML = claves.map(k => {
+    const [a, n] = k.split("/");
+    return '<div style="padding:3px 0"><a href="pedidos.html?anyo=' + a + '&orden=' + n + '"><b>' + k + '</b></a> — ' +
+      por[k].map(x => escMont((x.concepto === "Otros" || !x.concepto ? (x.descripcion || "Otros") : x.concepto) + " × " + (x.cantidad ?? 1))).join(", ") +
+      ' <button class="secondary" style="padding:2px 8px;font-size:12px" onclick="marcarServiciosVistos(' + a + ',' + n + ')">Marcar visto</button></div>';
+  }).join("");
+  box.style.display = "block";
+}
+async function marcarServiciosVistos(anyo, orden){
+  await client.from("servicios_orden").update({ revisado: true }).eq("anyo", anyo).eq("orden", orden);
+  cargarAvisoServicios();
+}
 function escMont(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
 
 async function pintarMontadores(o) {

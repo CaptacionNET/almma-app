@@ -183,6 +183,8 @@ function hoja(c, lineas, ss, originales, tiendaPorId, ordenPorClave) {
   const s = ss[c.serie] || {};
   const proforma = c.tipo_factura === "proforma";
   const emisor = c.emisor || { nombre: s.emisor_nombre, nif: s.emisor_nif, direccion: s.emisor_direccion, cp_localidad: s.emisor_cp_localidad, iban: s.emisor_iban, con_cabecera: s.con_cabecera !== false };
+  // el CIF E98819030 dejó de usarse el 06/06/2026: desde esa fecha toda factura sale con el de Arturo Vera Sierra
+  if (emisor.nif === "E98819030" && String(c.ffactura || "").slice(0, 10) >= "2026-06-06") emisor.nif = "22690383D";
   const conCabecera = !proforma && emisor.con_cabecera !== false && !!emisor.nombre;
   const r = c.receptor || tiendaPorId[c.tienda_id] || {};
   const orig = c.rectifica_factura ? originales.find(o => o.anyo === c.rectifica_anyo && o.serie === c.rectifica_serie && o.factura === c.rectifica_factura) : null;
