@@ -125,7 +125,7 @@ const $ = id => document.getElementById(id);
 const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fd = d => d ? String(d).slice(0, 10).split("-").reverse().join("/") : "";
 const num = v => (Math.round(Number(v) * 100) / 100).toString().replace(".", ",");
-let TIENDAS = [], FABS = [], MOV = [], vista = "stock";
+let TIENDAS = [], FABS = [], T_ACT = null, F_ACT = null, MOV = [], vista = "stock";
 const tn = id => (TIENDAS.find(t => t.id === id) || {}).nombre || "";
 const fn = c => c == null ? "" : ((FABS.find(f => f.codigo === c) || {}).nombre || String(c));
 const fabCod = txt => { txt = String(txt || "").trim(); if (!txt) return null; const m = txt.match(/\((\d+)\)\s*$/); if (m) return +m[1]; const f = FABS.find(x => String(x.nombre).toLowerCase() === txt.toLowerCase()); return f ? f.codigo : (/^\d+$/.test(txt) ? +txt : null); };
@@ -152,8 +152,15 @@ async function iniciar() {
     TIENDAS = await paginar(() => client.from("tiendas").select("id, nombre").order("nombre"));
     FABS = await paginar(() => client.from("fabricantes").select("codigo, nombre").order("nombre"));
   } catch (e) { $("aviso").textContent = "Error cargando catálogos: " + e.message; }
-  $("f_tienda").innerHTML = '<option value="">Todas</option>' + TIENDAS.map(t => '<option value="' + t.id + '">' + esc(t.nombre) + '</option>').join("");
-  $("dl_fab").innerHTML = FABS.map(f => '<option value="' + esc(f.nombre + " (" + f.codigo + ")") + '">').join("");
+  // solo tiendas y fabricantes con pedidos en los últimos 2 años (SQL 103; sin él se ven todos)
+  try {
+    const desde = new Date().getFullYear() - 1;
+    const [rt, rf] = await Promise.all([client.rpc("tiendas_activas", { p_anyo_desde: desde }), client.rpc("fabricantes_activos", { p_anyo_desde: desde })]);
+    if (!rt.error) T_ACT = new Set((rt.data || []).map(x => x.id));
+    if (!rf.error) F_ACT = new Set((rf.data || []).map(x => x.codigo));
+  } catch (_) {}
+  $("f_tienda").innerHTML = '<option value="">Todas</option>' + TIENDAS.filter(t => !T_ACT || T_ACT.has(t.id)).map(t => '<option value="' + t.id + '">' + esc(t.nombre) + '</option>').join("");
+  $("dl_fab").innerHTML = FABS.filter(f => !F_ACT || F_ACT.has(f.codigo)).map(f => '<option value="' + esc(f.nombre + " (" + f.codigo + ")") + '">').join("");
   await cargar();
 }
 async function cargar() {
@@ -216,18 +223,19 @@ function formulario() {
   $("modal").innerHTML = '<div class="mbox"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">' + (FORM.id ? "Editar movimiento" : ent ? "➕ Entrada de devolución" : "➖ Salida de cambios") + '</h3><button class="secondary" onclick="cerrar()">✕</button></div>' +
     '<div class="fg" style="margin-top:12px">' +
     '<div><label>Fecha ' + (ent ? "de entrada" : "de salida") + '</label><input id="c_fecha" type="date" value="' + esc(String(c.fecha || "").slice(0, 10)) + '"></div>' +
-    '<div><label>Tienda</label><select id="c_tienda"><option value="">— elegir —</option>' + TIENDAS.map(t => '<option value="' + t.id + '"' + (c.tienda_id === t.id ? " selected" : "") + '>' + esc(t.nombre) + '</option>').join("") + '</select></div>' +
+    '<div><label>Tienda</label><select id="c_tienda"><option value="">— elegir —</option>' + TIENDAS.filter(t => !T_ACT || T_ACT.has(t.id) || t.id === c.tienda_id).map(t => '<option value="' + t.id + '"' + (c.tienda_id === t.id ? " selected" : "") + '>' + esc(t.nombre) + '</option>').join("") + '</select></div>' +
     '<div><label>Fabricante</label><input id="c_fab" list="dl_fab" value="' + esc(fabTxt(c.fabricante)) + '"></div>' +
     '<div><label>Nº albarán</label><input id="c_alb" value="' + esc(c.albaran) + '"></div>' +
     '<div><label>Fecha albarán</label><input id="c_falb" type="date" value="' + esc(String(c.fecha_albaran || "").slice(0, 10)) + '"></div>' +
     '<div><label>Pedido del fabricante</label><input id="c_ped" value="' + esc(c.pedido_fabricante) + '"></div>' +
     '<div><label>Cliente final</label><input id="c_cli" value="' + esc(c.cliente_final) + '"></div>' +
-    '<div><label>De la orden (año)</label><input id="c_oa" type="number" value="' + esc(c.orden_anyo ?? new Date().getFullYear()) + '"></div>' +
-    '<div><label>De la orden (nº)</label><input id="c_on" type="number" value="' + esc(c.orden_num ?? "") + '"></div>' +
+    '<div><label>De la orden (año)</label><input id="c_oa" type="number" value="' + esc(c.orden_anyo ?? new Date().getFullYear()) + '" onchange="buscarOrden()"></div>' +
+    '<div><label>De la orden (nº)</label><input id="c_on" type="number" value="' + esc(c.orden_num ?? "") + '" onchange="buscarOrden()"></div>' +
     '<div><label>Bultos</label><input id="c_bul" type="number" value="' + esc(c.bultos ?? "") + '"></div>' +
     '<div><label>Peso total (kg)</label><input id="c_peso" type="number" step="0.01" value="' + esc(c.peso_kg ?? "") + '"></div>' +
     '<div><label>Ubicación</label><input id="c_ubi" value="' + esc(c.ubicacion) + '"></div>' +
     '<div style="grid-column:1/-1"><label>Observaciones</label><input id="c_obs" value="' + esc(c.observaciones) + '"></div></div>' +
+    '<div id="c_ordinfo" class="nota"></div><div id="c_ordlineas"></div>' +
     '<div class="nota">La orden es solo una referencia: no se modifica ni cambia de estado. Déjala en blanco si no hay orden.</div>' +
     '<h4 style="margin:12px 0 6px">Líneas</h4><div id="c_lineas"></div>' +
     (FORM.id ? "" : '<button class="secondary peq" onclick="addLinea()">+ Añadir línea</button>') +
@@ -237,6 +245,30 @@ function formulario() {
 function leeLineas() { document.querySelectorAll("#c_lineas .lin").forEach((r, i) => { FORM.lineas[i] = { articulo: r.children[0].value, descripcion: r.children[1].value, cantidad: r.children[2].value }; }); }
 function pintaLineas() {
   $("c_lineas").innerHTML = FORM.lineas.map((l, i) => '<div class="lin"><input placeholder="Artículo" value="' + esc(l.articulo) + '"><input placeholder="Descripción" value="' + esc(l.descripcion) + '"><input type="number" step="0.01" min="0" placeholder="Cant." value="' + esc(l.cantidad) + '">' + (FORM.id ? "<span></span>" : '<button class="secondary peq" onclick="quitaLinea(' + i + ')">🗑</button>') + '</div>').join("");
+}
+/* Al poner la orden: se rellenan cliente, tienda, fabricante y pedido, y se ofrecen sus líneas para elegir. Solo se LEE la orden. */
+let ORD_LIN = [];
+async function buscarOrden() {
+  const a = +$("c_oa").value, n = +$("c_on").value, info = $("c_ordinfo"), box = $("c_ordlineas");
+  box.innerHTML = ""; ORD_LIN = [];
+  if (!a || !n) { info.textContent = ""; return; }
+  info.textContent = "Buscando la orden…";
+  const { data: o, error } = await client.from("ordenes").select("anyo, orden, nombre_cli, tienda_id, proveedor, num_pedido, estado").eq("anyo", a).eq("orden", n).maybeSingle();
+  if (error || !o) { info.innerHTML = '<span style="color:#b91c1c">No encuentro la orden ' + a + '/' + n + '.</span>'; return; }
+  const { data: ls } = await client.from("linorden").select("linea, articulo, descripcion, cantidad, proveedor").eq("anyo", a).eq("orden", n).eq("tipolinea", 1).order("linea");
+  ORD_LIN = ls || [];
+  const poner = (id, v) => { if (v != null && v !== "") $(id).value = v; };
+  poner("c_cli", o.nombre_cli); poner("c_tienda", o.tienda_id); poner("c_ped", o.num_pedido);
+  const fab = o.proveedor != null ? o.proveedor : (ORD_LIN[0] || {}).proveedor; if (fab != null && fab !== "") $("c_fab").value = fabTxt(Number(fab));
+  info.innerHTML = '✔ Orden <b>' + a + '/' + n + '</b> · ' + esc(o.nombre_cli || "sin cliente") + ' · ' + esc(tn(o.tienda_id)) + (ORD_LIN.length ? ' — marca las líneas que se devuelven:' : ' — la orden no tiene líneas de mercancía.');
+  box.innerHTML = ORD_LIN.map((l, i) => '<label style="display:flex;gap:8px;align-items:center;padding:5px 8px;border:1px solid #bfdbfe;border-radius:6px;margin-bottom:4px;background:#f5f9ff;font-size:13px"><input type="checkbox" style="width:auto" onchange="elegirLinea(' + i + ',this.checked)"><span style="flex:1">' + esc(l.articulo || "") + ' · ' + esc(l.descripcion || "") + '</span><b>× ' + num(l.cantidad ?? 1) + '</b></label>').join("");
+}
+function elegirLinea(i, on) {
+  leeLineas(); const l = ORD_LIN[i], vacia = x => !String(x.articulo || "").trim() && !String(x.descripcion || "").trim();
+  const k = (l.articulo || "") + "|" + (l.descripcion || "");
+  if (on) { const nuevo = { articulo: l.articulo || "", descripcion: l.descripcion || "", cantidad: l.cantidad ?? 1 }; const h = FORM.lineas.findIndex(vacia); if (h >= 0) FORM.lineas[h] = nuevo; else FORM.lineas.push(nuevo); }
+  else { FORM.lineas = FORM.lineas.filter(x => (x.articulo || "") + "|" + (x.descripcion || "") !== k); if (!FORM.lineas.length) FORM.lineas.push({ articulo: "", descripcion: "", cantidad: 1 }); }
+  pintaLineas();
 }
 function addLinea() { leeLineas(); FORM.lineas.push({ articulo: "", descripcion: "", cantidad: 1 }); pintaLineas(); }
 function quitaLinea(i) { leeLineas(); FORM.lineas.splice(i, 1); if (!FORM.lineas.length) FORM.lineas.push({ articulo: "", descripcion: "", cantidad: 1 }); pintaLineas(); }
