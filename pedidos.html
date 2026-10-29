@@ -718,7 +718,11 @@ async function llenarSelectEstado(selectId, valorActual) {
 }
 
 async function llenarSelectTiendaCabecera(tiendaIdActual) {
-  const tiendas = await cargarTodasTiendas();
+  let tiendas = await cargarTodasTiendas();
+  try {   // solo tiendas con pedidos en los últimos 2 años + la de esta orden (SQL 103; sin él se ven todas)
+    const r = await client.rpc("tiendas_activas", { p_anyo_desde: new Date().getFullYear() - 1 });
+    if (!r.error) { const act = new Set((r.data || []).map(x => x.id)); tiendas = tiendas.filter(t => act.has(t.id) || t.id === tiendaIdActual); }
+  } catch (_) {}
   const sel = document.getElementById("ch_tienda");
   sel.innerHTML = '<option value="">-- sin asignar --</option>' +
     tiendas.map(t => `<option value="${t.id}">${t.nombre}</option>`).join("");

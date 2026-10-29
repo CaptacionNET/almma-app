@@ -149,7 +149,9 @@ async function iniciar() {
   if (st.es_montador) $("btn_modo_mont").style.display = "";
   const { data: ts } = await client.from("tiendas").select("id, nombre").order("nombre");
   (ts || []).forEach(t => { tiendas[t.id] = t.nombre; });
-  $("f_tienda").innerHTML = '<option value="">Todas</option>' + (ts || []).map(t => '<option value="' + t.id + '">' + esc(t.nombre) + '</option>').join("");
+  let act = null;   // solo tiendas con pedidos en los últimos 2 años (SQL 103; sin él se ven todas)
+  try { const r = await client.rpc("tiendas_activas", { p_anyo_desde: new Date().getFullYear() - 1 }); if (!r.error) act = new Set((r.data || []).map(x => x.id)); } catch (_) {}
+  $("f_tienda").innerHTML = '<option value="">Todas</option>' + (ts || []).filter(t => !act || act.has(t.id)).map(t => '<option value="' + t.id + '">' + esc(t.nombre) + '</option>').join("");
   const q = new URLSearchParams(location.search);
   if (q.get("orden")) $("f_orden").value = q.get("orden");
   if (q.get("anyo")) $("f_anyo").value = q.get("anyo");

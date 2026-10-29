@@ -307,7 +307,9 @@ async function comprobarSesion() {
   document.getElementById("ent_fecha").value = new Date().toISOString().slice(0, 10);
 
   const { data: fabricantes } = await client.from("fabricantes").select("codigo, nombre").order("nombre");
-  document.getElementById("dl_fabricantes").innerHTML = (fabricantes || []).map(f => `<option value="${(f.nombre || "").replace(/"/g, "&quot;")}">`).join("");
+  let actF = null;   // solo fabricantes con pedidos en los últimos 2 años (SQL 103; sin él se ven todos)
+  try { const r = await client.rpc("fabricantes_activos", { p_anyo_desde: new Date().getFullYear() - 1 }); if (!r.error) actF = new Set((r.data || []).map(x => x.codigo)); } catch (_) {}
+  document.getElementById("dl_fabricantes").innerHTML = (fabricantes || []).filter(f => !actF || actF.has(f.codigo)).map(f => `<option value="${(f.nombre || "").replace(/"/g, "&quot;")}">`).join("");
   (fabricantes || []).forEach(f => { if (f.nombre) { fabricantesPorNombre[f.nombre.toLowerCase()] = f.codigo; fabricantesPorCodigo[f.codigo] = f.nombre; } });
 }
 
@@ -374,7 +376,9 @@ async function iniciarAlbaranesTienda() {
   if (!atTiendas) {
     const { data } = await client.from("tiendas").select("id, nombre, email").order("nombre");
     atTiendas = data || [];
-    document.getElementById("at_tienda").innerHTML = '<option value="">Todas las tiendas</option>' + atTiendas.map(t => `<option value="${t.id}">${escAlb(t.nombre)}</option>`).join("");
+    let act = null;   // solo tiendas con pedidos en los últimos 2 años (SQL 103; sin él se ven todas)
+    try { const r = await client.rpc("tiendas_activas", { p_anyo_desde: new Date().getFullYear() - 1 }); if (!r.error) act = new Set((r.data || []).map(x => x.id)); } catch (_) {}
+    document.getElementById("at_tienda").innerHTML = '<option value="">Todas las tiendas</option>' + atTiendas.filter(t => !act || act.has(t.id)).map(t => `<option value="${t.id}">${escAlb(t.nombre)}</option>`).join("");
     const d = new Date(), h = hoyLocal(); d.setDate(1);
     document.getElementById("at_desde").value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; document.getElementById("at_hasta").value = h;
   }
