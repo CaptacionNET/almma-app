@@ -102,12 +102,19 @@ header .quien{font-size:.8rem;opacity:.85;flex:1;white-space:nowrap;overflow:hid
 <header>
   <span class="marca">ALMMA</span><span class="quien" id="quien"></span>
   <button id="btn_oficina" style="display:none;border:none;border-radius:10px;padding:8px 12px;font-weight:700;background:#334155;color:#fff" onclick="location.href='pedidos.html'">🏢 Oficina</button>
+  <button style="border:none;border-radius:10px;padding:8px 12px;font-weight:700;background:#334155;color:#fff" onclick="location.href='perfil.html'">👤 Perfil</button>
   <button id="estado" class="sin" onclick="abrirPendientes()">…</button>
 </header>
 <div id="aviso_instalar"></div>
 <div class="dias">
-  <button id="d0" class="on" onclick="verDia(0)">HOY<small id="n0"></small></button>
-  <button id="d1" onclick="verDia(1)">MAÑANA<small id="n1"></small></button>
+  <button id="d0" onclick="verDia(0)">AYER<small id="n0"></small></button>
+  <button id="d1" class="on" onclick="verDia(1)">HOY<small id="n1"></small></button>
+  <button id="d2" onclick="verDia(2)"><span id="t2">MAÑANA</span><small id="n2"></small></button>
+  <button id="d3" onclick="verDia(3)" style="display:none">📅 FECHA<small id="n3"></small></button>
+</div>
+<div class="filtro" id="filtro_fecha" style="display:none;align-items:center">
+  <span style="font-weight:800;font-size:.9rem">Ver el día:</span>
+  <input type="date" id="fecha_libre" onchange="elegirFecha(this.value)" style="flex:1;font-size:1.05rem;padding:8px;border:2px solid #475569;border-radius:12px">
 </div>
 <div class="filtro" id="filtro">
   <button id="f_mios" class="on" onclick="verEquipos(false)">Solo los míos</button>
@@ -183,6 +190,10 @@ header .quien{font-size:.8rem;opacity:.85;flex:1;white-space:nowrap;overflow:hid
   <p style="color:var(--gris);margin:0 0 8px">Pon la cantidad en los que hayas hecho. Los que dejes vacíos no se apuntan.</p>
   <div id="s_lista"></div>
   <input id="s_otros_txt" placeholder="Otros: escribe qué has hecho" style="width:100%;font-size:1.05rem;padding:12px;border:2px solid #cbd5e1;border-radius:12px;margin-top:6px">
+  <h2 style="margin-top:22px">♻ Recogidas</h2>
+  <p style="color:var(--gris);margin:0 0 8px">Lo que te has llevado de casa del cliente. Puedes poner varias cosas (ej.: 2 sofás y 1 colchón).</p>
+  <div id="r_lista"></div>
+  <input id="r_otros_txt" placeholder="Otros: escribe qué has recogido" style="width:100%;font-size:1.05rem;padding:12px;border:2px solid #cbd5e1;border-radius:12px;margin-top:6px">
   <div class="botones" style="margin-top:18px">
     <button class="btn pl" onclick="cerrarPantalla('p_serv')">Atrás</button>
     <button class="btn gr" onclick="guardarServicio()">✔ GUARDAR</button>
@@ -226,6 +237,12 @@ const client = supabase.createClient(URL_SB, KEY_SB, { auth: { persistSession: t
 const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const ISO = d => d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
 const diaN = n => { const d = new Date(); d.setDate(d.getDate() + n); return ISO(d); };
+// «Mañana» 
+// (hay sábados que se trabajan): si mañana es sábado o domingo, «Mañana» enseña también los días hasta el lunes
+const diaSig = () => { const g = n => { const d = new Date(); d.setDate(d.getDate() + n); return d.getDay(); }; let n = 1; if (g(1) === 6 || g(1) === 0) while (g(n) !== 1) n++; return n; };   // último día que cubre «Mañana»
+const diasSig = () => { const l = []; for (let i = 1; i <= diaSig(); i++) l.push(diaN(i)); return l; };
+const NOMBRE_DIA = f => ["DOM","LUN","MAR","MIÉ","JUE","VIE","SÁB"][new Date(f + "T12:00:00").getDay()];
+let fechaLibre = null;   // solo administradores: cualquier otro día
 
 /* ---------- Almacén en el móvil (IndexedDB): datos del día y cola de envíos ---------- */
 const idb = new Promise((ok, ko) => {
@@ -242,7 +259,7 @@ const colaAdd = async it => req2p((await st("cola","readwrite")).add(it));
 const colaPut = async it => req2p((await st("cola","readwrite")).put(it));
 const colaDel = async id => req2p((await st("cola","readwrite")).delete(id));
 
-let uid = null, nombreMontador = "", paquete = null, cola = [], diaVista = 0, sincronizando = false;
+let uid = null, nombreMontador = "", paquete = null, cola = [], diaVista = 1, sincronizando = false;
 let esAdmin = false, verTodos = false, detalleK = null;
 const urls = {};   // enlaces temporales de fotos y documentos (solo con cobertura)
 
@@ -272,8 +289,8 @@ async function iniciar(){
   }
   if (!uid) { mensaje("📵 Sin cobertura y sin haber entrado nunca en este móvil.<br>Conéctate una vez para entrar."); return; }
   try { const { data: st } = await client.from("staff").select("solo_montajes, solo_deca").eq("user_id", uid).maybeSingle();
-    if (st && !st.solo_montajes && !st.solo_deca) { esAdmin = true; document.getElementById("btn_oficina").style.display = ""; document.getElementById("filtro").style.display = "flex"; await kvSet("esAdmin", true); } } catch(_){}
-  if (!esAdmin && await kvGet("esAdmin")) { esAdmin = true; document.getElementById("btn_oficina").style.display = ""; document.getElementById("filtro").style.display = "flex"; }
+    if (st && !st.solo_montajes && !st.solo_deca) { esAdmin = true; document.getElementById("btn_oficina").style.display = ""; document.getElementById("filtro").style.display = "flex"; document.getElementById("filtro_fecha").style.display = "flex"; document.getElementById("d3").style.display = ""; await kvSet("esAdmin", true); } } catch(_){}
+  if (!esAdmin && await kvGet("esAdmin")) { esAdmin = true; document.getElementById("btn_oficina").style.display = ""; document.getElementById("filtro").style.display = "flex"; document.getElementById("filtro_fecha").style.display = "flex"; document.getElementById("d3").style.display = ""; }
   verTodos = esAdmin && !!(await kvGet("verTodos"));
   marcarFiltro();
   nombreMontador = (await kvGet("nombre")) || "";
@@ -294,9 +311,15 @@ async function cargarPaquete(){
     if (yo) { nombreMontador = yo.nombre; await kvSet("nombre", yo.nombre); document.getElementById("quien").textContent = yo.nombre; }
     else { document.getElementById("quien").textContent = "Oficina"; if (!verTodos) verEquipos(true); }
     // los montadores solo reciben lo suyo (lo decide la seguridad de la base de datos); el administrador recibe todos los equipos
-    const { data, error } = await client.from("ordenes")
-      .select("anyo, orden, importe_pendiente, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, telefono2_cli, num_pedido, estado, con_incidencia, fecha_prev_montaje, horamont, obs_albaran, equipo:ordenes_montadores(montador_id, montadores(nombre)), entregas(id, firmante_nombre, firmado_at, firma_storage_path), fotos:fotos_orden(id, storage_path, categoria, comentario, created_at)")
-      .gte("fecha_prev_montaje", diaN(0)).lt("fecha_prev_montaje", diaN(2)).order("fecha_prev_montaje");
+    const sel = "anyo, orden, importe_pendiente, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, telefono2_cli, num_pedido, estado, con_incidencia, fecha_prev_montaje, horamont, obs_albaran, equipo:ordenes_montadores(montador_id, montadores(nombre)), entregas(id, firmante_nombre, firmado_at, firma_storage_path), fotos:fotos_orden(id, storage_path, categoria, comentario, created_at)";
+    const rangos = [[diaN(-1), diaN(diaSig() + 1)]];   // ayer … último día de «Mañana»
+    if (esAdmin && fechaLibre && (fechaLibre < rangos[0][0] || fechaLibre >= rangos[0][1])) { const f2 = new Date(fechaLibre + "T12:00:00"); f2.setDate(f2.getDate() + 1); rangos.push([fechaLibre, ISO(f2)]); }
+    let data = [], error = null;
+    for (const [d1, d2] of rangos) {
+      const r = await client.from("ordenes").select(sel).gte("fecha_prev_montaje", d1).lt("fecha_prev_montaje", d2).order("fecha_prev_montaje");
+      if (r.error) { error = r.error; break; }
+      data = data.concat(r.data || []);
+    }
     if (error) throw error;
     const lineas = {}, docs = {}, tiendas = {}, servicios = {};
     const porAnyo = {}; (data || []).forEach(o => (porAnyo[o.anyo] ||= []).push(o.orden));
@@ -309,7 +332,7 @@ async function cargarPaquete(){
         (ts || []).forEach(t => { tiendas[a + "/" + t.orden] = { dependiente: t.dependiente || "", tienda: t.tienda || "", tv: t.tel_dependiente || "", tt: t.tel_tienda || "", tl: t.tel_local || "" }; });
       } catch(_){}
       try {   // servicios adicionales ya apuntados
-        const { data: sv } = await client.from("servicios_orden").select("anyo, orden, concepto, cantidad, descripcion, creado_en").eq("anyo", +a).in("orden", lst).order("creado_en");
+        const { data: sv } = await client.from("servicios_orden").select("id, anyo, orden, concepto, cantidad, descripcion, creado_en").eq("anyo", +a).in("orden", lst).order("creado_en");
         (sv || []).forEach(x => (servicios[x.anyo + "/" + x.orden] ||= []).push(x));
       } catch(_){}
       try {   // documentos que la oficina ha marcado como visibles para el montador
@@ -350,7 +373,8 @@ async function pedirUrls(rutas){
 const esImagen = r => /\.(jpe?g|png|webp|heic|gif)$/i.test(r || "");
 
 /* ---------- Inicio: una tarjeta por montaje ---------- */
-function verDia(n){ diaVista = n; document.getElementById("d0").classList.toggle("on", n === 0); document.getElementById("d1").classList.toggle("on", n === 1); pintar(); }
+function verDia(n){ diaVista = n; [0,1,2,3].forEach(i => document.getElementById("d" + i).classList.toggle("on", n === i)); if (n === 3 && !fechaLibre) { const e = document.getElementById("fecha_libre"); fechaLibre = e.value || diaN(0); e.value = fechaLibre; cargarPaquete(); } pintar(); }
+function elegirFecha(v){ if (!v) return; fechaLibre = v; verDia(3); cargarPaquete(); }
 function enCola(o, tipo){ return cola.filter(c => c.tipo === tipo && c.anyo === o.anyo && c.orden === o.orden); }
 const buscar = k => paquete.ordenes.find(o => o.anyo + "/" + o.orden === k);
 function situacion(o){
@@ -369,22 +393,25 @@ function pintar(){
   document.getElementById("mensaje").style.display = "none";
   const lista = document.getElementById("lista");
   if (!paquete) { lista.innerHTML = '<div class="vacio">Cargando tus montajes…</div>'; return; }
-  const dias = [diaN(0), diaN(1)];
+  const sig = diasSig(), dias = [[diaN(-1)], [diaN(0)], sig, fechaLibre ? [fechaLibre] : []];
+  document.getElementById("t2").textContent = sig.length === 1 ? "MAÑANA" : sig.map(NOMBRE_DIA).join(" + ");
   const visibles = paquete.ordenes.filter(o => verTodos || o.mio || !esAdmin);
-  [0, 1].forEach(i => { const n = visibles.filter(o => o.dia === dias[i]).length; document.getElementById("n" + i).textContent = n + (n === 1 ? " montaje" : " montajes"); });
-  const hoy = visibles.filter(o => o.dia === dias[diaVista]).sort((a,b) => {
+  [0, 1, 2, 3].forEach(i => { const n = visibles.filter(o => dias[i].includes(o.dia)).length; document.getElementById("n" + i).textContent = (i === 3 && !dias[i].length) ? "" : n + (n === 1 ? " montaje" : " montajes"); });
+  const hoy = visibles.filter(o => dias[diaVista].includes(o.dia)).sort((a,b) => {
     const ea = verTodos ? a.equipo.join(" + ") : "", eb = verTodos ? b.equipo.join(" + ") : "";
-    return ea.localeCompare(eb) || (a.horamont || "99").localeCompare(b.horamont || "99");
+    return a.dia.localeCompare(b.dia) || ea.localeCompare(eb) || (a.horamont || "99").localeCompare(b.horamont || "99");
   });
   document.getElementById("pie").textContent = "Montajes cargados " + new Date(paquete.cargado).toLocaleString("es-ES", { weekday:"short", hour:"2-digit", minute:"2-digit" }) + (navigator.onLine ? "" : " · sin cobertura: se usa lo guardado");
-  if (!hoy.length) lista.innerHTML = '<div class="vacio">' + (diaVista === 0 ? (verTodos ? "Hoy no hay montajes" : "Hoy no tienes montajes 🎉") : (verTodos ? "Mañana no hay montajes" : "Mañana no tienes montajes")) + '</div>';
+  if (!hoy.length) lista.innerHTML = '<div class="vacio">' + (() => { const q = ["ayer", "hoy", diasSig().length === 1 ? "mañana" : "esos días", "ese día"][diaVista], T = q.charAt(0).toUpperCase() + q.slice(1); return verTodos || diaVista === 3 ? T + " no hay montajes" : T + " no tienes montajes" + (diaVista === 1 ? " 🎉" : ""); })() + '</div>';
   else {
-    let grupo = null;
+    let grupo = null, diaPrev = null;
     lista.innerHTML = hoy.map(o => {
       const { hecho, incid } = situacion(o);
       const dir = [o.domicilio_cli, o.localidad_cli].filter(Boolean).join(", ");
       const k = o.anyo + "/" + o.orden, eq = o.equipo.join(" + ") || "Sin equipo";
-      let cab = ""; if (verTodos && eq !== grupo) { grupo = eq; cab = '<div class="grupo">👷 ' + esc(eq) + '</div>'; }
+      let cab = ""; const multi = dias[diaVista].length > 1;
+      if (multi && o.dia !== diaPrev) { diaPrev = o.dia; grupo = null; cab += '<div class="grupo" style="font-size:1rem;color:#0f172a;border-bottom:2px solid #334155">📅 ' + NOMBRE_DIA(o.dia) + " " + o.dia.split("-").reverse().slice(0, 2).join("/") + '</div>'; }
+      if (verTodos && eq !== grupo) { grupo = eq; cab += '<div class="grupo">👷 ' + esc(eq) + '</div>'; }
       const clase = hecho && incid ? "conincid" : hecho ? "hecho" : incid ? "incid" : "";
       return cab + '<div class="tarjeta tocable ' + clase + '" onclick="abrirDetalle(\'' + k + '\')">' +
         '<div class="fila1"><span class="hora">' + esc((o.horamont && o.horamont !== "M") ? o.horamont : "Sin hora") + '</span>' + chipEstado(o) + '</div>' +
@@ -438,14 +465,43 @@ function bloqueCobro(o){
     (pen ? '<div class="botones"><button class="btn gr" onclick="abrirCobro(\'' + o.anyo + '/' + o.orden + '\')">💶 REGISTRAR COBRO</button></div>' : "") + '</div>';
 }
 const SERVICIOS = ["Agujeros", "Elementos", "Cierres", "Cortes", "Tacos"];
-const textoServ = x => x.concepto === "Otros" || !x.concepto ? (x.descripcion || "Otros") + (x.cantidad ? " × " + x.cantidad : "") : x.concepto + " × " + x.cantidad;
+const RECOGIDAS = ["Colchón", "Sofá", "Canapé", "Somier"];
+const textoServ = x => x.concepto === "Recogida" ? "Recogida: " + (x.descripcion || "Otros") + " × " + (x.cantidad || 1)
+  : x.concepto === "Otros" || !x.concepto ? (x.descripcion || "Otros") + (x.cantidad ? " × " + x.cantidad : "") : x.concepto + " × " + x.cantidad;
 function bloqueServicios(o){
-  const ya = o.servicios || [], colas = enCola(o, "servicio").flatMap(c => c.items);
-  return '<div class="sec"><h3>🔧 Servicios adicionales</h3>' +
-    (ya.length || colas.length ? ya.map(x => '<div class="dato"><b>' + esc(textoServ(x)) + '</b><span></span></div>').join("") +
-      colas.map(x => '<div class="dato"><b>' + esc(textoServ(x)) + '</b><span>pendiente de enviar</span></div>').join("")
-      : '<div style="color:var(--gris);margin-bottom:8px">Ninguno apuntado.</div>') +
-    '<div class="botones"><button class="btn az" onclick="abrirServicio(\'' + o.anyo + '/' + o.orden + '\')">➕ APUNTAR SERVICIO</button></div></div>';
+  const ya = o.servicios || [], colas = enCola(o, "servicio").flatMap(c => c.items.map(x => ({ x, cid:c.id })));
+  const k = o.anyo + "/" + o.orden;
+  return '<div class="sec"><h3>🔧 Servicios y recogidas</h3>' +
+    (ya.length || colas.length ? ya.map(x => '<div class="dato" style="align-items:center"><b>' + esc(textoServ(x)) + '</b><span>' +
+        '<button class="btn pl" style="min-height:36px;padding:0 12px;font-size:.85rem" onclick="editarServicio(\'' + k + '\',\'' + x.id + '\')">✏ Cambiar</button> ' +
+        '<button class="btn pl" style="min-height:36px;padding:0 12px;font-size:.85rem;color:var(--rojo)" onclick="quitarServicio(\'' + k + '\',\'' + x.id + '\')">🗑</button></span></div>').join("") +
+      colas.map(c => '<div class="dato" style="align-items:center"><b>' + esc(textoServ(c.x)) + '</b><span>⏳ por enviar <button class="btn pl" style="min-height:36px;padding:0 12px;font-size:.85rem;color:var(--rojo)" onclick="quitarServicioCola(' + c.cid + ',\'' + c.x.id + '\')">🗑</button></span></div>').join("")
+      : '<div style="color:var(--gris);margin-bottom:8px">Nada apuntado.</div>') +
+    '<div class="botones"><button class="btn az" onclick="abrirServicio(\'' + k + '\')">➕ APUNTAR SERVICIO / RECOGIDA</button></div></div>';
+}
+async function guardarPaquete(){ try { await kvSet("paquete", paquete); } catch(_){} }
+async function editarServicio(k, id){
+  const o = buscar(k), x = o.servicios.find(v => v.id === id); if (!x) return;
+  if (!navigator.onLine) { toast("Para cambiarlo necesitas cobertura"); return; }
+  const v = prompt("Cantidad de «" + textoServ({ ...x, cantidad:"" }).replace(/ ×\s*$/, "") + "»:", x.cantidad || 1); if (v === null) return;
+  const c = parseInt(v, 10); if (!(c > 0)) { toast("Pon una cantidad de 1 o más (para quitarlo usa la papelera)"); return; }
+  const { error } = await client.rpc("editar_servicio_montador", { p_id:id, p_cantidad:c });
+  if (error) { toast("No se ha podido cambiar: " + error.message, 6000); return; }
+  x.cantidad = c; await guardarPaquete(); pintarDetalle(); toast("✔ Cambiado");
+}
+async function quitarServicio(k, id){
+  const o = buscar(k), x = o.servicios.find(v => v.id === id); if (!x) return;
+  if (!navigator.onLine) { toast("Para quitarlo necesitas cobertura"); return; }
+  if (!confirm("¿Quitar «" + textoServ(x) + "»?")) return;
+  const { error } = await client.rpc("borrar_servicio_montador", { p_id:id });
+  if (error) { toast("No se ha podido quitar: " + error.message, 6000); return; }
+  o.servicios = o.servicios.filter(v => v.id !== id); await guardarPaquete(); pintarDetalle(); toast("✔ Quitado");
+}
+async function quitarServicioCola(cid, id){
+  const it = cola.find(c => c.id === cid); if (!it) return;
+  it.items = it.items.filter(v => v.id !== id);
+  if (it.items.length) await colaPut(it); else await colaDel(cid);
+  cola = await colaAll(); pintar(); pintarDetalle(); estadoBarra();
 }
 let ordenServ = null;
 function abrirServicio(k){
@@ -453,6 +509,9 @@ function abrirServicio(k){
   document.getElementById("s_cliente").textContent = ordenServ.nombre_cli + " · orden " + ordenServ.anyo + "/" + ordenServ.orden;
   document.getElementById("s_lista").innerHTML = SERVICIOS.map((n, i) => '<div class="dato" style="align-items:center"><b>' + n + '</b><input id="s_c' + i + '" type="number" inputmode="numeric" min="0" placeholder="Cant." style="width:90px;font-size:1.2rem;padding:10px;border:2px solid #cbd5e1;border-radius:12px"></div>').join("") +
     '<div class="dato" style="align-items:center"><b>Otros</b><input id="s_cotros" type="number" inputmode="numeric" min="0" placeholder="Cant." style="width:90px;font-size:1.2rem;padding:10px;border:2px solid #cbd5e1;border-radius:12px"></div>';
+  document.getElementById("r_lista").innerHTML = RECOGIDAS.map((n, i) => '<div class="dato" style="align-items:center"><b>' + n + '</b><input id="r_c' + i + '" type="number" inputmode="numeric" min="0" placeholder="Cant." style="width:90px;font-size:1.2rem;padding:10px;border:2px solid #cbd5e1;border-radius:12px"></div>').join("") +
+    '<div class="dato" style="align-items:center"><b>Otros</b><input id="r_cotros" type="number" inputmode="numeric" min="0" placeholder="Cant." style="width:90px;font-size:1.2rem;padding:10px;border:2px solid #cbd5e1;border-radius:12px"></div>';
+  document.getElementById("r_otros_txt").value = "";
   document.getElementById("s_otros_txt").value = "";
   document.getElementById("p_serv").style.display = "block";
 }
@@ -464,7 +523,13 @@ async function guardarServicio(){
     if (!txt) { toast("En «Otros» escribe qué has hecho"); return; }
     items.push({ id:crypto.randomUUID(), concepto:"Otros", cantidad:co > 0 ? co : 1, descripcion:txt });
   }
-  if (!items.length) { toast("Pon la cantidad en algún servicio"); return; }
+  RECOGIDAS.forEach((n, i) => { const c = parseInt(document.getElementById("r_c" + i).value, 10); if (c > 0) items.push({ id:crypto.randomUUID(), concepto:"Recogida", cantidad:c, descripcion:n }); });
+  const ro = parseInt(document.getElementById("r_cotros").value, 10) || 0, rtxt = document.getElementById("r_otros_txt").value.trim();
+  if (ro > 0 || rtxt) {
+    if (!rtxt) { toast("En «Otros» de recogidas escribe qué has recogido"); return; }
+    items.push({ id:crypto.randomUUID(), concepto:"Recogida", cantidad:ro > 0 ? ro : 1, descripcion:rtxt });
+  }
+  if (!items.length) { toast("Pon la cantidad en algún servicio o recogida"); return; }
   await colaAdd({ tipo:"servicio", anyo:o.anyo, orden:o.orden, items, ts:Date.now() });
   cola = await colaAll(); cerrarPantalla("p_serv"); pintar(); pintarDetalle(); estadoBarra();
   toast(navigator.onLine ? "✔ Servicios apuntados" : "✔ Guardado. Se enviará cuando haya cobertura", 5000);
@@ -687,7 +752,8 @@ async function guardarIncidencia(){
 }
 
 /* ---------- Enviar lo pendiente (sin perder nada si falla la cobertura) ---------- */
-const esRed = e => !navigator.onLine || /fetch|network|timeout|load failed|abort/i.test(String(e?.message || e)) || e?.status === 0;
+// «demasiadas peticiones» (429) también se trata como falta de señal: se para y se reintenta solo, sin marcar la foto como fallida
+const esRed = e => !navigator.onLine || /fetch|network|timeout|load failed|abort|too many|rate limit|429|502|503|504/i.test(String(e?.message || e) + String(e?.statusCode || "") + String(e?.status || "")) || e?.status === 0;
 async function enviarUno(it){
   if (it.tipo === "foto" || it.tipo === "firma") {
     if (!it.subido) {
@@ -706,10 +772,13 @@ async function enviarUno(it){
     const { error } = await client.rpc("registrar_cobro_montador", { p_id:it.cobro_id, p_anyo:it.anyo, p_orden:it.orden, p_importe:it.importe, p_forma:it.forma });
     if (error) throw error;
   } else if (it.tipo === "servicio") {
-    for (const x of it.items) {   // cada servicio lleva su propio id: si se repite por mala cobertura no se duplica
+    for (const x of it.items.slice()) {   // cada servicio lleva su propio id: si se repite por mala cobertura no se duplica
       const { error } = await client.rpc("registrar_servicio_montador", { p_id:x.id, p_anyo:it.anyo, p_orden:it.orden, p_concepto:x.concepto, p_cantidad:x.cantidad, p_texto:x.descripcion });
       if (error) throw error;
+      const o = paquete && paquete.ordenes.find(v => v.anyo === it.anyo && v.orden === it.orden);   // se ve al momento, sin esperar a recargar
+      if (o && !(o.servicios || []).some(v => v.id === x.id)) { (o.servicios ||= []).push({ id:x.id, concepto:x.concepto, cantidad:x.cantidad, descripcion:x.descripcion, creado_en:new Date().toISOString() }); }
     }
+    await guardarPaquete();
   } else if (it.tipo === "incidencia") {
     if (!it.incidencia_id) {   // la base de datos registra el aviso y decide el estado de la orden (Incidencia / Completado con incidencias)
       const { data, error } = await client.rpc("registrar_incidencia_montador", { p_anyo:it.anyo, p_orden:it.orden, p_tipo:it.motivo, p_descripcion:it.texto });
@@ -736,7 +805,7 @@ async function enviarCola(manual){
   sincronizando = true; estadoBarra();
   let hubo = false;
   for (const it of cola.sort((a,b) => a.ts - b.ts)) {
-    try { await enviarUno(it); await colaDel(it.id); hubo = true; }
+    try { await enviarUno(it); await colaDel(it.id); hubo = true; if (it.tipo === "foto") await new Promise(r => setTimeout(r, 400)); }
     catch (e) {
       if (esRed(e)) break;                        // sin señal: se para y se reintenta luego, sin perder nada
       it.error = String(e.message || e); it.intentos = (it.intentos || 0) + 1; await colaPut(it);

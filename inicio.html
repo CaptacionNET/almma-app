@@ -46,6 +46,7 @@ async function init() {
       B("📋", "Órdenes", "Alta, consulta y edición de pedidos", "pedidos.html"),
       B("📦", "Consulta almacén", "Para consultar el almacén y dar entrada a mano (sin albarán)", "recepcion.html"),
       B("📄", "Entrada por albarán", "Leer albaranes con IA y registrar la entrada", "entrada_albaranes.html"),
+      B("↩️", "Devoluciones", "Almacén de cambios y control de su stock", "devoluciones.html"),
       B("✅", "Punteo", "Repaso de lo que falta por llegar", "punteo.html"),
       B("🗺️", "Rutas", "Montajes de la semana y montadores", "rutas.html"),
       B("🧾", "Facturación", "Pendientes, borradores y emitidas", "facturas.html"),
@@ -80,6 +81,7 @@ async function init() {
       ];
     }
   }
+  botones.push(B("👤", "Mi perfil", "Mi nombre, teléfono, contraseña y email", "perfil.html"));
   document.getElementById("botones").innerHTML = botones.map(b =>
     '<a class="boton" href="' + b.href + '"><div class="ico">' + b.ico + '</div><b>' + b.t + '</b><span>' + b.d + '</span></a>').join("");
 }

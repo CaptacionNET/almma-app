@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - Mi perfil</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+header{background:#1f2430;color:#fff;padding:12px 16px;display:flex;align-items:center;gap:12px;}
+header b{font-size:16px;flex:1;}
+header button{background:#374151;}
+main{max-width:520px;margin:0 auto;padding:16px;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px;}
+.card h2{margin:0 0 12px;font-size:17px;}
+label{display:block;font-size:13px;font-weight:600;margin:12px 0 4px;color:var(--muted);}
+input{width:100%;padding:12px;border:1px solid var(--border);border-radius:8px;font-size:16px;font-family:inherit;}
+button{background:var(--primary);color:#fff;border:none;padding:12px 18px;border-radius:8px;cursor:pointer;font-size:15px;font-weight:600;margin-top:14px;}
+.ok{color:#166534;font-size:14px;margin-top:10px;min-height:18px;} .ko{color:#b91c1c;}
+.nota{font-size:13px;color:var(--muted);margin-top:8px;}
+</style>
+<link rel="manifest" href="manifest.webmanifest">
+</head>
+<body>
+<header><button onclick="volver()">← Volver</button><b>👤 Mi perfil</b><button onclick="logout()">Salir</button></header>
+<main>
+  <div class="card">
+    <h2>Mis datos</h2>
+    <label>Nombre</label><input id="nombre" autocomplete="name">
+    <label>Teléfono</label><input id="telefono" type="tel" autocomplete="tel">
+    <button onclick="guardarDatos()">Guardar datos</button>
+    <div class="ok" id="m_datos"></div>
+  </div>
+  <div class="card">
+    <h2>Contraseña</h2>
+    <label>Nueva contraseña (mínimo 8 caracteres)</label><input id="pw1" type="password" autocomplete="new-password">
+    <label>Repite la nueva contraseña</label><input id="pw2" type="password" autocomplete="new-password">
+    <button onclick="cambiarPw()">Cambiar contraseña</button>
+    <div class="ok" id="m_pw"></div>
+  </div>
+  <div class="card">
+    <h2>Email de acceso</h2>
+    <label>Email actual</label><input id="email_actual" disabled>
+    <label>Nuevo email</label><input id="email_nuevo" type="email" autocomplete="email">
+    <button onclick="cambiarEmail()">Cambiar email</button>
+    <div class="nota">Te llegará un correo de confirmación. El email no cambia hasta que pulses el enlace del correo; mientras tanto sigues entrando con el actual.</div>
+    <div class="ok" id="m_email"></div>
+  </div>
+</main>
+<script>
+const client = supabase.createClient(
+  "https://uamgbtbsxbrgymhqalak.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k"
+);
+const $ = id => document.getElementById(id);
+const msg = (id, t, ko) => { $(id).textContent = t; $(id).className = "ok" + (ko ? " ko" : ""); };
+let esMontador = false;
+async function iniciar() {
+  const { data: { user } } = await client.auth.getUser();
+  if (!user) { location.href = "login.html"; return; }
+  $("email_actual").value = user.email || "";
+  const { data: st } = await client.from("staff").select("solo_montajes").eq("user_id", user.id).maybeSingle();
+  esMontador = !!(st && st.solo_montajes);
+  const { data, error } = await client.rpc("mi_perfil");
+  if (error) { msg("m_datos", "No se han podido cargar tus datos (¿falta ejecutar el SQL 101?): " + error.message, true); return; }
+  if (data) { $("nombre").value = data.nombre || ""; $("telefono").value = data.telefono || ""; }
+}
+async function guardarDatos() {
+  const { error } = await client.rpc("actualizar_mi_perfil", { p_nombre: $("nombre").value, p_telefono: $("telefono").value });
+  error ? msg("m_datos", "No se ha podido guardar: " + error.message, true) : msg("m_datos", "✔ Datos guardados");
+}
+async function cambiarPw() {
+  const a = $("pw1").value, b = $("pw2").value;
+  if (a.length < 8) return msg("m_pw", "La contraseña tiene que tener al menos 8 caracteres", true);
+  if (a !== b) return msg("m_pw", "Las dos contraseñas no coinciden", true);
+  const { error } = await client.auth.updateUser({ password: a });
+  if (error) return msg("m_pw", "No se ha podido cambiar: " + error.message, true);
+  $("pw1").value = $("pw2").value = ""; msg("m_pw", "✔ Contraseña cambiada");
+}
+async function cambiarEmail() {
+  const e = $("email_nuevo").value.trim();
+  if (!e || !e.includes("@")) return msg("m_email", "Escribe un email válido", true);
+  const { error } = await client.auth.updateUser({ email: e });
+  error ? msg("m_email", "No se ha podido cambiar: " + error.message, true) : msg("m_email", "✔ Te hemos enviado un correo a " + e + ". Pulsa el enlace para confirmar el cambio.");
+}
+function volver() { location.href = esMontador ? "mi-dia.html" : "inicio.html"; }
+async function logout() { await client.auth.signOut(); location.href = "login.html"; }
+iniciar();
+</script>
+</body>
+</html>

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALMMA - Gestión de Devoluciones</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+
+
+:root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+button{background:var(--primary);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;}
+button:hover{opacity:.9;}
+button.secondary{background:#fff;color:var(--text);border:1px solid var(--border);}
+input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;}
+
+#menubar{background:#1f2430;color:#e5e7eb;display:flex;align-items:center;padding:0 12px;font-size:13px;position:relative;z-index:20;}
+#menubar .brand{font-weight:700;color:#fff;padding:10px 16px 10px 0;font-size:15px;}
+.menu-item{position:relative;}
+.menu-item > span{display:block;padding:10px 14px;cursor:pointer;}
+.menu-item:hover > span, .menu-item.abierto > span{background:#374151;}
+.menu-drop{display:none;position:absolute;top:100%;left:0;background:#fff;color:var(--text);min-width:220px;box-shadow:0 10px 30px -10px rgba(0,0,0,.4);border-radius:0 0 8px 8px;overflow:hidden;}
+.menu-item.abierto .menu-drop{display:block;}
+.menu-drop a{display:block;padding:10px 16px;color:var(--text);text-decoration:none;font-size:13px;border-bottom:1px solid var(--border);}
+.menu-drop a:hover{background:var(--bg);}
+#toolbar{display:flex;gap:8px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center;}
+#toolbar .spacer{flex:1;}
+
+
+
+.barra{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:12px 24px;}
+.campo-mini label,.fg label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;}
+.campo-mini input,.campo-mini select,.fg input,.fg select{width:100%;}
+.aviso{padding:0 24px 8px;color:var(--muted);font-size:13px;}
+.tabs{display:flex;gap:6px;padding:12px 24px 0;} .tabs button{background:#fff;color:#1e3a8a;border:1px solid #93c5fd;} .tabs button.on{background:#1e40af;color:#fff;}
+.tw{margin:0 24px 40px;overflow-x:auto;background:#fff;border:1px solid #bfdbfe;border-radius:8px;}
+table{border-collapse:collapse;width:100%;font-size:13px;} th{background:#dbeafe;color:#1e3a8a;text-align:left;padding:8px;white-space:nowrap;} td{padding:7px 8px;border-top:1px solid #dbeafe;vertical-align:top;}
+tr:nth-child(even) td{background:#f5f9ff;} td.n,th.n{text-align:right;}
+.ent{color:#166534;font-weight:700;} .sal{color:#b91c1c;font-weight:700;}
+.ordref{background:#fef3c7;color:#92400e;border-radius:8px;padding:1px 7px;font-size:12px;white-space:nowrap;}
+#modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;overflow:auto;padding:20px;}
+.mbox{background:#fff;max-width:900px;margin:0 auto;border-radius:10px;padding:18px 20px;}
+.fg{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;}
+.lin{display:grid;grid-template-columns:130px 1fr 90px 36px;gap:8px;margin-bottom:6px;}
+.nota{font-size:12px;color:var(--muted);margin:8px 0;}
+.peq{padding:3px 9px;font-size:12px;}
+@media print{#menubar,#toolbar,.barra,.aviso,.tabs,.peq{display:none !important;} body{background:#fff;}}
+</style>
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="ALMMA"><script src="pwa.js" defer></script>
+</head>
+<body>
+
+<div id="menubar">
+  <div class="brand">ALMMA</div>
+  <div class="menu-item" data-menu="sistema">
+    <span>Sistema</span>
+    <div class="menu-drop">
+      <a href="sistema.html?cat=tiendas">Tiendas</a>
+      <a href="sistema.html?cat=fabricantes">Fabricantes</a>
+      <a href="sistema.html?cat=dependientes">Dependientes</a>
+      <a href="sistema.html?cat=montadores">Montadores</a>
+      <a href="sistema.html?cat=articulos">Artículos</a>
+    </div>
+  </div>
+  <div class="menu-item" data-menu="ordenes">
+    <span>Ordenes de Trabajo</span>
+    <div class="menu-drop">
+      <a href="pedidos.html">Introducción/Consulta</a>
+      <a href="punteo.html">Punteo de Ordenes</a>
+      <a href="rutas.html">Listado de Rutas</a>
+      <a href="#" onclick="proximamente('Realizar Montajes');return false;">Realizar Montajes</a>
+      <a href="incidencias.html">Gestión de Incidencias</a>
+      <a href="devoluciones.html" class="activo-link">Gestión de Devoluciones</a>
+      <a href="#" onclick="proximamente('Contacto Cliente');return false;">Contacto Cliente</a>
+    </div>
+  </div>
+  <div class="menu-item" data-menu="facturacion">
+    <span>Facturación</span>
+    <div class="menu-drop">
+      <a href="facturas.html?tab=pendiente">Pendientes de facturar</a>
+      <a href="facturas.html?tab=web">Facturas emitidas</a>
+    </div>
+  </div>
+</div>
+
+<div id="toolbar">
+  <button class="secondary" onclick="window.location.href='inicio.html'">🏠 Inicio</button>
+  <button class="secondary" onclick="window.location.href='pedidos.html'">Ordenes</button>
+  <button class="secondary" onclick="window.location.href='recepcion.html'">Consulta almacén</button>
+  <button class="secondary" onclick="window.location.href='entrada_albaranes.html'">Entrada por albarán</button>
+  <button class="secondary" id="btn_modo_mont" style="display:none" onclick="window.location.href='mi-dia.html'">📱 Modo montador</button>
+  <button class="secondary" onclick="window.location.href='deca.html'">DeCA</button>
+  <button class="secondary" onclick="window.location.href='facturas.html'">Facturación</button>
+  <button class="secondary" id="btn_admin" style="display:none" onclick="window.location.href='admin.html'">Administración</button>
+  <div class="spacer"></div>
+  <button class="secondary" onclick="logout()">Salir</button>
+</div>
+
+<div class="tabs"><button id="t_stock" class="on" onclick="tab('stock')">📦 Stock de cambios</button><button id="t_mov" onclick="tab('mov')">📋 Movimientos</button><button onclick="nueva('entrada')">➕ Entrada de devolución</button><button onclick="nueva('salida')">➖ Salida manual</button></div>
+<div class="barra">
+  <div class="campo-mini" style="min-width:190px"><label>Tienda</label><select id="f_tienda" onchange="pintar()"><option value="">Todas</option></select></div>
+  <div class="campo-mini" style="min-width:190px"><label>Fabricante</label><input id="f_fab" list="dl_fab" placeholder="Todos" onchange="pintar()"></div>
+  <div class="campo-mini" style="max-width:110px"><label>Nº orden</label><input id="f_orden" type="number" onchange="pintar()"></div>
+  <div class="campo-mini" style="min-width:160px"><label>Cliente</label><input id="f_cli" placeholder="Nombre" oninput="pintar()"></div>
+  <div class="campo-mini" style="min-width:170px"><label>Artículo / albarán / ubicación…</label><input id="f_txt" placeholder="Buscar" oninput="pintar()"></div>
+  <div class="campo-mini mov" style="max-width:150px"><label>Desde</label><input id="f_desde" type="date" onchange="pintar()"></div>
+  <div class="campo-mini mov" style="max-width:150px"><label>Hasta</label><input id="f_hasta" type="date" onchange="pintar()"></div>
+  <div class="campo-mini mov" style="max-width:130px"><label>Tipo</label><select id="f_sent" onchange="pintar()"><option value="">Todos</option><option value="entrada">Entradas</option><option value="salida">Salidas</option></select></div>
+  <button class="secondary" onclick="limpiar()">Limpiar</button>
+  <button class="secondary" onclick="window.print()">🖨 Imprimir</button>
+</div>
+<div class="aviso" id="aviso"></div>
+<div class="tw" id="tabla"></div>
+<datalist id="dl_fab"></datalist>
+<div id="modal"></div>
+
+<script>
+const client = supabase.createClient(
+  "https://uamgbtbsxbrgymhqalak.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k"
+);
+const $ = id => document.getElementById(id);
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fd = d => d ? String(d).slice(0, 10).split("-").reverse().join("/") : "";
+const num = v => (Math.round(Number(v) * 100) / 100).toString().replace(".", ",");
+let TIENDAS = [], FABS = [], MOV = [], vista = "stock";
+const tn = id => (TIENDAS.find(t => t.id === id) || {}).nombre || "";
+const fn = c => c == null ? "" : ((FABS.find(f => f.codigo === c) || {}).nombre || String(c));
+const fabCod = txt => { txt = String(txt || "").trim(); if (!txt) return null; const m = txt.match(/\((\d+)\)\s*$/); if (m) return +m[1]; const f = FABS.find(x => String(x.nombre).toLowerCase() === txt.toLowerCase()); return f ? f.codigo : (/^\d+$/.test(txt) ? +txt : null); };
+const fabTxt = c => c == null ? "" : fn(c) + " (" + c + ")";
+
+document.querySelectorAll(".menu-item").forEach(item => {
+  item.querySelector("span").addEventListener("click", e => { e.stopPropagation(); const ya = item.classList.contains("abierto"); document.querySelectorAll(".menu-item").forEach(i => i.classList.remove("abierto")); if (!ya) item.classList.add("abierto"); });
+});
+document.addEventListener("click", () => document.querySelectorAll(".menu-item").forEach(i => i.classList.remove("abierto")));
+function proximamente(n) { alert(`"${n}" todavía no está construido en la app nueva — próximamente.`); }
+async function logout() { await client.auth.signOut(); location.href = "login.html"; }
+async function paginar(q) { let out = [], d = 0; for (;;) { const { data, error } = await q().range(d, d + 999); if (error) throw error; out = out.concat(data); if (data.length < 1000) break; d += 1000; } return out; }
+
+async function iniciar() {
+  const { data: { user } } = await client.auth.getUser();
+  if (!user) { location.href = "login.html"; return; }
+  const { data: st } = await client.from("staff").select("es_admin, es_montador, solo_deca, solo_montajes").eq("user_id", user.id).maybeSingle();
+  if (!st) { await client.auth.signOut(); location.href = "login.html"; return; }
+  if (st.solo_deca) { location.href = "deca.html"; return; }
+  if (st.solo_montajes) { location.href = "mi-dia.html"; return; }
+  if (st.es_admin) $("btn_admin").style.display = "";
+  if (st.es_montador) $("btn_modo_mont").style.display = "";
+  try {
+    TIENDAS = await paginar(() => client.from("tiendas").select("id, nombre").order("nombre"));
+    FABS = await paginar(() => client.from("fabricantes").select("codigo, nombre").order("nombre"));
+  } catch (e) { $("aviso").textContent = "Error cargando catálogos: " + e.message; }
+  $("f_tienda").innerHTML = '<option value="">Todas</option>' + TIENDAS.map(t => '<option value="' + t.id + '">' + esc(t.nombre) + '</option>').join("");
+  $("dl_fab").innerHTML = FABS.map(f => '<option value="' + esc(f.nombre + " (" + f.codigo + ")") + '">').join("");
+  await cargar();
+}
+async function cargar() {
+  $("aviso").textContent = "Cargando…";
+  try { MOV = await paginar(() => client.from("cambios_movimientos").select("*").order("fecha", { ascending: false }).order("creado_en", { ascending: false })); }
+  catch (e) { $("aviso").textContent = "No se han podido cargar las devoluciones (¿falta ejecutar el SQL 102?): " + e.message; return; }
+  pintar();
+}
+function tab(v) { vista = v; $("t_stock").classList.toggle("on", v === "stock"); $("t_mov").classList.toggle("on", v === "mov"); document.querySelectorAll(".mov").forEach(e => e.style.display = v === "mov" ? "" : "none"); pintar(); }
+function limpiar() { ["f_tienda","f_fab","f_orden","f_cli","f_txt","f_desde","f_hasta","f_sent"].forEach(i => $(i).value = ""); pintar(); }
+function filtrados(conFechas) {
+  const t = $("f_tienda").value, fab = fabCod($("f_fab").value), fabTxtOnly = $("f_fab").value.trim().toLowerCase(), o = $("f_orden").value, c = $("f_cli").value.trim().toLowerCase(), q = $("f_txt").value.trim().toLowerCase();
+  const d1 = $("f_desde").value, d2 = $("f_hasta").value, se = $("f_sent").value;
+  return MOV.filter(m =>
+    (!t || m.tienda_id === t) && (!$("f_fab").value.trim() || (fab != null ? m.fabricante === fab : fn(m.fabricante).toLowerCase().includes(fabTxtOnly))) &&
+    (!o || String(m.orden_num) === o) && (!c || String(m.cliente_final || "").toLowerCase().includes(c)) &&
+    (!q || [m.articulo, m.descripcion, m.albaran, m.pedido_fabricante, m.ubicacion, m.observaciones].some(x => String(x || "").toLowerCase().includes(q))) &&
+    (!conFechas || ((!d1 || String(m.fecha) >= d1) && (!d2 || String(m.fecha) <= d2) && (!se || m.sentido === se))));
+}
+function pintar() {
+  if (vista === "stock") pintarStock(); else pintarMov();
+}
+function pintarStock() {
+  const g = {};
+  filtrados(false).forEach(m => {
+    const k = [m.tienda_id, m.fabricante, (m.articulo || "").toLowerCase(), (m.descripcion || "").toLowerCase(), (m.ubicacion || "").toLowerCase()].join("|");
+    const r = g[k] ||= { m, saldo: 0, ent: 0, sal: 0, ult: m.fecha, ordenes: new Set(), clientes: new Set() };
+    const c = Number(m.cantidad); if (m.sentido === "entrada") { r.saldo += c; r.ent += c; } else { r.saldo -= c; r.sal += c; }
+    if (String(m.fecha) > String(r.ult)) r.ult = m.fecha;
+    if (m.orden_num) r.ordenes.add(m.orden_anyo + "/" + m.orden_num); if (m.cliente_final) r.clientes.add(m.cliente_final);
+  });
+  const filas = Object.entries(g).filter(([, r]) => Math.abs(r.saldo) > 0.001).sort((a, b) => tn(a[1].m.tienda_id).localeCompare(tn(b[1].m.tienda_id)) || String(a[1].m.descripcion).localeCompare(String(b[1].m.descripcion)));
+  const total = filas.reduce((s, [, r]) => s + r.saldo, 0);
+  $("aviso").textContent = filas.length + " referencias en stock · " + num(total) + " unidades en total (entradas − salidas)";
+  $("tabla").innerHTML = '<table><thead><tr><th>Tienda</th><th>Fabricante</th><th>Artículo</th><th>Descripción</th><th>Ubicación</th><th class="n">Entró</th><th class="n">Salió</th><th class="n">STOCK</th><th>Últ. mov.</th><th>Órdenes / clientes</th><th></th></tr></thead><tbody>' +
+    (filas.map(([k, r]) => '<tr><td>' + esc(tn(r.m.tienda_id)) + '</td><td>' + esc(fn(r.m.fabricante)) + '</td><td>' + esc(r.m.articulo) + '</td><td>' + esc(r.m.descripcion) + '</td><td>' + esc(r.m.ubicacion) + '</td><td class="n">' + num(r.ent) + '</td><td class="n">' + num(r.sal) + '</td><td class="n"><b>' + num(r.saldo) + '</b></td><td>' + fd(r.ult) + '</td><td>' + [...r.ordenes].map(o => '<span class="ordref">' + o + '</span>').join(" ") + ' ' + esc([...r.clientes].join(", ")) + '</td><td><button class="peq" onclick="darSalida(\'' + encodeURIComponent(k) + '\')">Dar salida</button></td></tr>').join("") || '<tr><td colspan="11" style="padding:16px;color:var(--muted)">No hay stock con esos filtros.</td></tr>') + '</tbody></table>';
+  window._stockKeys = Object.fromEntries(filas);
+}
+function pintarMov() {
+  const f = filtrados(true);
+  $("aviso").textContent = f.length + " movimientos";
+  $("tabla").innerHTML = '<table><thead><tr><th>Fecha</th><th>Tipo</th><th>Tienda</th><th>Fabricante</th><th>Albarán</th><th>Pedido fab.</th><th>Cliente final</th><th>Orden</th><th>Artículo</th><th>Descripción</th><th class="n">Cant.</th><th class="n">Bultos</th><th class="n">Kg</th><th>Ubicación</th><th>Observaciones</th><th></th></tr></thead><tbody>' +
+    (f.map(m => '<tr><td>' + fd(m.fecha) + '</td><td class="' + (m.sentido === "entrada" ? "ent" : "sal") + '">' + (m.sentido === "entrada" ? "Entrada" : "Salida") + '</td><td>' + esc(tn(m.tienda_id)) + '</td><td>' + esc(fn(m.fabricante)) + '</td><td>' + esc(m.albaran) + (m.fecha_albaran ? '<br><small>' + fd(m.fecha_albaran) + '</small>' : "") + '</td><td>' + esc(m.pedido_fabricante) + '</td><td>' + esc(m.cliente_final) + '</td><td>' + (m.orden_num ? '<span class="ordref">' + m.orden_anyo + '/' + m.orden_num + '</span>' : "") + '</td><td>' + esc(m.articulo) + '</td><td>' + esc(m.descripcion) + '</td><td class="n">' + num(m.cantidad) + '</td><td class="n">' + (m.bultos ?? "") + '</td><td class="n">' + (m.peso_kg ?? "") + '</td><td>' + esc(m.ubicacion) + '</td><td>' + esc(m.observaciones) + '</td><td style="white-space:nowrap"><button class="peq secondary" onclick="editar(\'' + m.id + '\')">✏</button> <button class="peq secondary" onclick="borrar(\'' + m.id + '\')">🗑</button></td></tr>').join("") || '<tr><td colspan="16" style="padding:16px;color:var(--muted)">No hay movimientos con esos filtros.</td></tr>') + '</tbody></table>';
+}
+
+/* ---------- Formulario: una cabecera (datos del albarán) + varias líneas ---------- */
+let FORM = null;
+function nueva(sentido) {
+  FORM = { sentido, id: null, lineas: [{ articulo: "", descripcion: "", cantidad: 1 }], c: { fecha: new Date().toISOString().slice(0, 10) } };
+  formulario();
+}
+function editar(id) {
+  const m = MOV.find(x => x.id === id); if (!m) return;
+  FORM = { sentido: m.sentido, id, lineas: [{ articulo: m.articulo || "", descripcion: m.descripcion || "", cantidad: m.cantidad }], c: { ...m, fabricante: m.fabricante } };
+  formulario();
+}
+function formulario() {
+  const c = FORM.c, ent = FORM.sentido === "entrada";
+  $("modal").style.display = "block";
+  $("modal").innerHTML = '<div class="mbox"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">' + (FORM.id ? "Editar movimiento" : ent ? "➕ Entrada de devolución" : "➖ Salida de cambios") + '</h3><button class="secondary" onclick="cerrar()">✕</button></div>' +
+    '<div class="fg" style="margin-top:12px">' +
+    '<div><label>Fecha ' + (ent ? "de entrada" : "de salida") + '</label><input id="c_fecha" type="date" value="' + esc(String(c.fecha || "").slice(0, 10)) + '"></div>' +
+    '<div><label>Tienda</label><select id="c_tienda"><option value="">— elegir —</option>' + TIENDAS.map(t => '<option value="' + t.id + '"' + (c.tienda_id === t.id ? " selected" : "") + '>' + esc(t.nombre) + '</option>').join("") + '</select></div>' +
+    '<div><label>Fabricante</label><input id="c_fab" list="dl_fab" value="' + esc(fabTxt(c.fabricante)) + '"></div>' +
+    '<div><label>Nº albarán</label><input id="c_alb" value="' + esc(c.albaran) + '"></div>' +
+    '<div><label>Fecha albarán</label><input id="c_falb" type="date" value="' + esc(String(c.fecha_albaran || "").slice(0, 10)) + '"></div>' +
+    '<div><label>Pedido del fabricante</label><input id="c_ped" value="' + esc(c.pedido_fabricante) + '"></div>' +
+    '<div><label>Cliente final</label><input id="c_cli" value="' + esc(c.cliente_final) + '"></div>' +
+    '<div><label>De la orden (año)</label><input id="c_oa" type="number" value="' + esc(c.orden_anyo ?? new Date().getFullYear()) + '"></div>' +
+    '<div><label>De la orden (nº)</label><input id="c_on" type="number" value="' + esc(c.orden_num ?? "") + '"></div>' +
+    '<div><label>Bultos</label><input id="c_bul" type="number" value="' + esc(c.bultos ?? "") + '"></div>' +
+    '<div><label>Peso total (kg)</label><input id="c_peso" type="number" step="0.01" value="' + esc(c.peso_kg ?? "") + '"></div>' +
+    '<div><label>Ubicación</label><input id="c_ubi" value="' + esc(c.ubicacion) + '"></div>' +
+    '<div style="grid-column:1/-1"><label>Observaciones</label><input id="c_obs" value="' + esc(c.observaciones) + '"></div></div>' +
+    '<div class="nota">La orden es solo una referencia: no se modifica ni cambia de estado. Déjala en blanco si no hay orden.</div>' +
+    '<h4 style="margin:12px 0 6px">Líneas</h4><div id="c_lineas"></div>' +
+    (FORM.id ? "" : '<button class="secondary peq" onclick="addLinea()">+ Añadir línea</button>') +
+    '<div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end"><button class="secondary" onclick="cerrar()">Cancelar</button><button onclick="guardar()">Guardar</button></div></div>';
+  pintaLineas();
+}
+function leeLineas() { document.querySelectorAll("#c_lineas .lin").forEach((r, i) => { FORM.lineas[i] = { articulo: r.children[0].value, descripcion: r.children[1].value, cantidad: r.children[2].value }; }); }
+function pintaLineas() {
+  $("c_lineas").innerHTML = FORM.lineas.map((l, i) => '<div class="lin"><input placeholder="Artículo" value="' + esc(l.articulo) + '"><input placeholder="Descripción" value="' + esc(l.descripcion) + '"><input type="number" step="0.01" min="0" placeholder="Cant." value="' + esc(l.cantidad) + '">' + (FORM.id ? "<span></span>" : '<button class="secondary peq" onclick="quitaLinea(' + i + ')">🗑</button>') + '</div>').join("");
+}
+function addLinea() { leeLineas(); FORM.lineas.push({ articulo: "", descripcion: "", cantidad: 1 }); pintaLineas(); }
+function quitaLinea(i) { leeLineas(); FORM.lineas.splice(i, 1); if (!FORM.lineas.length) FORM.lineas.push({ articulo: "", descripcion: "", cantidad: 1 }); pintaLineas(); }
+function cerrar() { $("modal").style.display = "none"; FORM = null; }
+async function guardar() {
+  leeLineas();
+  const nul = v => (v === "" || v == null) ? null : v;
+  const cab = { fecha: $("c_fecha").value, tienda_id: nul($("c_tienda").value), fabricante: fabCod($("c_fab").value), albaran: nul($("c_alb").value.trim()), fecha_albaran: nul($("c_falb").value), pedido_fabricante: nul($("c_ped").value.trim()), cliente_final: nul($("c_cli").value.trim()),
+    orden_num: nul($("c_on").value) && +$("c_on").value, orden_anyo: nul($("c_on").value) ? (+$("c_oa").value || null) : null, bultos: nul($("c_bul").value) && +$("c_bul").value, peso_kg: nul($("c_peso").value) && +$("c_peso").value, ubicacion: nul($("c_ubi").value.trim()), observaciones: nul($("c_obs").value.trim()), sentido: FORM.sentido };
+  if (!cab.fecha) return alert("Pon la fecha");
+  if ($("c_fab").value.trim() && cab.fabricante == null) return alert("No encuentro ese fabricante: elígelo de la lista que aparece al escribir");
+  const lineas = FORM.lineas.filter(l => (l.articulo || l.descripcion || "").toString().trim() || Number(l.cantidad) > 0).map(l => ({ articulo: nul(String(l.articulo).trim()), descripcion: nul(String(l.descripcion).trim()), cantidad: Number(l.cantidad) }));
+  if (!lineas.length || lineas.some(l => !(l.cantidad > 0) || (!l.articulo && !l.descripcion))) return alert("Cada línea necesita artículo o descripción y una cantidad mayor que 0");
+  let error;
+  if (FORM.id) ({ error } = await client.from("cambios_movimientos").update({ ...cab, ...lineas[0] }).eq("id", FORM.id));
+  else { const lote = crypto.randomUUID(); ({ error } = await client.from("cambios_movimientos").insert(lineas.map(l => ({ ...cab, ...l, lote })))); }
+  if (error) return alert("No se ha podido guardar: " + error.message);
+  cerrar(); await cargar();
+}
+async function borrar(id) {
+  if (!confirm("¿Borrar este movimiento? El stock se recalcula sin él.")) return;
+  const { error } = await client.from("cambios_movimientos").delete().eq("id", id);
+  if (error) return alert("No se ha podido borrar: " + error.message);
+  await cargar();
+}
+async function darSalida(kEnc) {
+  const r = window._stockKeys[decodeURIComponent(kEnc)]; if (!r) return;
+  const v = prompt("¿Cuántas unidades salen? (hay " + num(r.saldo) + ")\nde «" + (r.m.descripcion || r.m.articulo) + "»", num(r.saldo).replace(",", ".")); if (v === null) return;
+  const c = parseFloat(String(v).replace(",", ".")); if (!(c > 0)) return alert("Pon una cantidad mayor que 0");
+  if (c > r.saldo + 0.001 && !confirm("Sacas más de lo que hay en stock. ¿Seguro?")) return;
+  const motivo = prompt("Motivo o destino (ej.: devuelto al fabricante, repuesto a la tienda):", "") ;
+  if (motivo === null) return;
+  const m = r.m;
+  const { error } = await client.from("cambios_movimientos").insert({ sentido: "salida", fecha: new Date().toISOString().slice(0, 10), tienda_id: m.tienda_id, fabricante: m.fabricante, articulo: m.articulo, descripcion: m.descripcion, ubicacion: m.ubicacion, cantidad: c, orden_anyo: m.orden_anyo, orden_num: m.orden_num, cliente_final: m.cliente_final, observaciones: motivo || null });
+  if (error) return alert("No se ha podido guardar: " + error.message);
+  await cargar();
+}
+tab("stock"); iniciar();
+</script>
+</body>
+</html>

@@ -187,7 +187,8 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
       <a href="punteo.html">Punteo de Ordenes</a>
       <a href="rutas.html">Listado de Rutas</a>
       <a href="#" onclick="proximamente('Realizar Montajes');return false;">Realizar Montajes</a>
-      <a href="#" onclick="proximamente('Gestión de Incidencias');return false;">Gestión de Incidencias</a>
+      <a href="incidencias.html">Gestión de Incidencias</a>
+      <a href="devoluciones.html">Gestión de Devoluciones</a>
       <a href="#" onclick="proximamente('Contacto Cliente');return false;">Contacto Cliente</a>
     </div>
   </div>
@@ -1425,7 +1426,7 @@ async function abrirPanel(orden) {
   });
   document.getElementById("ch_servicios").textContent = "-";
   client.from("servicios_orden").select("id, concepto, cantidad, descripcion, creado_en, revisado").eq("anyo", o.anyo).eq("orden", o.orden).order("creado_en").then(({ data: sv }) => {
-    if (sv && sv.length) document.getElementById("ch_servicios").innerHTML = sv.map(x => "<b>" + escMont(x.concepto === "Otros" || !x.concepto ? (x.descripcion || "Otros") : x.concepto) + "</b> × " + (x.cantidad ?? 1) + " <span class='muted'>(" + new Date(x.creado_en).toLocaleDateString("es-ES") + ")</span>").join("<br>");
+    if (sv && sv.length) document.getElementById("ch_servicios").innerHTML = sv.map(x => "<b>" + escMont(x.concepto === "Recogida" ? "Recogida: " + (x.descripcion || "Otros") : x.concepto === "Otros" || !x.concepto ? (x.descripcion || "Otros") : x.concepto) + "</b> × " + (x.cantidad ?? 1) + " <span class='muted'>(" + new Date(x.creado_en).toLocaleDateString("es-ES") + ")</span>").join("<br>");
     if (sv && sv.some(x => !x.revisado)) client.from("servicios_orden").update({ revisado: true }).eq("anyo", o.anyo).eq("orden", o.orden).then(() => cargarAvisoServicios());
   });
   document.getElementById("ch_tipo_cobro").value = o.tipo_cobro || "";
@@ -1549,7 +1550,7 @@ async function cargarAvisoServicios(){
   document.getElementById("aviso_servicios_l").innerHTML = claves.map(k => {
     const [a, n] = k.split("/");
     return '<div style="padding:3px 0"><a href="pedidos.html?anyo=' + a + '&orden=' + n + '"><b>' + k + '</b></a> — ' +
-      por[k].map(x => escMont((x.concepto === "Otros" || !x.concepto ? (x.descripcion || "Otros") : x.concepto) + " × " + (x.cantidad ?? 1))).join(", ") +
+      por[k].map(x => escMont((x.concepto === "Recogida" ? "Recogida: " + (x.descripcion || "Otros") : x.concepto === "Otros" || !x.concepto ? (x.descripcion || "Otros") : x.concepto) + " × " + (x.cantidad ?? 1))).join(", ") +
       ' <button class="secondary" style="padding:2px 8px;font-size:12px" onclick="marcarServiciosVistos(' + a + ',' + n + ')">Marcar visto</button></div>';
   }).join("");
   box.style.display = "block";
