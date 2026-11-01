@@ -16,7 +16,7 @@ y de informar a tus clientes. Aquí tienes el detalle.</p>
 <h3>1. Quiénes somos</h3>
 <p><b>ALMMA</b>. Titular: Arturo Vera Sierra, NIF 22690383D, C/ San Isidro, 73, 46133 Meliana (Valencia). Contacto: <b>${EMAIL_CONTACTO}</b>.
 Presta a las tiendas el servicio de recepción y almacenaje de mercancía, entrega y montaje en casa del cliente final. Esta web es la herramienta
-con la que se gestiona ese servicio. Parte de la facturación la emite también José Manuel Vera Sierra con su propio NIF; en cada factura figura quién la emite.</p>
+con la que se gestiona ese servicio.</p>
 
 <h3>2. Quién acepta este documento</h3>
 <p>Lo acepta <b>el administrador de la tienda</b>, en nombre de la tienda, la primera vez que entra (y otra vez si el texto cambia). Al aceptar declara que tiene
