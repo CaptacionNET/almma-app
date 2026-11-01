@@ -37,7 +37,6 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
     <button id="b_prox" class="on" onclick="modo('prox')">Próximos montajes</button>
     <button id="b_pas" onclick="modo('pas')">Montajes realizados</button>
     <input id="buscar" placeholder="Buscar cliente, referencia, localidad..." oninput="pintar()" style="width:300px">
-    <label class="muted" id="l_ant" style="display:none"><input type="checkbox" id="ant" onchange="cargar()"> Incluir años anteriores</label>
   </div>
   <div id="tabla"><span class="muted">Cargando...</span></div>
 </div>
@@ -49,17 +48,19 @@ const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co",
 const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fd = d => d ? new Date(d).toLocaleDateString("es-ES") : "—";
 let destino = "mis-pedidos.html", vista = "prox", datos = [], multi = false;
-function modo(m){ vista = m; document.getElementById("b_prox").classList.toggle("on", m==="prox"); document.getElementById("b_pas").classList.toggle("on", m==="pas"); document.getElementById("l_ant").style.display = m==="pas" ? "" : "none"; cargar(); }
+function modo(m){ vista = m; document.getElementById("b_prox").classList.toggle("on", m==="prox"); document.getElementById("b_pas").classList.toggle("on", m==="pas"); cargar(); }
+let vendedores = {};
 async function cargar(){
   const cont = document.getElementById("tabla"); cont.innerHTML = '<span class="muted">Cargando...</span>';
-  let q = client.from("ordenes").select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, num_pedido, estado, fecha_prev_montaje, horamont, fecha_montaje, tiendas(nombre)").limit(500);
+  let q = client.from("ordenes").select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, num_pedido, estado, fecha_prev_montaje, horamont, fecha_montaje, dependiente_id, tiendas(nombre)").limit(500);
   const hoy = new Date().toISOString().slice(0,10);
   if (vista === "prox") q = q.gte("fecha_prev_montaje", hoy).neq("estado", "completado").order("fecha_prev_montaje");
   else {
     q = q.not("fecha_montaje", "is", null).order("fecha_montaje", { ascending:false });
-    if (!document.getElementById("ant").checked) q = q.gte("anyo", new Date().getFullYear() - 3);
+    q = q.gte("anyo", 2026);
   }
-  const { data, error } = await q;
+  const [{ data, error }, vs] = await Promise.all([q, client.rpc("nombres_vendedores")]);
+  vendedores = {}; ((vs && vs.data) || []).forEach(v => { vendedores[v.id] = v.nombre; });
   if (error) { cont.innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
   datos = data; pintar();
 }
@@ -67,8 +68,8 @@ function pintar(){
   const b = document.getElementById("buscar").value.trim().toLowerCase();
   const l = datos.filter(o => !b || [o.nombre_cli,o.num_pedido,o.localidad_cli,o.anyo+"/"+o.orden].join(" ").toLowerCase().includes(b));
   const fecha = vista === "prox" ? "Montaje previsto" : "Montaje realizado";
-  document.getElementById("tabla").innerHTML = l.length ? '<table><tr><th>'+fecha+'</th><th>Orden</th>'+(multi?'<th>Tienda</th>':'')+'<th>Cliente</th><th>Localidad</th><th>Referencia</th><th>Estado</th></tr>'+
-    l.map((o,i) => '<tr class="fila" onclick="abrir('+datos.indexOf(o)+')"><td><b>'+(vista==="prox" ? fd(o.fecha_prev_montaje) + (o.horamont ? " · "+esc(o.horamont) : "") : new Date(o.fecha_montaje).toLocaleString("es-ES"))+'</b></td><td>'+o.anyo+'/'+o.orden+'</td>'+(multi?'<td>'+esc(o.tiendas?.nombre)+'</td>':'')+'<td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.localidad_cli)+'</td><td>'+esc(o.num_pedido)+'</td><td>'+esc((o.estado||"").replace(/_/g," "))+'</td></tr>').join("")+'</table>'
+  document.getElementById("tabla").innerHTML = l.length ? '<table><tr><th>'+fecha+'</th><th>Orden</th>'+(multi?'<th>Tienda</th>':'')+'<th>Cliente</th><th>Localidad</th><th>Referencia</th><th>Vendedor</th><th>Estado</th></tr>'+
+    l.map((o,i) => '<tr class="fila" onclick="abrir('+datos.indexOf(o)+')"><td><b>'+(vista==="prox" ? fd(o.fecha_prev_montaje) + (o.horamont ? " · "+esc(o.horamont) : "") : new Date(o.fecha_montaje).toLocaleString("es-ES"))+'</b></td><td>'+o.anyo+'/'+o.orden+'</td>'+(multi?'<td>'+esc(o.tiendas?.nombre)+'</td>':'')+'<td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.localidad_cli)+'</td><td>'+esc(o.num_pedido)+'</td><td>'+esc(vendedores[o.dependiente_id] || "")+'</td><td>'+esc((o.estado||"").replace(/_/g," "))+'</td></tr>').join("")+'</table>'
     : '<span class="muted">'+(vista==="prox" ? "No hay montajes próximos." : "Todavía no hay montajes realizados.")+'</span>';
 }
 function cerrar(){ document.getElementById("det").style.display = "none"; document.getElementById("overlay").style.display = "none"; }
@@ -85,7 +86,7 @@ async function abrir(i){
   const ents = await Promise.all((en.data || []).map(async e => ({ ...e, u: await url(e.firma_storage_path) })));
   const fots = await Promise.all((fo.data || []).map(async f => ({ ...f, u: await url(f.storage_path) })));
   const k = (a,b) => '<div class="k">'+a+'</div><div class="v">'+(b || "—")+'</div>';
-  c.innerHTML = k("Cliente", esc(o.nombre_cli)) + k("Dirección", esc([o.domicilio_cli,o.localidad_cli].filter(Boolean).join(" - "))) +
+  c.innerHTML = k("Cliente", esc(o.nombre_cli)) + k("Vendedor", esc(vendedores[o.dependiente_id] || "")) + k("Dirección", esc([o.domicilio_cli,o.localidad_cli].filter(Boolean).join(" - "))) +
     k("Montaje previsto", fd(o.fecha_prev_montaje) + (o.horamont ? " · " + esc(o.horamont) : "")) +
     k("Montaje realizado", o.fecha_montaje ? '<span class="ok">'+new Date(o.fecha_montaje).toLocaleString("es-ES")+'</span>' : "Aún no realizado") +
     '<div class="k">Artículos</div><div class="v">'+((li.data||[]).filter(l => l.tipolinea !== 4).map(l => (l.cantidad ?? "")+" × "+esc(l.descripcion)).join("<br>") || "—")+'</div>' +

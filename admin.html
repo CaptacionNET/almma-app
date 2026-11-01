@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ALMMA - Administración</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="condiciones.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
@@ -68,6 +69,7 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
   <button class="tab" data-t="control">Control del sistema</button>
   <button class="tab" data-t="tarifas">Tarifas</button>
   <button class="tab" data-t="camiones">Camiones</button>
+  <button class="tab" data-t="condiciones">Condiciones</button>
 </div>
 
 <div class="panel activa" id="p_resumen">
@@ -87,7 +89,7 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
 
 <div class="panel" id="p_usuarios">
   <div id="u_aviso" class="caja" style="display:none"></div>
-  <div class="barra"><button onclick="abrirNuevo()">+ Nueva cuenta</button><span class="muted">Bloquear no borra nada: solo impide entrar.</span></div>
+  <div class="barra"><button onclick="abrirNuevo()">+ Nueva cuenta</button><span class="muted">Bloquear es temporal (se puede desbloquear). «Quitar acceso» es para quien ya no trabaja: no borra a la persona ni sus pedidos.</span></div>
   <div id="u_nuevo" class="caja" style="display:none;margin-bottom:14px">
     <div class="barra">
       <select id="n_tipo" onchange="cambiaTipo()">
@@ -104,6 +106,13 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
       <button onclick="crearCuenta()">Crear</button>
     </div>
     <span class="muted">Apunta la contraseña y entrégasela a la persona; luego podrá pedir cambiarla.</span>
+  </div>
+  <div class="barra" id="u_filtros">
+    <input id="uf_buscar" placeholder="Buscar por nombre o email..." oninput="pintarUsuarios()" style="width:260px">
+    <select id="uf_tienda" onchange="pintarUsuarios()"><option value="">Todas las tiendas</option></select>
+    <select id="uf_tipo" onchange="pintarUsuarios()"><option value="">Todos los tipos</option></select>
+    <select id="uf_estado" onchange="pintarUsuarios()"><option value="">Activos y bloqueados (sin bajas)</option><option value="a">Solo activos</option><option value="b">Solo bloqueados</option><option value="x">Dados de baja</option></select>
+    <span class="muted" id="uf_cuenta"></span>
   </div>
   <div id="u_tabla"><span class="muted">Cargando...</span></div>
 </div>
@@ -129,6 +138,12 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
   </div>
   <div id="tf_tabla"><span class="muted">Cargando...</span></div>
   <div id="tf_editor" class="caja" style="display:none;margin-top:14px"></div>
+</div>
+
+<div class="panel" id="p_condiciones">
+  <p class="muted" style="margin-top:0">El administrador de cada tienda acepta las condiciones de uso, la política de privacidad y el acuerdo de tratamiento de datos la primera vez que entra
+  (y otra vez si cambia el texto). Aquí ves quién ha aceptado la versión actual y quién falta. El texto está en <a href="condiciones.html" target="_blank">condiciones.html</a>.</p>
+  <div id="co_tabla"><span class="muted">Cargando...</span></div>
 </div>
 
 <div class="panel" id="p_camiones">
@@ -168,7 +183,25 @@ async function iniciar(){
   const r = await client.from("montadores").select("id, nombre, activo, especial, staff_user_id").eq("activo", true).order("especial").order("nombre");
   montadores = r.data || [];
   miMontador = (montadores.find(m => m.staff_user_id === user.id) || {}).id || null;
-  cargarResumen(); cargarUsuarios(); cargarControl(); cargarTarifas(); cargarCamiones();
+  cargarResumen(); cargarUsuarios(); cargarControl(); cargarTarifas(); cargarCamiones(); cargarCondiciones();
+}
+
+/* ---------- Condiciones aceptadas por los administradores de tienda (SQL 76 y 105) ---------- */
+async function cargarCondiciones(){
+  const el = document.getElementById("co_tabla");
+  const [a, d] = await Promise.all([
+    client.from("aceptaciones_condiciones").select("user_id, tienda_nombre, persona_nombre, email, version, aceptado_en").order("aceptado_en", { ascending:false }),
+    client.from("dependientes").select("user_id, nombre, es_admin_tienda, tiendas(nombre)").eq("es_admin_tienda", true).not("user_id", "is", null)]);
+  if (a.error) { el.innerHTML = '<span class="muted">Falta ejecutar el SQL 76 en Supabase.</span>'; return; }
+  const ver = (typeof VERSION_CONDICIONES !== "undefined") ? VERSION_CONDICIONES : null;
+  const vigentes = new Set(a.data.filter(x => x.version === ver).map(x => x.user_id));
+  const faltan = (d.data || []).filter(x => !vigentes.has(x.user_id));
+  const f = t => t ? new Date(t).toLocaleString("es-ES", { dateStyle:"short", timeStyle:"short" }) : "";
+  el.innerHTML = '<p>Versión vigente: <b>' + esc(ver) + '</b></p>'
+    + '<h3>Pendientes de aceptar (' + faltan.length + ')</h3>'
+    + (faltan.length ? '<table><tr><th>Tienda</th><th>Administrador</th></tr>' + faltan.map(x => '<tr><td>'+esc(x.tiendas && x.tiendas.nombre)+'</td><td>'+esc(x.nombre)+'</td></tr>').join("") + '</table>' : '<span class="muted">Todos los administradores han aceptado la versión vigente.</span>')
+    + '<h3>Aceptaciones registradas (' + a.data.length + ')</h3>'
+    + (a.data.length ? '<table><tr><th>Fecha</th><th>Tienda</th><th>Persona</th><th>Email</th><th>Versión</th></tr>' + a.data.map(x => '<tr><td>'+f(x.aceptado_en)+'</td><td>'+esc(x.tienda_nombre)+'</td><td>'+esc(x.persona_nombre)+'</td><td>'+esc(x.email)+'</td><td>'+esc(x.version)+(x.version===ver?'':' <span class="muted">(anterior)</span>')+'</td></tr>').join("") + '</table>' : '<span class="muted">Todavía no ha aceptado nadie.</span>');
 }
 
 /* ---------- Camiones (matrícula de cada vehículo) ---------- */
@@ -429,16 +462,49 @@ async function cargarUsuarios(){
   }
   aviso.style.display = "none";
   window._usuarios = r.usuarios; pintarAccesos();
-  const f = r.usuarios.sort((a,b) => (a.tipo+a.nombre).localeCompare(b.tipo+b.nombre));
+  // «de baja» (SQL 106): se lee de las tablas de personas; si el SQL aún no está, nadie está de baja
+  const [bd, bs] = await Promise.all([client.from("dependientes").select("user_id, baja_at, baja_email").not("baja_at", "is", null),
+                                       client.from("staff").select("user_id, baja_at, baja_email").not("baja_at", "is", null)]);
+  const bajas = {}; [...(bd.data || []), ...(bs.data || [])].forEach(b => { bajas[b.user_id] = b; });
+  r.usuarios.forEach(x => { x.baja = bajas[x.user_id] || null; });
+  window._lista = r.usuarios.sort((a,b) => (a.tipo+a.nombre).localeCompare(b.tipo+b.nombre));
+  // rellena los desplegables de filtro (conserva lo que estuviera elegido)
+  const rellena = (id, valores, vacio) => { const el = document.getElementById(id), v = el.value; el.innerHTML = '<option value="">'+vacio+'</option>' + [...new Set(valores)].filter(Boolean).sort((a,b) => a.localeCompare(b)).map(x => '<option>'+esc(x)+'</option>').join(""); el.value = v; };
+  rellena("uf_tienda", window._lista.flatMap(x => [x.tienda, ...(x.tiendas_extra||[]).map(t => t.nombre)]), "Todas las tiendas");
+  rellena("uf_tipo", window._lista.map(x => x.tipo), "Todos los tipos");
+  pintarUsuarios();
+}
+function pintarUsuarios(){
+  const q = document.getElementById("uf_buscar").value.trim().toLowerCase(), t = document.getElementById("uf_tienda").value,
+        tp = document.getElementById("uf_tipo").value, es = document.getElementById("uf_estado").value;
+  const f = (window._lista || []).filter(x =>
+    (!q || ((x.nombre||"") + " " + (x.email||"") + " " + (x.montador||"")).toLowerCase().includes(q)) &&
+    (!t || x.tienda === t || (x.tiendas_extra||[]).some(e => e.nombre === t)) &&
+    (!tp || x.tipo === tp) &&
+    (es === "x" ? !!x.baja : (!x.baja && (!es || (es === "b") === !!x.bloqueado))));
+  document.getElementById("uf_cuenta").textContent = f.length + " de " + (window._lista || []).length;
   let h = "<table><tr><th>Nombre</th><th>Email</th><th>Tipo</th><th>Tienda</th><th>Último acceso</th><th>Estado</th><th></th></tr>";
-  window._lista = f;
-  for (const x of f) h += '<tr class="'+(x.bloqueado?'sin':'con')+'"><td>'+esc(x.nombre)+(x.montador?' <span class="muted">('+esc(x.montador)+')</span>':'')+'</td><td>'+esc(x.email)+'</td><td>'+esc(x.tipo)+'</td><td>'+esc(x.tienda || '')+((x.tiendas_extra||[]).length ? ' <span class="muted">+ '+x.tiendas_extra.map(t => esc(t.nombre)).join(', ')+'</span>' : '')+'</td><td>'+(x.ultimo_acceso?new Date(x.ultimo_acceso).toLocaleString("es-ES"):'<span class="muted">Nunca</span>')+'</td><td>'+(x.bloqueado?'Bloqueado':'Activo')+'</td><td><button class="secondary" onclick="editarUsuario(\''+x.user_id+'\')">Editar</button> <button class="secondary" onclick="cambiarBloqueo(\''+x.user_id+'\','+x.bloqueado+')">'+(x.bloqueado?'Desbloquear':'Bloquear')+'</button> <button class="secondary" onclick="cambiarPass(\''+x.user_id+'\')">Contraseña</button></td></tr>';
+  for (const x of f) h += '<tr class="'+(x.bloqueado?'sin':'con')+'"><td>'+esc(x.nombre)+(x.montador?' <span class="muted">('+esc(x.montador)+')</span>':'')+'</td><td>'+esc(x.email)+'</td><td>'+esc(x.tipo)+'</td><td>'+esc(x.tienda || '')+((x.tiendas_extra||[]).length ? ' <span class="muted">+ '+x.tiendas_extra.map(t => esc(t.nombre)).join(', ')+'</span>' : '')+'</td><td>'+(x.ultimo_acceso?new Date(x.ultimo_acceso).toLocaleString("es-ES"):'<span class="muted">Nunca</span>')+'</td><td>'+(x.baja?'Dado de baja':(x.bloqueado?'Bloqueado':'Activo'))+'</td><td>'+(x.baja
+      ? '<button class="secondary" onclick="devolverAcceso(\''+x.user_id+'\')">Devolver acceso</button>'
+      : '<button class="secondary" onclick="editarUsuario(\''+x.user_id+'\')">Editar</button> <button class="secondary" onclick="cambiarBloqueo(\''+x.user_id+'\','+x.bloqueado+')">'+(x.bloqueado?'Desbloquear':'Bloquear')+'</button> <button class="secondary" onclick="cambiarPass(\''+x.user_id+'\')">Contraseña</button> <button class="secondary" style="color:#b91c1c" onclick="quitarAcceso(\''+x.user_id+'\')">Quitar acceso</button>')+'</td></tr>';
   document.getElementById("u_tabla").innerHTML = h + "</table>";
 }
 async function cambiarBloqueo(id, bloqueado){
   if (!bloqueado && !confirm("¿Bloquear esta cuenta? No podrá entrar hasta que la desbloquees.")) return;
   const r = await llamar({ accion: bloqueado ? "desbloquear" : "bloquear", user_id:id });
   if (r.error) alert(r.error); else cargarUsuarios();
+}
+async function quitarAcceso(id){
+  const x = (window._lista || []).find(u => u.user_id === id); if (!x) return;
+  if (!confirm("¿Quitar el acceso a " + (x.nombre || x.email) + "?\n\n• Ya no podrá entrar a la web y su email queda libre.\n• Dejará de salir como activo en la tienda.\n• NO se borra a la persona ni sus pedidos: siguen con su nombre.\n\nSe puede deshacer con «Devolver acceso».")) return;
+  const r = await client.rpc("quitar_acceso", { p_user_id: id });
+  if (r.error) alert(r.error.message + (/function|schema cache/i.test(r.error.message) ? "\n\nFalta ejecutar el SQL 106 en Supabase." : "")); else cargarUsuarios();
+}
+async function devolverAcceso(id){
+  const x = (window._lista || []).find(u => u.user_id === id); if (!x) return;
+  const email = prompt("Email con el que volverá a entrar:", (x.baja && x.baja.baja_email) || ""); if (email === null) return;
+  const r = await client.rpc("devolver_acceso", { p_user_id: id, p_email: email });
+  if (r.error) alert(r.error.message); else cargarUsuarios();
 }
 async function cambiarPass(id){
   const p = prompt("Nueva contraseña (mínimo 10 caracteres):"); if (!p) return;

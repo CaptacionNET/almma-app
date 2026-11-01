@@ -6,6 +6,8 @@
 <title>ALMMA - Imprimir facturas</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 :root{--text:#1f2430;--muted:#6b7280;--line:#cfd6e4;}
 *{box-sizing:border-box;}
@@ -13,6 +15,9 @@ body{margin:0;background:#e8ebf2;color:var(--text);font-family:-apple-system,Bli
 #barra{position:sticky;top:0;z-index:5;background:#1f2430;color:#fff;padding:10px 20px;display:flex;gap:12px;align-items:center;}
 #barra button{background:#2563eb;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:14px;cursor:pointer;}
 #barra button.sec{background:#fff;color:#1f2430;}
+#barra{flex-wrap:wrap;}
+#barra button:disabled{opacity:.6;cursor:default;}
+@media screen and (max-width:850px){.hoja{zoom:var(--z,1);margin:8px auto;} body.captura .hoja{zoom:1;} #barra{padding:10px 12px;} #estado{font-size:12px;width:100%;}}
 .hoja{width:210mm;min-height:297mm;margin:16px auto;background:#fff;padding:16mm 16mm 14mm;box-shadow:0 2px 14px rgba(0,0,0,.18);display:flex;flex-direction:column;}
 .cab{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;}
 .emisor{line-height:1.5;}
@@ -60,7 +65,7 @@ body.previa .hoja::after{content:attr(data-marca);position:absolute;top:45%;left
 </head>
 <body>
 <div id="aviso_login" class="aviso-login" style="display:none"><span>¿Quieres ver más cosas, como todas tus facturas y pedidos? Inicia sesión con tu usuario de ALMMA.</span><a href="login.html">Iniciar sesión</a></div>
-<div id="barra"><button onclick="window.print()">Imprimir</button><button class="sec" onclick="window.close()">Cerrar</button><span id="estado"></span></div>
+<div id="barra"><button id="b_pdf" onclick="descargarPdf()">Descargar PDF</button><button class="sec" onclick="window.print()">Imprimir</button><button class="sec" onclick="if(history.length>1&&!window.opener){history.back()}else{window.close()}">Cerrar</button><span id="estado"></span></div>
 <div id="hojas"></div>
 <script>
 const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
@@ -156,6 +161,49 @@ async function iniciar() {
   document.title = orden.length === 1 ? "Factura " + numeroFactura(orden[0], ss) : `Facturas (${orden.length})`;
   await rellenarQr();
   if (params.get("auto") === "1") setTimeout(() => window.print(), 600);
+}
+
+// En el móvil (y en la web instalada en la pantalla de inicio) el botón de imprimir del navegador no siempre existe:
+// por eso hay «Descargar PDF», que crea el PDF aquí mismo y lo abre/comparte con las opciones del móvil.
+function ajustarAlMovil() {
+  const ancho = Math.min(window.innerWidth, screen.width || 9999);
+  document.documentElement.style.setProperty("--z", ancho <= 850 ? Math.max(0.3, (ancho - 16) / 794).toFixed(3) : 1);
+}
+ajustarAlMovil(); window.addEventListener("resize", ajustarAlMovil);
+async function descargarPdf() {
+  const hojas = [...document.querySelectorAll(".hoja")];
+  const b = document.getElementById("b_pdf"), est = document.getElementById("estado");
+  if (!hojas.length) { est.textContent = "Todavía no hay nada que descargar."; return; }
+  if (typeof html2canvas === "undefined" || !window.jspdf) { est.textContent = "No se pudo cargar el generador de PDF (¿sin conexión?). Prueba otra vez."; return; }
+  b.disabled = true; document.body.classList.add("captura");
+  try {
+    const pdf = new window.jspdf.jsPDF({ unit: "mm", format: "a4", compress: true });
+    let primera = true;
+    for (let i = 0; i < hojas.length; i++) {
+      est.textContent = "Creando PDF… " + (i + 1) + " de " + hojas.length;
+      await new Promise(r => setTimeout(r, 30));
+      const c = await html2canvas(hojas[i], { scale: 2, backgroundColor: "#ffffff", useCORS: true });
+      const altoPag = Math.floor(c.width * 297 / 210);   // alto de una página A4 en píxeles de esta captura
+      for (let y = 0; y < c.height - 2; y += altoPag) {
+        const trozo = document.createElement("canvas");
+        trozo.width = c.width; trozo.height = Math.min(altoPag, c.height - y);
+        trozo.getContext("2d").drawImage(c, 0, y, c.width, trozo.height, 0, 0, c.width, trozo.height);
+        if (!primera) pdf.addPage(); primera = false;
+        pdf.addImage(trozo.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 210, trozo.height * 210 / c.width);
+      }
+    }
+    const nombre = (document.title || "factura").replace(/[^\w\-]+/g, "_") + ".pdf";
+    const blob = pdf.output("blob"), fichero = new File([blob], nombre, { type: "application/pdf" });
+    if (navigator.canShare && navigator.canShare({ files: [fichero] })) {
+      try { await navigator.share({ files: [fichero], title: nombre }); est.textContent = "PDF listo."; return; }
+      catch (e) { if (e && e.name === "AbortError") { est.textContent = ""; return; } }
+    }
+    const url = URL.createObjectURL(blob), a = document.createElement("a");
+    a.href = url; a.download = nombre; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    est.textContent = "PDF descargado.";
+  } catch (e) { est.textContent = "No se pudo crear el PDF: " + (e.message || e); }
+  finally { b.disabled = false; document.body.classList.remove("captura"); }
 }
 
 const FORMAS_COBRO = { "00": "Pago fca.", BZ: "Bizum", C: "Contado", CH: "Cheque-talón", DA: "Datáfono", E: "Efectivo", FI: "Financiado", IN: "Ingreso banco", J: "Caja", NO: "", TI: "Tienda", T: "Transferencia", N: "" };

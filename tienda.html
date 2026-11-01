@@ -62,7 +62,6 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
 
 <div class="panel activa" id="p_ordenes">
   <div class="barra"><input id="o_buscar" placeholder="Buscar cliente, referencia, nº..." oninput="pintarOrdenes()" style="width:320px">
-  <label class="muted"><input type="checkbox" id="o_antiguas" onchange="cargarOrdenes()"> Incluir años anteriores</label>
   <span class="muted">Desde</span> <input type="date" id="o_d" onchange="cargarOrdenes()"> <span class="muted">hasta</span> <input type="date" id="o_h" onchange="cargarOrdenes()"> <button class="secondary" onclick="limpiarFechas('o')">Quitar fechas</button></div>
   <div id="o_tabla"><span class="muted">Cargando...</span></div>
 </div>
@@ -79,7 +78,6 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
     <button id="m_b_pas" class="secondary" onclick="modoMontajes('pas')">Montajes realizados</button>
     <input id="m_buscar" placeholder="Buscar cliente, referencia, localidad..." oninput="pintarMontajes()" style="width:300px">
     <span class="muted">Desde</span> <input type="date" id="m_d" onchange="cargarMontajes()"> <span class="muted">hasta</span> <input type="date" id="m_h" onchange="cargarMontajes()"> <button class="secondary" onclick="limpiarFechas('m')">Quitar fechas</button>
-    <label class="muted" id="m_l_ant" style="display:none"><input type="checkbox" id="m_ant" onchange="cargarMontajes()"> Incluir años anteriores</label>
   </div>
   <div id="m_tabla"><span class="muted">Cargando...</span></div>
 </div>
@@ -87,7 +85,7 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
   <div class="barra">
     <span class="muted">Mercancía de vuestros fabricantes que ha llegado a nuestro almacén, con la orden a la que corresponde.</span>
     <span style="flex:1"></span>
-    <select id="r_periodo" onchange="cargarRecibidos()"><option value="30">Últimos 30 días</option><option value="90" selected>Últimos 90 días</option><option value="365">Último año</option></select>
+    <select id="r_periodo" onchange="cargarRecibidos()"><option value="30">Últimos 30 días</option><option value="90" selected>Últimos 90 días</option><option value="365">Desde enero 2026</option></select>
   </div>
   <div id="r_tabla"><span class="muted">Cargando...</span></div>
 </div>
@@ -212,7 +210,7 @@ async function cargarOrdenes(){
   const [od, oh] = fechas("o");
   if (od) q = q.gte("fecha_creacion", od);
   if (oh) q = q.lt("fecha_creacion", sumaDia(oh));
-  if (!od && !oh && !document.getElementById("o_antiguas").checked) q = q.gte("anyo", new Date().getFullYear()-3);
+  q = q.gte("anyo", 2026);   // las tiendas solo ven 2026 en adelante (también lo impone la base de datos, SQL 105)
   const [{ data, error }, , vs] = await Promise.all([q, cargarConMensaje(), client.rpc("nombres_vendedores")]);
   vendedores = {}; ((vs && vs.data) || []).forEach(v => { vendedores[v.id] = v.nombre; });
   if (error) { document.getElementById("o_tabla").innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
@@ -230,7 +228,7 @@ function pintarOrdenes(){
 let facturas = [];
 async function cargarFacturas(){
   let q = client.from("cabfacturas").select("anyo, serie, factura, ffactura, impbruto, impiva, impneto, tiendas!tienda_id(nombre)")
-    .order("ffactura",{ascending:false}).limit(1000);
+    .gte("anyo", 2026).order("ffactura",{ascending:false}).limit(1000);
   if (tiendaSel) q = q.eq("tienda_id", tiendaSel);
   const [fd_, fh] = fechas("f");
   if (fd_) q = q.gte("ffactura", fd_);
@@ -254,12 +252,11 @@ function modoMontajes(m){
   vistaM = m;
   document.getElementById("m_b_prox").className = m==="prox" ? "on" : "secondary";
   document.getElementById("m_b_pas").className = m==="pas" ? "on" : "secondary";
-  document.getElementById("m_l_ant").style.display = m==="pas" ? "" : "none";
   cargarMontajes();
 }
 async function cargarMontajes(){
   const cont = document.getElementById("m_tabla"); cont.innerHTML = '<span class="muted">Cargando...</span>';
-  let q = client.from("ordenes").select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, num_pedido, estado, fecha_prev_montaje, horamont, fecha_montaje, tiendas(nombre)").limit(500);
+  let q = client.from("ordenes").select("anyo, orden, nombre_cli, domicilio_cli, localidad_cli, num_pedido, estado, fecha_prev_montaje, horamont, fecha_montaje, dependiente_id, tiendas(nombre)").limit(500);
   if (tiendaSel) q = q.eq("tienda_id", tiendaSel);
   const [md, mh] = fechas("m");
   if (vistaM === "prox") {
@@ -270,9 +267,10 @@ async function cargarMontajes(){
     q = q.not("fecha_montaje", "is", null).order("fecha_montaje", { ascending:false });
     if (md) q = q.gte("fecha_montaje", md);
     if (mh) q = q.lt("fecha_montaje", sumaDia(mh));
-    if (!md && !mh && !document.getElementById("m_ant").checked) q = q.gte("anyo", new Date().getFullYear() - 3);
+    q = q.gte("anyo", 2026);
   }
-  const { data, error } = await q;
+  const [{ data, error }, vs] = await Promise.all([q, client.rpc("nombres_vendedores")]);
+  vendedores = {}; ((vs && vs.data) || []).forEach(v => { vendedores[v.id] = v.nombre; });
   if (error) { cont.innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
   montajes = data; pintarMontajes();
 }
@@ -280,8 +278,8 @@ function pintarMontajes(){
   const b = document.getElementById("m_buscar").value.trim().toLowerCase();
   const l = montajes.filter(o => !b || [o.nombre_cli,o.num_pedido,o.localidad_cli,o.anyo+"/"+o.orden].join(" ").toLowerCase().includes(b));
   const fecha = vistaM === "prox" ? "Montaje previsto" : "Montaje realizado";
-  document.getElementById("m_tabla").innerHTML = l.length ? '<table><tr><th>'+fecha+'</th><th>Orden</th>'+(multi()?'<th>Tienda</th>':'')+'<th>Cliente</th><th>Localidad</th><th>Referencia</th><th>Estado</th></tr>'+
-    l.map(o => '<tr class="fila" onclick="abrirMontaje('+montajes.indexOf(o)+')"><td><b>'+(vistaM==="prox" ? fdM(o.fecha_prev_montaje) + (o.horamont ? " · "+esc(o.horamont) : "") : new Date(o.fecha_montaje).toLocaleString("es-ES"))+'</b></td><td>'+o.anyo+'/'+o.orden+'</td>'+(multi()?'<td>'+esc(o.tiendas?.nombre)+'</td>':'')+'<td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.localidad_cli)+'</td><td>'+esc(o.num_pedido)+'</td><td>'+esc((o.estado||"").replace(/_/g," "))+'</td></tr>').join("")+'</table>'
+  document.getElementById("m_tabla").innerHTML = l.length ? '<table><tr><th>'+fecha+'</th><th>Orden</th>'+(multi()?'<th>Tienda</th>':'')+'<th>Cliente</th><th>Localidad</th><th>Referencia</th><th>Vendedor</th><th>Estado</th></tr>'+
+    l.map(o => '<tr class="fila" onclick="abrirMontaje('+montajes.indexOf(o)+')"><td><b>'+(vistaM==="prox" ? fdM(o.fecha_prev_montaje) + (o.horamont ? " · "+esc(o.horamont) : "") : new Date(o.fecha_montaje).toLocaleString("es-ES"))+'</b></td><td>'+o.anyo+'/'+o.orden+'</td>'+(multi()?'<td>'+esc(o.tiendas?.nombre)+'</td>':'')+'<td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.localidad_cli)+'</td><td>'+esc(o.num_pedido)+'</td><td>'+esc(vendedores[o.dependiente_id] || "")+'</td><td>'+esc((o.estado||"").replace(/_/g," "))+'</td></tr>').join("")+'</table>'
     : '<span class="muted">'+(vistaM==="prox" ? "No hay montajes próximos." : "No hay montajes realizados con ese filtro.")+'</span>';
 }
 function cerrarMontaje(){ document.getElementById("det").style.display = "none"; document.getElementById("overlay").style.display = "none"; }
@@ -298,7 +296,7 @@ async function abrirMontaje(i){
   const ents = await Promise.all((en.data || []).map(async e => ({ ...e, u: await urlAdjunto(e.firma_storage_path) })));
   const fots = await Promise.all((fo.data || []).map(async f => ({ ...f, u: await urlAdjunto(f.storage_path) })));
   const k = (a,b) => '<div class="k">'+a+'</div><div class="v">'+(b || "—")+'</div>';
-  c.innerHTML = k("Cliente", esc(o.nombre_cli)) + k("Dirección", esc([o.domicilio_cli,o.localidad_cli].filter(Boolean).join(" - "))) +
+  c.innerHTML = k("Cliente", esc(o.nombre_cli)) + k("Vendedor", esc(vendedores[o.dependiente_id] || "")) + k("Dirección", esc([o.domicilio_cli,o.localidad_cli].filter(Boolean).join(" - "))) +
     k("Montaje previsto", fdM(o.fecha_prev_montaje) + (o.horamont ? " · " + esc(o.horamont) : "")) +
     k("Montaje realizado", o.fecha_montaje ? '<span class="ok">'+new Date(o.fecha_montaje).toLocaleString("es-ES")+'</span>' : "Aún no realizado") +
     '<div class="k">Artículos</div><div class="v">'+((li.data||[]).map(l => (l.cantidad ?? "")+" × "+esc(l.descripcion)).join("<br>") || "—")+'</div>' +

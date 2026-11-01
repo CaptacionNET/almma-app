@@ -219,6 +219,7 @@ async function cargarPedidos() {
   const { data, error } = await client.from("ordenes")
     .select("anyo, orden, nombre_cli, num_pedido, estado, con_incidencia, fecha_creacion")
     .eq("tienda_id", tiendaSel || dependiente.tienda_id)
+    .gte("anyo", 2026)   // las tiendas solo ven 2026 en adelante (SQL 105)
     .order("anyo", { ascending: false })
     .order("orden", { ascending: false })
     .limit(200);
