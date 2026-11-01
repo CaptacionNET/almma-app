@@ -495,7 +495,7 @@ async function buscarPedido() {
   resultadoBox.textContent = `${data.length} órdenes coinciden — elige la correcta:`;
   listaBox.innerHTML = data.map((o, i) => `
     <div class="item" style="cursor:pointer;" onclick="activarPedido(resultadosPedidoActuales[${i}], '${numPedido.replace(/'/g, "\\'")}')">
-      <strong>${o.anyo}/${o.orden}</strong> — Referencia "${o.num_pedido || ""}"${o.nombre_cli ? " — " + o.nombre_cli : ""}${o.tiendas?.nombre ? " (" + o.tiendas.nombre + ")" : ""}
+      <strong>${o.anyo}/${o.orden}</strong> — Referencia "${escAlb(o.num_pedido || "")}"${o.nombre_cli ? " — " + escAlb(o.nombre_cli) : ""}${o.tiendas?.nombre ? " (" + escAlb(o.tiendas.nombre) + ")" : ""}
     </div>`).join("");
 }
 
@@ -740,8 +740,8 @@ async function anyadirLineaEntrada() {
 
   const cont = document.getElementById("lista_lineas_entrada");
   if (cont.querySelector(".meta")) cont.innerHTML = "";
-  cont.innerHTML += `<div class="item"><strong>${descripcion}</strong> — ${cantidad} ud.
-    <div class="meta">${fabricanteSeleccionado ? fabricanteSeleccionado.nombre + " · " : ""}${ubicacion || "sin ubicación"}${bultos ? " · " + bultos + " bultos" : ""}${albaran ? " · albarán " + albaran : ""}</div>
+  cont.innerHTML += `<div class="item"><strong>${escAlb(descripcion)}</strong> — ${escAlb(cantidad)} ud.
+    <div class="meta">${fabricanteSeleccionado ? escAlb(fabricanteSeleccionado.nombre) + " · " : ""}${escAlb(ubicacion || "sin ubicación")}${bultos ? " · " + escAlb(bultos) + " bultos" : ""}${albaran ? " · albarán " + escAlb(albaran) : ""}</div>
   </div>` + cont.innerHTML;
 
   document.getElementById("ent_fabricante_buscar").value = "";

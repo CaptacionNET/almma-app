@@ -1563,7 +1563,7 @@ async function marcarServiciosVistos(anyo, orden){
   await client.from("servicios_orden").update({ revisado: true }).eq("anyo", anyo).eq("orden", orden);
   cargarAvisoServicios();
 }
-function escMont(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+function escMont(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
 
 async function pintarMontadores(o) {
   const todos = await cargarMontadores();
@@ -1631,7 +1631,7 @@ async function cargarDetallesMontaje() {
   const contFotos = document.getElementById("ch_lista_fotos_montaje");
   contFotos.innerHTML = (fotos || []).map(f => `
     <div class="item">
-      <strong>${f.categoria || "foto"}</strong> ${f.comentario ? "— " + f.comentario : ""}
+      <strong>${escMont(f.categoria || "foto")}</strong> ${f.comentario ? "— " + escMont(f.comentario) : ""}
       <div class="meta">${new Date(f.created_at).toLocaleString("es-ES")} — <a href="#" onclick="verFotoMontaje('${f.storage_path}');return false;">ver</a></div>
     </div>`).join("") || '<div class="meta">Sin fotos del montaje.</div>';
 
@@ -1643,7 +1643,7 @@ async function cargarDetallesMontaje() {
   const contFirma = document.getElementById("ch_firma_montaje");
   if (!entrega) { contFirma.innerHTML = '<div class="meta">Sin firma de entrega todavía.</div>'; return; }
 
-  contFirma.innerHTML = `<div class="item">Firmado por <strong>${entrega.firmante_nombre || "-"}</strong> el ${new Date(entrega.firmado_at).toLocaleString("es-ES")}${entrega.observaciones ? `<div class="meta">${entrega.observaciones}</div>` : ""}</div>`;
+  contFirma.innerHTML = `<div class="item">Firmado por <strong>${escMont(entrega.firmante_nombre || "-")}</strong> el ${new Date(entrega.firmado_at).toLocaleString("es-ES")}${entrega.observaciones ? `<div class="meta">${escMont(entrega.observaciones)}</div>` : ""}</div>`;
   if (entrega.firma_storage_path) {
     const { data: signed } = await client.storage.from("ordenes-adjuntos").createSignedUrl(entrega.firma_storage_path, 300);
     if (signed) contFirma.innerHTML += `<img src="${signed.signedUrl}" alt="Firma" style="max-width:100%;border:1px solid var(--border);border-radius:8px;margin-top:6px;">`;
@@ -1776,8 +1776,8 @@ async function cargarLineas() {
       const claseTipo = [1, 2, 3, 4].includes(l.tipolinea) ? `lin-t${l.tipolinea}` : "";
       const pendiente = l.tipolinea !== 4 && !l.recibido_at && l.recibido !== "S";
       return `<tr class="${claseTipo} ${pendiente ? "lin-pendiente" : ""}">
-        <td><button class="secondary btn-mini" style="color:#dc2626;" onclick="borrarLinea(${l.linea}, '${(l.descripcion || l.articulo || "").replace(/'/g, "\\'").replace(/"/g, "&quot;")}')">Borrar</button></td>
-        <td>${l.descripcion || l.articulo || ""}${l.control_stock === 'S' ? ' <span class="meta" style="color:var(--muted);font-size:11px;">(stock)</span>' : ''}</td>
+        <td><button class="secondary btn-mini" style="color:#dc2626;" data-d="${escMont(l.descripcion || l.articulo || "")}" onclick="borrarLinea(${l.linea}, this.dataset.d)">Borrar</button></td>
+        <td>${escMont(l.descripcion || l.articulo || "")}${l.control_stock === 'S' ? ' <span class="meta" style="color:var(--muted);font-size:11px;">(stock)</span>' : ''}</td>
         <td>${l.cantidad ?? ""}</td>
         <td>${l.importe ?? ""}</td>
         <td>${l.porcentaje !== null && l.porcentaje !== undefined ? Math.round(l.porcentaje * 100) / 100 : ""}</td>
@@ -1816,8 +1816,8 @@ function generarAlbaranSalida() {
 function textoQuienAlbaran(v) {
   const f = (t) => t ? new Date(t).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
   const partes = [];
-  if (v.casadoNombre && v.casado_en) partes.push(`Linkado por ${v.casadoNombre} el ${f(v.casado_en)}`);
-  if (v.subidoNombre && v.subido_en) partes.push(`albarán subido por ${v.subidoNombre} el ${f(v.subido_en)}`);
+  if (v.casadoNombre && v.casado_en) partes.push(`Linkado por ${escMont(v.casadoNombre)} el ${f(v.casado_en)}`);
+  if (v.subidoNombre && v.subido_en) partes.push(`albarán subido por ${escMont(v.subidoNombre)} el ${f(v.subido_en)}`);
   return partes.length ? `<div class="meta" style="font-size:11px;margin-top:3px;">${partes.join(" · ")}</div>` : "";
 }
 
@@ -1866,7 +1866,7 @@ document.getElementById("ln_articulo_buscar").addEventListener("input", (e) => {
     if (tienda && tienda.codigo !== null && tienda.codigo !== undefined) consulta = consulta.eq("proveedor", tienda.codigo);
     const { data } = await consulta;
     caja.innerHTML = (data || []).map(a =>
-      `<div data-art="${a.articulo}" data-desc="${(a.descripcion || "").replace(/"/g, "&quot;")}" data-imp="${a.importe ?? ""}" data-por="${a.porcentaje ?? ""}">${a.articulo} — ${a.descripcion || ""}${a.importe ? " — " + a.importe + " €" : ""}${a.porcentaje !== null && a.porcentaje !== undefined ? " · " + (Math.round(a.porcentaje * 100) / 100) + " %" : ""}</div>`
+      `<div data-art="${escMont(a.articulo)}" data-desc="${escMont(a.descripcion || "")}" data-imp="${a.importe ?? ""}" data-por="${a.porcentaje ?? ""}">${escMont(a.articulo)} — ${escMont(a.descripcion || "")}${a.importe ? " — " + a.importe + " €" : ""}${a.porcentaje !== null && a.porcentaje !== undefined ? " · " + (Math.round(a.porcentaje * 100) / 100) + " %" : ""}</div>`
     ).join("") || (tienda ? `<div style="padding:8px 10px;color:#6b7280;font-size:12px;">${tienda.nombre} no tiene artículos con ese texto. Se pueden dar de alta en Sistema → Artículos.</div>` : "");
     caja.style.display = caja.innerHTML ? "block" : "none";
   }, 250);
@@ -2188,12 +2188,12 @@ async function cargarHistorial(o) {
 
   if (o.anyo_ant && o.orden_ant) {
     const { data: previa } = await client.from("ordenes").select("anyo, orden, nombre_cli, estado").eq("anyo", o.anyo_ant).eq("orden", o.orden_ant).maybeSingle();
-    if (previa) partes.push(`<div class="item">⬅ Viene de <a href="#" onclick="irAOrden(${previa.anyo},${previa.orden});return false;"><strong>${previa.anyo}/${previa.orden}</strong></a> — ${previa.nombre_cli || ""} (${previa.estado})</div>`);
+    if (previa) partes.push(`<div class="item">⬅ Viene de <a href="#" onclick="irAOrden(${previa.anyo},${previa.orden});return false;"><strong>${previa.anyo}/${previa.orden}</strong></a> — ${escMont(previa.nombre_cli || "")} (${escMont(previa.estado)})</div>`);
   }
 
   const { data: siguientes } = await client.from("ordenes").select("anyo, orden, nombre_cli, estado").eq("anyo_ant", o.anyo).eq("orden_ant", o.orden);
   (siguientes || []).forEach(s => {
-    partes.push(`<div class="item">➡ Continúa en <a href="#" onclick="irAOrden(${s.anyo},${s.orden});return false;"><strong>${s.anyo}/${s.orden}</strong></a> — ${s.nombre_cli || ""} (${s.estado})</div>`);
+    partes.push(`<div class="item">➡ Continúa en <a href="#" onclick="irAOrden(${s.anyo},${s.orden});return false;"><strong>${s.anyo}/${s.orden}</strong></a> — ${escMont(s.nombre_cli || "")} (${escMont(s.estado)})</div>`);
   });
 
   const { data: ob } = await client.from("ordenes").select("observaciones").eq("anyo", o.anyo).eq("orden", o.orden).maybeSingle();

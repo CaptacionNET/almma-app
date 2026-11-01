@@ -218,6 +218,7 @@ canvas#firma_canvas{border:1px solid var(--border);border-radius:8px;width:100%;
 </div>
 
 <script>
+function escM(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
 const client = supabase.createClient(
   "https://uamgbtbsxbrgymhqalak.supabase.co",
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k"
@@ -404,7 +405,7 @@ async function cargarLineas() {
       const pill = l.recibido_at
         ? '<span class="pill-recibida">recibido</span>'
         : '<span class="pill-pendiente">pendiente</span>';
-      return `<tr><td>${l.descripcion || l.articulo || ""}</td><td>${l.cantidad ?? ""}</td><td>${pill}</td></tr>`;
+      return `<tr><td>${escM(l.descripcion || l.articulo || "")}</td><td>${l.cantidad ?? ""}</td><td>${pill}</td></tr>`;
     }).join("");
 }
 
@@ -430,7 +431,7 @@ async function cargarFotos() {
   const cont = document.getElementById("lista_fotos");
   cont.innerHTML = (data || []).map(f => `
     <div class="item">
-      <strong>${f.categoria || "foto"}</strong> ${f.comentario ? "— " + f.comentario : ""}
+      <strong>${escM(f.categoria || "foto")}</strong> ${f.comentario ? "— " + escM(f.comentario) : ""}
       <div class="meta">${new Date(f.created_at).toLocaleString("es-ES")} — <a href="#" onclick="verFoto('${f.storage_path}');return false;">ver</a></div>
     </div>`).join("") || '<div class="meta">Sin fotos todavía.</div>';
 }
@@ -537,7 +538,7 @@ async function cargarEntregaPrevia() {
     return;
   }
 
-  cont.innerHTML = `<div class="item">Ya firmado por <strong>${data.firmante_nombre || "-"}</strong> el ${new Date(data.firmado_at).toLocaleString("es-ES")}</div>`;
+  cont.innerHTML = `<div class="item">Ya firmado por <strong>${escM(data.firmante_nombre || "-")}</strong> el ${new Date(data.firmado_at).toLocaleString("es-ES")}</div>`;
 
   if (data.firma_storage_path) {
     const { data: signed } = await client.storage.from("ordenes-adjuntos").createSignedUrl(data.firma_storage_path, 300);
