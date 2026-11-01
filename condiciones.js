@@ -129,7 +129,7 @@ async function exigirCondiciones(cliente) {
   await new Promise(listo => {
     const st = document.createElement("style"); st.textContent = CONDICIONES_CSS +
       `#c-fondo{position:fixed;inset:0;background:rgba(15,23,42,.65);z-index:99999;display:flex;align-items:center;justify-content:center;padding:12px}
-       #c-ventana{background:#fff;border-radius:10px;max-width:760px;width:100%;max-height:92vh;display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:#1f2430}
+       #c-ventana{background:#fff;border-radius:10px;max-width:760px;width:100%;max-height:92vh;max-height:92dvh;display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:#1f2430}
        #c-texto{overflow:auto;padding:18px 22px;flex:1} #c-pie{padding:12px 22px;border-top:1px solid #e2e4eb;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;align-items:center}
        #c-pie button{border:none;padding:10px 18px;border-radius:6px;font-size:14px;cursor:pointer} #c-si{background:#2563eb;color:#fff;font-weight:600} #c-si:disabled{opacity:.5;cursor:default}
        #c-no{background:#e5e7eb;color:#374151} #c-pie a{font-size:12px;color:#2563eb;margin-right:auto} #c-err{color:#b91c1c;font-size:12px;width:100%;text-align:right}`;

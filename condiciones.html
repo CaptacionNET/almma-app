@@ -7,19 +7,57 @@
 <style>
 body{margin:0;background:#f5f6fa;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:#1f2430;}
 .hoja{max-width:780px;margin:24px auto;background:#fff;border:1px solid #e2e4eb;border-radius:8px;padding:24px 30px;}
-.barra{max-width:780px;margin:16px auto 0;text-align:right;} button{background:#2563eb;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;}
+.barra{position:sticky;top:0;z-index:5;max-width:780px;margin:0 auto;padding:10px 12px;background:#f5f6fa;display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center;} .barra div{display:flex;gap:8px;flex-wrap:wrap;} button{background:#2563eb;color:#fff;border:none;padding:10px 16px;border-radius:6px;cursor:pointer;font-size:14px;} button.sec{background:#fff;color:#1f2430;border:1px solid #cfd6e4;} button:disabled{opacity:.6;}
+@media(max-width:820px){.hoja{margin:8px;padding:16px 14px;}}
 @media print{body{background:#fff}.barra{display:none}.hoja{border:none;margin:0;padding:0}}
 </style>
 <style id="estilo_c"></style>
 <link rel="manifest" href="manifest.webmanifest">
 </head>
 <body>
-<div class="barra"><button onclick="window.print()">Imprimir / guardar en PDF</button></div>
+<div class="barra"><button class="sec" onclick="volver()">← Volver</button><div><button id="b_pdf" onclick="descargarPdf()">Descargar PDF</button><button class="sec" onclick="window.print()">Imprimir</button></div></div>
+<div id="msg" style="max-width:780px;margin:0 auto;padding:0 12px;font-size:12px;color:#6b7280"></div>
 <div class="hoja c-caja" id="texto"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="condiciones.js"></script>
 <script>
 document.getElementById("estilo_c").textContent = CONDICIONES_CSS;
 document.getElementById("texto").innerHTML = CONDICIONES_HTML;
+// «Volver»: en el móvil (y en la web instalada) esta página se abre sin botón de cerrar del navegador
+function volver(){
+  if (window.opener) { window.close(); return; }
+  if (history.length > 1) { history.back(); return; }
+  location.href = "inicio.html";
+}
+// En el móvil el botón de imprimir del navegador no siempre existe: se crea el PDF aquí mismo y se abre/comparte
+async function descargarPdf(){
+  const b = document.getElementById("b_pdf"), msg = document.getElementById("msg");
+  if (typeof html2canvas === "undefined" || !window.jspdf) { msg.textContent = "No se pudo cargar el generador de PDF (¿sin conexión?)."; return; }
+  b.disabled = true; msg.textContent = "Creando PDF…";
+  try {
+    const el = document.getElementById("texto");
+    const c = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
+    const pdf = new window.jspdf.jsPDF({ unit: "mm", format: "a4", compress: true });
+    const m = 10, w = 210 - 2 * m, h = 297 - 2 * m, alto = Math.floor(c.width * h / w);
+    for (let y = 0, p = 0; y < c.height - 2; y += alto, p++) {
+      const t = document.createElement("canvas"); t.width = c.width; t.height = Math.min(alto, c.height - y);
+      t.getContext("2d").drawImage(c, 0, y, c.width, t.height, 0, 0, c.width, t.height);
+      if (p) pdf.addPage();
+      pdf.addImage(t.toDataURL("image/jpeg", 0.92), "JPEG", m, m, w, t.height * w / c.width);
+    }
+    const nombre = "Condiciones_ALMMA_" + VERSION_CONDICIONES.split(" ")[0] + ".pdf";
+    const blob = pdf.output("blob"), f = new File([blob], nombre, { type: "application/pdf" });
+    if (navigator.canShare && navigator.canShare({ files: [f] })) {
+      try { await navigator.share({ files: [f], title: nombre }); msg.textContent = "PDF listo."; return; }
+      catch (e) { if (e && e.name === "AbortError") { msg.textContent = ""; return; } }
+    }
+    const u = URL.createObjectURL(blob), a = document.createElement("a");
+    a.href = u; a.download = nombre; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 60000); msg.textContent = "PDF descargado.";
+  } catch (e) { msg.textContent = "No se pudo crear el PDF: " + (e.message || e); }
+  finally { b.disabled = false; }
+}
 </script>
 </body>
 </html>
