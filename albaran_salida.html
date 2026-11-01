@@ -16,6 +16,7 @@ body{margin:0;background:#e8ebf2;color:var(--text);font-family:-apple-system,Bli
 .cab{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;}
 .tienda{line-height:1.5;}
 .tienda strong{font-size:16px;}
+.logo{display:block;max-height:20mm;max-width:65mm;object-fit:contain;margin-bottom:6px;}
 .titulo{text-align:right;}
 .titulo .tipo{font-size:22px;font-weight:800;letter-spacing:.5px;}
 .titulo .num{font-size:14px;font-weight:700;margin-top:2px;}
@@ -66,7 +67,8 @@ async function iniciar() {
   ]);
   if (e1 || e2 || !o) { estado("Error: " + ((e1 || e2) ? (e1 || e2).message : "no se encuentra la orden")); return; }
   const { data: t } = o.tienda_id ? await client.from("tiendas").select("*").eq("id", o.tienda_id).maybeSingle() : { data: null };
-  document.getElementById("hojas").innerHTML = hoja(o, t || {}, lins || []);
+  const { data: lg } = o.tienda_id ? await client.from("tiendas_logo").select("logo").eq("tienda_id", o.tienda_id).maybeSingle() : { data: null };   // SQL 107; si no existe aún, sale sin logo
+  document.getElementById("hojas").innerHTML = hoja(o, { ...(t || {}), _logo: lg && lg.logo }, lins || []);
   const ref = `${anyo}/${orden}`;
   document.title = "Albarán de entrega " + ref;
   estado("Albarán de entrega de la orden " + ref);
@@ -85,7 +87,7 @@ function hoja(o, t, lins) {
   const loc = [t.cp, t.localidad].filter(Boolean).map(esc).join(" ") + (t.provincia ? " (" + esc(t.provincia) + ")" : "");
   return `<div class="hoja">
     <div class="cab">
-      <div class="tienda"><strong>${esc(t.nombre_comercial || t.nombre || "")}</strong>
+      <div class="tienda">${t._logo && String(t._logo).startsWith("data:image/") ? `<img class="logo" src="${t._logo}" alt="">` : ""}<strong>${esc(t.nombre_comercial || t.nombre || "")}</strong>
         ${t.nombre_comercial && t.nombre && t.nombre !== t.nombre_comercial ? `<br>${esc(t.nombre)}` : ""}
         ${t.cif ? `<br>CIF: ${esc(t.cif)}` : ""}${t.direccion ? `<br>${esc(t.direccion)}` : ""}${loc ? `<br>${loc}` : ""}
         ${t.telefono ? `<br>Tel.: ${esc(t.telefono)}` : ""}${t.email ? `<br>${esc(t.email)}` : ""}</div>

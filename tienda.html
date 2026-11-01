@@ -43,6 +43,7 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
 </head>
 <body>
 <div id="toolbar">
+  <img id="tienda_logo" alt="" style="display:none;max-height:34px;max-width:120px;object-fit:contain;background:#fff;border-radius:4px;padding:2px 4px">
   <b>ALMMA · <span id="tienda_nombre">Mi tienda</span></b>
   <button class="secondary" onclick="location.href='inicio.html'">🏠 Inicio</button>
   <button class="secondary" onclick="abrirNuevoPedido()">Nuevo pedido</button>
@@ -102,6 +103,9 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
   </div>
   <div id="e_tabla"><span class="muted">Cargando...</span></div>
   <h3 style="margin:26px 0 8px;color:#1e3a8a">Datos de la tienda</h3>
+  <div class="caja"><b>Logo de la tienda</b>
+    <div class="muted" style="margin:4px 0 8px">Aparece en esta pantalla y en los albaranes de entrega que imprime ALMMA con vuestra mercancía. Mejor una imagen horizontal sobre fondo blanco o transparente (PNG o JPG); se reduce sola.</div>
+    <div id="lg_caja"><span class="muted">Cargando...</span></div></div>
   <div class="caja"><b>Teléfonos de la tienda</b>
     <div class="muted" style="margin:4px 0 8px">Los ven los montadores en su móvil para poder llamaros si tienen una duda con un pedido. El móvil de cada vendedor se cambia en su ficha (botón Editar).</div>
     <div id="tt_caja"><span class="muted">Cargando...</span></div></div>
@@ -187,7 +191,7 @@ async function iniciar(){
   document.getElementById("quien").textContent = d.nombre || user.email;
   cargarOrdenes(); cargarFacturas(); cargarMontajes(); cargarRecibidos(); cargarEquipo();
 }
-function cambiaTienda(id){ tiendaSel = id; cargarOrdenes(); cargarFacturas(); cargarMontajes(); cargarRecibidos(); cargarEquipo(); }
+function cambiaTienda(id){ tiendaSel = id; pintarLogoCabecera(); cargarOrdenes(); cargarFacturas(); cargarMontajes(); cargarRecibidos(); cargarEquipo(); }
 const multi = () => misTiendas.length > 1;
 
 /* Fechas de los buscadores: p = "o" (órdenes), "f" (facturas), "m" (montajes) */
@@ -336,6 +340,54 @@ async function cargarRecibidos(){
   cont.innerHTML = pintarRecibidos((data || []).filter(a => !tiendaSel || !a.tienda_id || a.tienda_id === tiendaSel));
 }
 
+/* Logo de la tienda (migracion/107_logo_de_la_tienda.sql) */
+let logos = {};
+function pintarLogoCabecera(){
+  const id = tiendaSel || (misTiendas[0] || {}).id, img = document.getElementById("tienda_logo"), l = logos[id];
+  if (l && l.startsWith("data:image/")) { img.src = l; img.style.display = ""; } else img.style.display = "none";
+}
+async function cargarLogos(){
+  const cont = document.getElementById("lg_caja");
+  const { data, error } = await client.from("tiendas_logo").select("tienda_id, logo");
+  if (error) { cont.innerHTML = '<span class="muted">Todavía no está disponible el logo (falta ejecutar el SQL 107).</span>'; return; }
+  logos = {}; (data || []).forEach(x => { logos[x.tienda_id] = x.logo; });
+  pintarLogoCabecera();
+  const mias = misTiendas.filter(t => !tiendaSel || t.id === tiendaSel);
+  cont.innerHTML = mias.map(t => '<div class="barra" style="margin-bottom:6px">' + (multi() ? '<b style="min-width:140px">' + esc(t.nombre) + '</b>' : '') +
+    (logos[t.id] ? '<img src="' + logos[t.id] + '" alt="Logo" style="max-height:60px;max-width:200px;border:1px solid var(--border);border-radius:4px;background:#fff;padding:3px">' : '<span class="muted">Sin logo</span>') +
+    '<input type="file" id="lg_f_' + t.id + '" accept="image/png,image/jpeg,image/webp" onchange="subirLogo(\'' + t.id + '\')">' +
+    (logos[t.id] ? '<button class="secondary" onclick="quitarLogo(\'' + t.id + '\')">Quitar</button>' : '') + '</div>').join("") || '<span class="muted">Sin datos.</span>';
+}
+// reduce la imagen a 400×200 como máximo (conserva proporciones y transparencia) antes de enviarla
+function reducirLogo(file){
+  return new Promise((ok, ko) => {
+    const url = URL.createObjectURL(file), im = new Image();
+    im.onload = () => {
+      const k = Math.min(1, 400 / im.width, 200 / im.height), w = Math.max(1, Math.round(im.width * k)), h = Math.max(1, Math.round(im.height * k));
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      const g = c.getContext("2d"); g.drawImage(im, 0, 0, w, h); URL.revokeObjectURL(url);
+      let out = c.toDataURL("image/png");
+      if (out.length > 350000) { g.globalCompositeOperation = "destination-over"; g.fillStyle = "#fff"; g.fillRect(0, 0, w, h); out = c.toDataURL("image/jpeg", 0.85); }
+      out.length > 390000 ? ko(new Error("La imagen es demasiado compleja; prueba con una más sencilla.")) : ok(out);
+    };
+    im.onerror = () => { URL.revokeObjectURL(url); ko(new Error("No se pudo leer la imagen.")); };
+    im.src = url;
+  });
+}
+async function subirLogo(id){
+  const f = document.getElementById("lg_f_" + id).files[0]; if (!f) return;
+  try {
+    const { error } = await client.rpc("guardar_logo_tienda", { p_tienda_id: id, p_logo: await reducirLogo(f) });
+    if (error) throw error;
+    cargarLogos();
+  } catch (e) { alert("No se pudo guardar el logo: " + (e.message || e)); }
+}
+async function quitarLogo(id){
+  if (!confirm("¿Quitar el logo de la tienda?")) return;
+  const { error } = await client.rpc("quitar_logo_tienda", { p_tienda_id: id });
+  if (error) alert("No se pudo quitar: " + error.message); else cargarLogos();
+}
+
 /* Teléfonos de la tienda que ve el montador en «Mi día» (migracion/74_la_tienda_mantiene_sus_telefonos.sql) */
 async function cargarTelefonos(){
   const cajaT = document.getElementById("tt_caja");
@@ -377,7 +429,7 @@ const nomTienda = id => (misTiendas.find(t => t.id === id) || {}).nombre || "";
 function pintarChips(){ document.getElementById("f_tiendas").innerHTML = misTiendas.map(t => { const on = tiendasFicha.includes(t.id); return '<button type="button" onclick="clicTienda(\'' + t.id + '\')" style="border-radius:20px;padding:7px 14px;border:1px solid ' + (on ? '#1e40af;background:#1e40af;color:#fff' : '#93c5fd;background:#eff6ff;color:#1e3a8a') + ';font-weight:600">' + (on ? "✓ " : "") + esc(t.nombre) + '</button>'; }).join(""); }
 function clicTienda(id){ tiendasFicha = tiendasFicha.includes(id) ? tiendasFicha.filter(x => x !== id) : tiendasFicha.concat(id); pintarChips(); }
 async function cargarEquipo(){
-  cargarTelefonos(); cargarEmails();
+  cargarTelefonos(); cargarEmails(); cargarLogos();
   const [r, c] = await Promise.all([client.rpc("mi_equipo"), llamar({ accion:"listar" })]);
   if (r.error) { document.getElementById("e_tabla").innerHTML = '<span class="muted">No se pudo cargar el equipo: ' + esc(r.error.message) + '. ¿Está ejecutado el SQL 84?</span>'; return; }
   equipo = r.data || [];
