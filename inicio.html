@@ -36,8 +36,10 @@ async function init() {
   if (!user) { location.href = "login.html"; return; }
 
   let botones = [];
+  let esStaff = false;
   const { data: st } = await client.from("staff").select("nombre, es_admin, es_montador, solo_deca, solo_montajes").eq("user_id", user.id).maybeSingle();
   if (st) {
+    esStaff = true;
     // cuentas restringidas: van directas a lo suyo
     if (st.solo_montajes) { location.href = "mi-dia.html"; return; }
     if (st.solo_deca) { location.href = "deca.html"; return; }
@@ -81,6 +83,7 @@ async function init() {
       ];
     }
   }
+  botones.push(B("❓", "Ayuda / Help", "Guía de uso paso a paso", esStaff ? "ayuda_staff.html" : "ayuda_tienda.html"));
   botones.push(B("👤", "Mi perfil", "Mi nombre, teléfono, contraseña y email", "perfil.html"));
   document.getElementById("botones").innerHTML = botones.map(b =>
     '<a class="boton" href="' + b.href + '"><div class="ico">' + b.ico + '</div><b>' + b.t + '</b><span>' + b.d + '</span></a>').join("");

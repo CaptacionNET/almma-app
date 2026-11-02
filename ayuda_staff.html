@@ -1,0 +1,122 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><title>ALMMA - Guía para almacén y oficina</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+body{font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:780px;margin:30px auto;padding:0 20px;color:#1f2937;line-height:1.55}
+h1{color:#1e3a8a;border-bottom:3px solid #1e3a8a;padding-bottom:8px}
+h2{color:#1e3a8a;margin-top:32px;border-bottom:1px solid #d1d5db;padding-bottom:4px}
+h3{margin-bottom:4px}
+.aviso{background:#fef9c3;border-left:4px solid #ca8a04;padding:8px 12px;margin:12px 0}
+.ok{background:#ecfdf5;border-left:4px solid #059669;padding:8px 12px;margin:12px 0}
+table{border-collapse:collapse;width:100%;margin:10px 0}td,th{border:1px solid #d1d5db;padding:6px 10px;text-align:left;vertical-align:top}th{background:#f3f4f6}
+code{background:#f3f4f6;padding:1px 5px;border-radius:4px}
+@media print{.noprint{display:none}body{margin:0}h2{page-break-after:avoid}}
+</style></head><body>
+<p class="noprint"><a href="inicio.html">&larr; Volver al inicio</a> · <a href="#" onclick="window.print();return false">🖨 Imprimir / guardar PDF</a></p>
+<h1>ALMMA — Guía para almacén y oficina (staff)</h1>
+<p>Esta guía explica el trabajo diario: <b>recibir mercancía, seguir los pedidos, preparar rutas y resolver incidencias</b>. Se entra en <b>almma.es</b> con tu email y contraseña. La pantalla de inicio <b>«¿Qué quieres hacer?»</b> tiene un botón por cada tarea.</p>
+
+<h2>El ciclo de un pedido</h2>
+<ol>
+<li>La <b>tienda</b> crea el pedido.</li>
+<li>El <b>almacén</b> recibe la mercancía y la registra → el pedido pasa solo a «recepcionado parcial» o «total».</li>
+<li>La <b>oficina</b> asigna montador, fecha y cita → «agendado».</li>
+<li>El <b>montador</b> monta, sube fotos y recoge la firma del cliente → «completado» y queda pendiente de facturar.</li>
+</ol>
+
+<h2>1. Entrada de mercancía por albarán (lo principal del almacén)</h2>
+<p>Botón <b>📄 Entrada por albarán</b>. Sirve para registrar lo que llega leyendo el albarán del fabricante con IA.</p>
+<ol>
+<li>Pulsa <b>⬆ Subir fotos o PDF de albaranes</b> y sube las fotos (una por albarán, bien enfocada y entera).</li>
+<li>Aparecen en <b>«Albaranes por confirmar»</b>. Abre uno: ALMMA propone a qué <b>orden</b> corresponde cada línea.</li>
+<li>Revisa lo propuesto (cliente, nº de pedido, fabricante, cantidades, bultos, ubicación). Con <b>👁 Ver orden</b> compruebas la orden.
+ <ul>
+ <li><b>Usar esta</b> / <b>Añadir también</b>: elige la orden correcta.</li>
+ <li><b>Buscar a mano</b>: si no la encuentra. <b>Crear orden nueva</b> si no existe (pide tienda, cliente, nº pedido, tipo de orden).</li>
+ <li><b>Añadir como línea nueva</b>: si el albarán trae algo que no estaba en el pedido.</li>
+ <li><b>Unir seleccionadas</b>: cuando dos líneas son lo mismo.</li>
+ </ul></li>
+<li>Si un albarán trae mercancía de <b>varios clientes</b>, usa «Este albarán es de varios clientes: repartir las líneas» y asigna cada línea a su cliente.</li>
+<li>Cuando todo esté bien, pulsa <b>✔ Todo correcto: registrar entrada</b>. La orden sube de estado automáticamente.</li>
+</ol>
+<div class="aviso"><b>Importante:</b> la IA ayuda pero se equivoca a veces. Mira siempre el cliente y las cantidades antes de registrar. Si dudas, pulsa <b>Dejar para después</b>.</div>
+<ul>
+<li><b>Descartar lectura</b>: lo borra de la lista de pendientes. Se puede recuperar en <b>🗑 Ver descartados → Recuperar</b>.</li>
+<li><b>↩ Deshacer</b>: vuelve atrás el último paso.</li>
+</ul>
+
+<h2>2. Entrada a mano y consultas de almacén</h2>
+<p>Botón <b>📦 Consulta almacén</b> (pantalla «Recepción»). Tiene tres pestañas:</p>
+<table>
+<tr><th>Pestaña</th><th>Para qué</th></tr>
+<tr><td>Últimas entradas registradas</td><td>Ver lo último que se ha dado de entrada.</td></tr>
+<tr><td>Albaranes del día</td><td>Los albaranes subidos hoy, quién los subió y quién los procesó. «Ver albarán» abre el original.</td></tr>
+<tr><td>Albaranes por tienda</td><td>Albaranes confirmados filtrables por tienda y fechas. Marca los que quieras y pulsa <b>⬇ Descargar seleccionados (PDF)</b> o <b>✉ Preparar correo</b> para enviárselos a la tienda.</td></tr>
+</table>
+<h3>Dar entrada sin albarán</h3>
+<ol>
+<li>Escribe la <b>referencia de pedido</b> y pulsa <b>Buscar</b> (si no existe, <b>Crear como orden nueva</b>).</li>
+<li>En «Entrada para la orden…» marca lo recibido: <b>cantidad recibida</b>, o <b>Marcar recibida</b> en cada línea.</li>
+<li>Para algo extra, <b>+ Añadir línea</b> (almacén, fecha de entrada, fabricante, descripción, cantidad, ubicación, bultos, albarán).</li>
+<li><b>Guardar cambios</b>.</li>
+</ol>
+<div class="ok">El buscador mira solo los <b>últimos 4 años</b>. Si no encuentras algo antiguo, marca <b>«Incluir años anteriores»</b>.</div>
+
+<h2>3. Órdenes (oficina)</h2>
+<p>Botón <b>📋 Órdenes</b>. Es la pantalla más completa: la ficha de cada pedido tiene pestañas:</p>
+<table>
+<tr><th>Pestaña</th><th>Qué contiene</th></tr>
+<tr><td>Cabecera</td><td>Cliente, tienda, referencia, estado, montador, fechas.</td></tr>
+<tr><td>Líneas</td><td>Artículos del pedido, cantidades, importes.</td></tr>
+<tr><td>Observaciones</td><td>Notas internas.</td></tr>
+<tr><td>Citas</td><td>Cita de montaje con el cliente.</td></tr>
+<tr><td>Incidencias</td><td>Problemas abiertos y su evolución.</td></tr>
+<tr><td>Historial</td><td>Quién cambió qué y cuándo.</td></tr>
+<tr><td>Llamadas</td><td>Registro de llamadas al cliente.</td></tr>
+</table>
+<ul>
+<li>Arriba, un desplegable <b>«Órdenes con servicios adicionales»</b> avisa de lo que el montador ha hecho de más (agujeros, cortes…). Desaparece al abrir la orden o pulsar <b>«Marcar visto»</b>. No genera factura solo.</li>
+<li>El <b>chat</b> con la tienda aparece en la orden; un 💬 rojo indica mensajes sin leer.</li>
+</ul>
+
+<h2>4. Punteo — qué falta por llegar</h2>
+<p>Botón <b>✅ Punteo</b>. Una fila por línea de pedido, con fabricante, tienda, fechas y tick de recibido. Filtra por <b>año</b> y por texto (mercancía, fabricante, tienda, referencia). Al pulsar una fila se abre la orden. Úsalo para reclamar a los fabricantes lo pendiente.</p>
+
+<h2>5. Rutas y montajes</h2>
+<p>Botón <b>🗺️ Rutas</b>: vista por semana (flechas «Semana anterior / siguiente», «Hoy», «Ayer») con los montajes por día y equipo: hora, orden, cliente, localidad, estado, montadores, importe y cobrado.</p>
+<ul>
+<li><b>Elegir camión</b> de cada equipo y día.</li>
+<li><b>Imprimir hoja (PDF con QR)</b>: la hoja de ruta con matrícula, peso total y un espacio de observaciones bajo cada orden.</li>
+<li><b>🖨 Imprimir listado (PDF)</b>: listado completo del periodo, con importes y cobros.</li>
+</ul>
+<p>El <b>montador</b> ve su trabajo en <b>📱 Mi día</b>: sus montajes, fotos, firma del cliente y servicios adicionales.</p>
+
+<h2>6. Devoluciones (almacén de cambios)</h2>
+<p>Botón <b>↩️ Devoluciones</b>. Controla la mercancía devuelta y lo que se cambia.</p>
+<ul>
+<li><b>📦 Stock de cambios</b>: qué hay ahora (entró, salió, <b>STOCK</b>, ubicación). «Dar salida» entrega una pieza.</li>
+<li><b>📋 Movimientos</b>: historial; filtra por tienda, fabricante, orden, cliente, fechas, entradas o salidas.</li>
+<li><b>➕ Entrada de devolución</b> y <b>➖ Salida manual</b>: rellena fecha, albarán, pedido del fabricante, orden de origen, líneas, bultos y peso.</li>
+</ul>
+
+<h2>7. Incidencias</h2>
+<p>Pantalla <b>Gestión de Incidencias</b>. Filtra por orden, cliente, tienda, fechas y estado (abiertas, en proceso, resueltas). Cada una se pasa a <b>«en proceso»</b> y luego a <b>«resuelta»</b>.</p>
+<div class="aviso">Al <b>resolver</b> una incidencia, la orden <b>no vuelve</b> sola a su estado anterior (por ejemplo «recepcionado total»). Hay que cambiarlo a mano en la orden.</div>
+
+<h2>8. Albarán de salida / entrega</h2>
+<p>Es el documento que acompaña la entrega: artículos, cantidades, bultos, peso, ubicación y fecha/hora de montaje previstos, con el logo de la tienda. Botón <b>Imprimir / Guardar PDF</b>.</p>
+
+<h2>9. Otras pantallas</h2>
+<table>
+<tr><th>Botón</th><th>Para qué</th></tr>
+<tr><td>🧾 Facturación</td><td>Pendientes, borradores y emitidas. Normalmente solo oficina/dirección.</td></tr>
+<tr><td>🛠️ DeCA</td><td>Pantalla específica de DeCA (hoja de ruta de sus montajes).</td></tr>
+<tr><td>⚙️ Sistema</td><td>Catálogos: tiendas, fabricantes, dependientes, montadores, artículos.</td></tr>
+<tr><td>🔐 Administración</td><td>Solo administradores: cuentas, permisos y quitar acceso.</td></tr>
+</table>
+
+<h2>Reglas de oro</h2>
+<ul>
+<li>Una orden se identifica por <b>año + número</b> (ej. <code>2026/118</code>).</li>
+<li>Registra la entrada <b>el mismo día</b>: de eso depende que tienda y oficina vean el estado correcto.</li>
+<li>Una factura ya emitida <b>no se puede modificar</b>: se corrige con una rectificativa.</li>
+<li>Si no estás seguro, <b>no confirmes</b>: «Dejar para después» no rompe nada.</li>
+</ul>
+</body></html>
