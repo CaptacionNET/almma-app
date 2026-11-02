@@ -83,7 +83,7 @@ async function init() {
       ];
     }
   }
-  botones.push(B("❓", "Ayuda / Help", "Guía de uso paso a paso", esStaff ? "ayuda_staff.html" : "ayuda_tienda.html"));
+  botones.push(B("❓", "Ayuda / Help", "Guías de uso paso a paso", esStaff ? "ayuda.html" : "ayuda_tienda.html"));
   botones.push(B("👤", "Mi perfil", "Mi nombre, teléfono, contraseña y email", "perfil.html"));
   document.getElementById("botones").innerHTML = botones.map(b =>
     '<a class="boton" href="' + b.href + '"><div class="ico">' + b.ico + '</div><b>' + b.t + '</b><span>' + b.d + '</span></a>').join("");
