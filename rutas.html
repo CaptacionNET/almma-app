@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="imprimir_movil.js"></script>
 <style>
 :root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
 *{box-sizing:border-box;}
@@ -77,7 +78,7 @@ tr.tot td{background:#dbeafe;font-weight:700;border-top:2px solid #2563eb;}
     <button class="secondary" onclick="moverSemana(1)">Semana siguiente &rarr;</button>
     <button class="secondary" onclick="moverSemana(0)">Hoy</button>
     <button class="secondary" onclick="verAyer()">Ayer</button>
-    <button class="secondary" onclick="window.print()">🖨 Imprimir listado</button>
+    <button class="secondary" onclick="imprimirListado()">🖨 Imprimir listado (PDF)</button>
     <select id="f_dia" onchange="pintarMontajes()"><option value="">Todos los días</option></select>
     <select id="f_eq" onchange="pintarMontajes()"><option value="">Todos los equipos</option></select>
     <label class="muted" id="l_mios" style="display:none"><input type="checkbox" id="solo_mios" onchange="pintarMontajes()"> <b>Solo mis montajes</b></label>
@@ -175,11 +176,16 @@ function claveEquipo(o){
   return n.length ? n.join("/") : SIN_EQ;
 }
 const porHora = (a,b) => (a.horamont || "99").localeCompare(b.horamont || "99") || a.orden - b.orden;
+function filasFiltradas(){
+  const soloSin = document.getElementById("solo_sin").checked, fDia = document.getElementById("f_dia").value, fEq = document.getElementById("f_eq").value;
+  const soloMios = document.getElementById("solo_mios").checked;
+  return ordenesSemana.filter(o => (!soloSin || !o.ordenes_montadores.length) && (!soloMios || o.ordenes_montadores.some(a => a.montador_id === miMontador)) && (!fDia || String(o.fecha_prev_montaje).slice(0,10) === fDia) && (!fEq || claveEquipo(o) === fEq));
+}
 function pintarMontajes(){
   const soloSin = document.getElementById("solo_sin").checked, nom = Object.fromEntries(montadores.map(m => [m.id, m.nombre]));
   const fDia = document.getElementById("f_dia").value, fEq = document.getElementById("f_eq").value;
   const soloMios = document.getElementById("solo_mios").checked;
-  const filas = ordenesSemana.filter(o => (!soloSin || !o.ordenes_montadores.length) && (!soloMios || o.ordenes_montadores.some(a => a.montador_id === miMontador)) && (!fDia || String(o.fecha_prev_montaje).slice(0,10) === fDia) && (!fEq || claveEquipo(o) === fEq));
+  const filas = filasFiltradas();
   if (!filas.length) { document.getElementById("montajes_tabla").innerHTML = '<span class="muted">No hay montajes con esos criterios.</span>'; return; }
   const dias = [...new Set(filas.map(o => String(o.fecha_prev_montaje).slice(0,10)))].sort();
   let h = '<table><tr><th>Hora</th><th>Orden</th><th>Cliente</th><th>Localidad</th><th>Estado</th><th>Montadores</th><th class="num">Importe (líneas 4)</th><th>Cobrado al cliente</th><th class="noprint">Añadir</th></tr>';
@@ -226,6 +232,66 @@ async function anadir(anyo, orden, sel){
 async function quitar(anyo, orden, mid){
   const { error } = await client.from("ordenes_montadores").delete().eq("anyo", anyo).eq("orden", orden).eq("montador_id", mid);
   if (error) alert("No se pudo quitar: " + error.message); else cargarMontajes();
+}
+
+/* ---------- Listado en PDF (vale desde el móvil: se abre en el visor y se imprime o comparte desde ahí) ---------- */
+async function imprimirListado(){
+  const w = ventanaPrevia();
+  try {
+    const filas = filasFiltradas();
+    if (!filas.length) throw new Error("No hay montajes con esos criterios");
+    const nom = Object.fromEntries(montadores.map(m => [m.id, m.nombre]));
+    const { PDFDocument, StandardFonts, rgb } = PDFLib, doc = await PDFDocument.create();
+    const F = await doc.embedFont(StandardFonts.Helvetica), B = await doc.embedFont(StandardFonts.HelveticaBold);
+    const W = 842, H = 595, M = 28, X = { hora:M, orden:62, cli:118, loc:330, mon:450, imp:600, cob:690 };
+    const fmt = n => (Number(n)||0).toLocaleString("es-ES",{minimumFractionDigits:2,maximumFractionDigits:2}) + " EUR";
+    const fDia = document.getElementById("f_dia").value;
+    const titulo = "ALMMA - Listado de montajes - " + (fDia ? new Date(fDia+"T12:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long",year:"numeric"}) : document.getElementById("rango_semana").textContent);
+    let page, y;
+    const t = (s, x, yy, sz = 8.5, f = F) => page.drawText(limpiar(s), { x, y: yy, size: sz, font: f, color: rgb(0,0,0) });
+    const cobroTxt = c => [c.ef ? "Efectivo " + fmt(c.ef) : "", c.da ? "Datafono " + fmt(c.da) : "", c.otro ? limpiar(c.otroTxt) + " " + fmt(c.otro) : ""].filter(Boolean);
+    const cabecera = () => {
+      page = doc.addPage([W, H]); t(titulo, M, H-30, 13, B); t("Impreso el " + new Date().toLocaleString("es-ES"), M, H-44, 8);
+      y = H-64; page.drawRectangle({ x: M, y: y-4, width: W-2*M, height: 14, color: rgb(.86,.92,.99) });
+      [["HORA",X.hora],["ORDEN",X.orden],["CLIENTE",X.cli],["LOCALIDAD",X.loc],["MONTADORES",X.mon],["IMPORTE (L.4)",X.imp],["COBRADO",X.cob]].forEach(([s,x]) => t(s, x, y, 8, B));
+      y -= 16;
+    };
+    const hay = alto => { if (y - alto < 30) cabecera(); };
+    const suma = (txt, ords, fondo) => {
+      const imp = ords.reduce((s,o) => s + importeOrden(o), 0), c = ords.map(cobroOrden);
+      const ef = c.reduce((s,x) => s + x.ef, 0), da = c.reduce((s,x) => s + x.da, 0), ot = c.reduce((s,x) => s + x.otro, 0);
+      const lin = ["Efectivo " + fmt(ef), "Datafono " + fmt(da)].concat(ot ? ["Otros " + fmt(ot)] : []);
+      hay(12 + lin.length * 10);
+      page.drawRectangle({ x: M, y: y - lin.length*10 + 6, width: W-2*M, height: lin.length*10 + 4, color: fondo });
+      t(txt + " - " + ords.length + " montaje" + (ords.length>1?"s":""), M+4, y, 9, B); t(fmt(imp), X.imp, y, 9, B);
+      lin.forEach((s,i) => t(s, X.cob, y - i*10, 8.5, B)); y -= lin.length*10 + 6;
+    };
+    cabecera();
+    const dias = [...new Set(filas.map(o => String(o.fecha_prev_montaje).slice(0,10)))].sort();
+    for (const d of dias) {
+      const delDia = filas.filter(o => String(o.fecha_prev_montaje).slice(0,10) === d);
+      hay(40); t(new Date(d+"T12:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"}).toUpperCase(), M, y, 10, B); y -= 14;
+      const equipos = [...new Set(delDia.map(claveEquipo))].sort((a,b) => (a === SIN_EQ) - (b === SIN_EQ) || a.localeCompare(b));
+      for (const eq of equipos) {
+        const delEq = delDia.filter(o => claveEquipo(o) === eq).sort(porHora);
+        hay(40); t(eq, M, y, 9.5, B); const cam = camiones.find(c => c.id === rutasCam[d+"|"+eq]); if (cam) t("Camion: " + cam.matricula, X.loc, y, 8.5); y -= 13;
+        for (const o of delEq) {
+          const cli = envolver(F, 8.5, o.nombre_cli || "", 205), loc = envolver(F, 8.5, o.localidad_cli || "", 112);
+          const mon = envolver(F, 8.5, o.ordenes_montadores.map(a => nom[a.montador_id] || "?").join(", ") || "Sin montador", 142), cob = cobroTxt(cobroOrden(o));
+          const n = Math.max(cli.length, loc.length, mon.length, cob.length, 1); hay(n * 10.5 + 4);
+          t(o.horamont || "-", X.hora, y, 8.5, B); t(o.anyo + "/" + o.orden, X.orden, y, 8.5);
+          cli.forEach((s,i) => t(s, X.cli, y - i*10.5)); loc.forEach((s,i) => t(s, X.loc, y - i*10.5)); mon.forEach((s,i) => t(s, X.mon, y - i*10.5));
+          t(fmt(importeOrden(o)), X.imp, y); (cob.length ? cob : ["-"]).forEach((s,i) => t(s, X.cob, y - i*10.5));
+          y -= n * 10.5 + 3; page.drawLine({ start:{x:M,y:y+5}, end:{x:W-M,y:y+5}, thickness:.3, color:rgb(.8,.8,.8) });
+        }
+        suma("Subtotal " + eq, delEq, rgb(.95,.97,1)); y -= 4;
+      }
+      suma("TOTAL DIA", delDia, rgb(.86,.92,.99)); y -= 10;
+    }
+    doc.getPages().forEach((p,i,a) => p.drawText("Pagina " + (i+1) + " de " + a.length, { x: W-M-70, y: 14, size: 8, font: F }));
+    const bytes = await doc.save();
+    await abrirPdf(new Blob([bytes], { type: "application/pdf" }), "listado_montajes_" + (fDia || iso(semanaIni)) + ".pdf", w);
+  } catch (e) { if (w) w.close(); alert("No se pudo crear el listado: " + (e.message || e)); }
 }
 
 /* ---------- Hoja de reparto de un equipo (PDF con QR, se guarda como los DeCA) ---------- */
@@ -326,7 +392,7 @@ async function imprimirHoja(dia, equipo, btn){
     if (eu) throw eu;
     const { error: ef } = await client.from("deca_documentos").insert({ nombre: "Hoja " + equipo + " " + new Date(dia+"T12:00").toLocaleDateString("es-ES"), pdf_path: ruta, subido_por: user.id, fecha_documento: dia });
     if (ef) throw ef;
-    window.open(urlPublica, "_blank");
+    abrirNueva(urlPublica);
     document.getElementById("hoja_msg").innerHTML = 'Hoja de <b>'+esc(equipo)+'</b> lista: <a href="'+urlPublica+'" target="_blank">abrir PDF</a> (también está en la pantalla DeCA).';
   } catch (e) { alert("No se pudo generar la hoja: " + (e.message || e)); }
   btn.disabled = false; btn.textContent = txtBtn;

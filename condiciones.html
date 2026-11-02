@@ -15,7 +15,7 @@ body{margin:0;background:#f5f6fa;font-family:-apple-system,BlinkMacSystemFont,"S
 <link rel="manifest" href="manifest.webmanifest">
 </head>
 <body>
-<div class="barra"><button class="sec" onclick="volver()">← Volver</button><div><button id="b_pdf" onclick="descargarPdf()">Descargar PDF</button><button class="sec" onclick="window.print()">Imprimir</button></div></div>
+<div class="barra"><button class="sec" onclick="volver()">← Volver</button><div><button id="b_pdf" onclick="descargarPdf()">Descargar PDF</button><button class="sec" onclick="/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? descargarPdf() : window.print()">Imprimir</button></div></div>
 <div id="msg" style="max-width:780px;margin:0 auto;padding:0 12px;font-size:12px;color:#6b7280"></div>
 <div class="hoja c-caja" id="texto"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>

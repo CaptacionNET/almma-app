@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ALMMA - Albarán de entrega</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="imprimir_movil.js"></script>
 <style>
 :root{--text:#1f2430;--muted:#6b7280;--line:#cfd6e4;}
 *{box-sizing:border-box;}
@@ -41,10 +42,11 @@ td.num,th.num{text-align:right;white-space:nowrap;}
   #barra{display:none;}
   .hoja{margin:0;box-shadow:none;width:auto;min-height:0;height:277mm;}
 }
+@media screen and (max-width:850px){.hoja{zoom:.45;margin:8px auto;} #barra{padding:10px 12px;flex-wrap:wrap;}}
 </style>
 </head>
 <body>
-<div id="barra"><button onclick="window.print()">Imprimir / Guardar PDF</button><button class="sec" onclick="window.close()">Cerrar</button><span id="estado">Cargando…</span></div>
+<div id="barra"><button onclick="imprimirAlbaran()">Imprimir / Guardar PDF</button><button class="sec" onclick="window.close()">Cerrar</button><span id="estado">Cargando…</span></div>
 <div id="hojas"></div>
 <script>
 const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
@@ -115,6 +117,27 @@ function hoja(o, t, lins) {
     </div>
     <div class="nota">Con su firma, el firmante confirma haber recibido la mercancía relacionada en buen estado, salvo anotación en contrario.</div>
   </div>`;
+}
+async function imprimirAlbaran() {
+  if (!esMovil()) { window.print(); return; }
+  const w = ventanaPrevia();
+  try {
+    await cargarPdfLibs();
+    const hojas = [...document.querySelectorAll(".hoja")];
+    if (!hojas.length) throw new Error("Todavía no hay albarán");
+    document.documentElement.style.setProperty("--z", 1);
+    const pdf = new window.jspdf.jsPDF({ unit: "mm", format: "a4", compress: true });
+    for (let i = 0; i < hojas.length; i++) {
+      const c = await html2canvas(hojas[i], { scale: 2, backgroundColor: "#ffffff", useCORS: true });
+      if (i) pdf.addPage();
+      pdf.addImage(c.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 210, Math.min(297, c.height * 210 / c.width));
+    }
+    await abrirPdf(pdf.output("blob"), "albaran_entrega.pdf", w);
+  } catch (e) { if (w) w.close(); alert("No se pudo crear el PDF: " + (e.message || e)); }
+}
+function cargarPdfLibs() {
+  const cargar = (src) => new Promise((ok, ko) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = () => ko(new Error("No se pudo cargar el generador de PDF (¿sin conexión?)")); document.head.appendChild(s); });
+  return Promise.all([window.html2canvas || cargar("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"), window.jspdf || cargar("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js")]);
 }
 iniciar();
 </script>

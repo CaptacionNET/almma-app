@@ -65,7 +65,7 @@ body.previa .hoja::after{content:attr(data-marca);position:absolute;top:45%;left
 </head>
 <body>
 <div id="aviso_login" class="aviso-login" style="display:none"><span>¿Quieres ver más cosas, como todas tus facturas y pedidos? Inicia sesión con tu usuario de ALMMA.</span><a href="login.html">Iniciar sesión</a></div>
-<div id="barra"><button id="b_pdf" onclick="descargarPdf()">Descargar PDF</button><button class="sec" onclick="window.print()">Imprimir</button><button class="sec" onclick="if(history.length>1&&!window.opener){history.back()}else{window.close()}">Cerrar</button><span id="estado"></span></div>
+<div id="barra"><button id="b_pdf" onclick="descargarPdf()">Descargar PDF</button><button class="sec" onclick="/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? descargarPdf() : window.print()">Imprimir</button><button class="sec" onclick="if(history.length>1&&!window.opener){history.back()}else{window.close()}">Cerrar</button><span id="estado"></span></div>
 <div id="hojas"></div>
 <script>
 const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
@@ -121,7 +121,7 @@ async function iniciar() {
     document.getElementById("estado").innerHTML = `<strong style="color:#d97706;">BORRADOR — sin número, no es definitivo.</strong> ${bs.length} hoja(s).`;
     document.title = "Borrador de factura";
     document.body.classList.add("previa");
-    if (params.get("auto") === "1") setTimeout(() => window.print(), 600);
+    if (params.get("auto") === "1" && !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) setTimeout(() => window.print(), 600);
     return;
   }
   const ids = (params.get("ids") || "").split(",").filter(Boolean).map(x => x.split("-").map(Number)).filter(a => a.length === 3 && a.every(n => !isNaN(n)));
@@ -160,7 +160,7 @@ async function iniciar() {
   document.getElementById("estado").textContent = `${orden.length} factura(s) lista(s) para imprimir. Elige "Guardar como PDF" en el cuadro de impresión si prefieres un fichero.`;
   document.title = orden.length === 1 ? "Factura " + numeroFactura(orden[0], ss) : `Facturas (${orden.length})`;
   await rellenarQr();
-  if (params.get("auto") === "1") setTimeout(() => window.print(), 600);
+  if (params.get("auto") === "1" && !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) setTimeout(() => window.print(), 600);
 }
 
 // En el móvil (y en la web instalada en la pantalla de inicio) el botón de imprimir del navegador no siempre existe:

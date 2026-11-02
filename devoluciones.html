@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ALMMA - Gestión de Devoluciones</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="imprimir_movil.js"></script>
 <style>
 
 
@@ -109,7 +110,7 @@ tr:nth-child(even) td{background:#f5f9ff;} td.n,th.n{text-align:right;}
   <div class="campo-mini mov" style="max-width:150px"><label>Hasta</label><input id="f_hasta" type="date" onchange="pintar()"></div>
   <div class="campo-mini mov" style="max-width:130px"><label>Tipo</label><select id="f_sent" onchange="pintar()"><option value="">Todos</option><option value="entrada">Entradas</option><option value="salida">Salidas</option></select></div>
   <button class="secondary" onclick="limpiar()">Limpiar</button>
-  <button class="secondary" onclick="window.print()">🖨 Imprimir</button>
+  <button class="secondary" onclick="imprimirPagina({selector:'#aviso,#tabla',nombre:'devoluciones',titulo:'ALMMA - Devoluciones',ancho:1300})">🖨 Imprimir</button>
 </div>
 <div class="aviso" id="aviso"></div>
 <div class="tw" id="tabla"></div>

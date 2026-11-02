@@ -8,6 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
+<script src="imprimir_movil.js"></script>
 <style>
 :root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
 *{box-sizing:border-box;}
@@ -1733,7 +1734,7 @@ async function borrarDocumentoOrden(id, ruta) {
 async function verFotoMontaje(path) {
   const { data, error } = await client.storage.from("ordenes-adjuntos").createSignedUrl(path, 300);
   if (error) { alert("No se pudo abrir la foto: " + error.message); return; }
-  window.open(data.signedUrl, "_blank");
+  abrirNueva(data.signedUrl);
 }
 
 // --- lineas ---
@@ -1810,7 +1811,7 @@ function abrirAlbaranSalida() {
 function generarAlbaranSalida() {
   const sel = [...document.querySelectorAll(".chk-alb-salida:checked")].map(c => c.value);
   if (!sel.length) { alert("Marca al menos una línea."); return; }
-  window.open(`albaran_salida.html?anyo=${pedidoActivo.anyo}&orden=${pedidoActivo.orden}&lineas=${sel.join(",")}`, "_blank");
+  abrirNueva(`albaran_salida.html?anyo=${pedidoActivo.anyo}&orden=${pedidoActivo.orden}&lineas=${sel.join(",")}`);
 }
 
 function textoQuienAlbaran(v) {
@@ -1826,7 +1827,7 @@ async function verAlbaranTransportista(linea) {
   if (!ruta) return;
   const { data, error } = await client.storage.from("albaranes").createSignedUrl(ruta, 300);
   if (error) { alert("No se pudo abrir el albarán: " + error.message); return; }
-  window.open(data.signedUrl, "_blank");
+  abrirNueva(data.signedUrl);
 }
 
 async function editarUbicacion(linea, actual) {

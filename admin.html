@@ -8,6 +8,7 @@
 <script src="condiciones.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="imprimir_movil.js"></script>
 <style>
 :root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
 *{box-sizing:border-box;}
@@ -274,7 +275,7 @@ async function verTarifaAdmin(id){
   const t = tfLista.find(x => x.id === id);
   const r = await client.storage.from("tarifas").createSignedUrl(t.archivo, 300);
   if (r.error) { alert(r.error.message); return; }
-  window.open(r.data.signedUrl, "_blank");
+  abrirNueva(r.data.signedUrl);
 }
 function reemplazarTarifa(id){
   const i = document.createElement("input"); i.type = "file"; i.accept = "application/pdf";

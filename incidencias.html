@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ALMMA - Gestión de Incidencias</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="imprimir_movil.js"></script>
 <style>
 
 :root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
@@ -223,7 +224,7 @@ function imprimir() {
   if ($("f_tienda").value) f.push("tienda " + tiendas[$("f_tienda").value]);
   if ($("f_desde").value || $("f_hasta").value) f.push("avisos " + ($("f_desde").value || "…") + " a " + ($("f_hasta").value || "…"));
   $("titulo_filtros").textContent = (f.join(" · ") || "Todas") + " · impreso el " + new Date().toLocaleDateString("es-ES");
-  window.print();
+  imprimirPagina({ selector: "#lista", nombre: "incidencias", titulo: "ALMMA - Incidencias · " + $("titulo_filtros").textContent, ancho: 900, quitar: ".acc" });
 }
 iniciar();
 </script>

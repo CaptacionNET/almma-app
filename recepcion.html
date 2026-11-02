@@ -8,6 +8,7 @@
 <link href="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="imprimir_movil.js"></script>
 <style>
 :root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
 *{box-sizing:border-box;}
@@ -445,7 +446,7 @@ function correoTienda() {
 async function verAlbaranDia(ruta) {
   const { data, error } = await client.storage.from("albaranes").createSignedUrl(ruta, 300);
   if (error) { alert("No se pudo abrir el albarán: " + error.message); return; }
-  window.open(data.signedUrl, "_blank");
+  abrirNueva(data.signedUrl);
 }
 
 async function logout() {

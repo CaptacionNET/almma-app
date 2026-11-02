@@ -6,6 +6,7 @@
 <title>ALMMA - Detalle de la orden</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="imprimir_movil.js"></script>
 <style>
 :root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
 *{box-sizing:border-box;}
@@ -124,7 +125,7 @@ async function cargarDocumentos(anyo, orden) {
 async function abrirDocumento(ruta) {
   const { data, error } = await client.storage.from("ordenes-adjuntos").createSignedUrl(ruta, 300);
   if (error) { alert("No se pudo abrir: " + error.message); return; }
-  window.open(data.signedUrl, "_blank");
+  abrirNueva(data.signedUrl);
 }
 async function pintarMiniatura(el) {
   const ruta = el.dataset.ruta;
