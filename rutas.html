@@ -37,6 +37,18 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
 #detalle{display:none;position:fixed;top:0;right:0;bottom:0;width:min(780px,100vw);background:var(--card);border-left:1px solid var(--border);box-shadow:-10px 0 30px -20px rgba(0,0,0,.3);z-index:31;padding:20px;overflow-y:auto;}
 .tarjeta{transition:box-shadow .1s;} .tarjeta:hover{box-shadow:0 4px 12px -6px rgba(30,64,175,.6);}
 .caja{background:var(--card);border:1px dashed #93c5fd;border-radius:8px;padding:16px;max-width:760px;line-height:1.5;}
+td.num,th.num{text-align:right;white-space:nowrap;}
+tr.sub td{background:#f8fafc;font-weight:600;border-top:1px solid #93c5fd;}
+tr.tot td{background:#dbeafe;font-weight:700;border-top:2px solid #2563eb;}
+#cab_imp{display:none;}
+@media print{
+  #toolbar,.barra,.noprint,#hoja_msg{display:none !important;}
+  body{background:#fff;font-size:11px;} .panel{padding:0;}
+  #cab_imp{display:block;font-size:15px;font-weight:700;margin-bottom:8px;}
+  table{font-size:10.5px;border:none;} th,td{padding:3px 4px;}
+  tr.eq,tr.dia,tr.sub,tr.tot{break-inside:avoid;} tr{break-inside:avoid;}
+  @page{size:A4 landscape;margin:10mm;}
+}
 </style>
 <link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="ALMMA"><script src="pwa.js" defer></script>
 </head>
@@ -64,12 +76,15 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
     <b id="rango_semana"></b>
     <button class="secondary" onclick="moverSemana(1)">Semana siguiente &rarr;</button>
     <button class="secondary" onclick="moverSemana(0)">Hoy</button>
+    <button class="secondary" onclick="verAyer()">Ayer</button>
+    <button class="secondary" onclick="window.print()">🖨 Imprimir listado</button>
     <select id="f_dia" onchange="pintarMontajes()"><option value="">Todos los días</option></select>
     <select id="f_eq" onchange="pintarMontajes()"><option value="">Todos los equipos</option></select>
     <label class="muted" id="l_mios" style="display:none"><input type="checkbox" id="solo_mios" onchange="pintarMontajes()"> <b>Solo mis montajes</b></label>
     <label class="muted"><input type="checkbox" id="solo_sin" onchange="pintarMontajes()"> Solo sin montador</label>
   </div>
   <div id="hoja_msg" class="muted" style="margin-bottom:10px"></div>
+  <div id="cab_imp"></div>
   <div id="montajes_tabla"><span class="muted">Cargando...</span></div>
 </div>
 
@@ -105,12 +120,45 @@ async function cargarMontajes(){
   const fin = new Date(semanaIni.getFullYear(), semanaIni.getMonth(), semanaIni.getDate()+7);
   document.getElementById("rango_semana").textContent = semanaIni.toLocaleDateString("es-ES") + " – " + new Date(+fin-864e5).toLocaleDateString("es-ES");
   const { data, error } = await client.from("ordenes")
-    .select("anyo, orden, nombre_cli, localidad_cli, estado, fecha_prev_montaje, horamont, ordenes_montadores(montador_id)")
+    .select("anyo, orden, nombre_cli, localidad_cli, estado, fecha_prev_montaje, horamont, importe_cobrado, tipo_cobro, ordenes_montadores(montador_id), linorden(tipolinea, importe_cobrar)")
     .gte("fecha_prev_montaje", iso(semanaIni)).lt("fecha_prev_montaje", iso(fin)).order("fecha_prev_montaje");
   if (error) { document.getElementById("montajes_tabla").innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
   ordenesSemana = data || []; rutasCam = {};
   try { const rc = await client.from("rutas_camion").select("dia, equipo, camion_id").gte("dia", iso(semanaIni)).lt("dia", iso(fin)); (rc.data || []).forEach(x => rutasCam[x.dia + "|" + x.equipo] = x.camion_id); } catch(_){}
+  cobros = {};
+  try {
+    const porAnyo = {}; ordenesSemana.forEach(o => (porAnyo[o.anyo] ||= []).push(o.orden));
+    for (const [a, lst] of Object.entries(porAnyo)) {
+      const rc2 = await client.from("cobros_orden").select("anyo, orden, importe, forma").eq("anyo", +a).in("orden", lst);
+      (rc2.data || []).forEach(c => { const k = c.anyo + "/" + c.orden; (cobros[k] ||= []).push(c); });
+    }
+  } catch(_){}
   rellenarFiltros(); pintarMontajes();
+}
+let cobros = {};
+function verAyer(){
+  const a = new Date(); a.setDate(a.getDate()-1);
+  semanaIni = lunes(a);
+  cargarMontajes().then(() => { const f = document.getElementById("f_dia"), v = iso(a); if ([...f.options].some(o => o.value === v)) { f.value = v; pintarMontajes(); } });
+}
+const eur = n => (Number(n)||0).toLocaleString("es-ES",{minimumFractionDigits:2,maximumFractionDigits:2}) + " €";
+function importeOrden(o){ return (o.linorden||[]).filter(l => l.tipolinea === 4).reduce((s,l) => s + (Number(l.importe_cobrar)||0), 0); }
+// lo cobrado al cliente: lo apuntado por el montador (efectivo / datáfono) o, si no hay, lo que figura en la orden
+function cobroOrden(o){
+  const c = cobros[o.anyo + "/" + o.orden] || [];
+  let ef = 0, da = 0, otro = 0, otroTxt = "";
+  c.forEach(x => { if (x.forma === "efectivo") ef += Number(x.importe)||0; else da += Number(x.importe)||0; });
+  if (!c.length && Number(o.importe_cobrado) > 0) {
+    const f = String(o.tipo_cobro || "").toLowerCase();
+    if (f.includes("efect")) ef = Number(o.importe_cobrado); else if (f.includes("dat")) da = Number(o.importe_cobrado);
+    else { otro = Number(o.importe_cobrado); otroTxt = o.tipo_cobro || "sin forma"; }
+  }
+  return { ef, da, otro, otroTxt };
+}
+function textoCobro(c){
+  const p = [];
+  if (c.ef) p.push("Efectivo " + eur(c.ef)); if (c.da) p.push("Datáfono " + eur(c.da)); if (c.otro) p.push(esc(c.otroTxt) + " " + eur(c.otro));
+  return p.length ? p.join("<br>") : '<span class="muted">—</span>';
 }
 const SIN_EQ = "SIN MONTADOR";
 function rellenarFiltros(){
@@ -134,25 +182,34 @@ function pintarMontajes(){
   const filas = ordenesSemana.filter(o => (!soloSin || !o.ordenes_montadores.length) && (!soloMios || o.ordenes_montadores.some(a => a.montador_id === miMontador)) && (!fDia || String(o.fecha_prev_montaje).slice(0,10) === fDia) && (!fEq || claveEquipo(o) === fEq));
   if (!filas.length) { document.getElementById("montajes_tabla").innerHTML = '<span class="muted">No hay montajes con esos criterios.</span>'; return; }
   const dias = [...new Set(filas.map(o => String(o.fecha_prev_montaje).slice(0,10)))].sort();
-  let h = '<table><tr><th>Hora</th><th>Orden</th><th>Cliente</th><th>Localidad</th><th>Estado</th><th>Montadores</th><th>Añadir</th></tr>';
+  let h = '<table><tr><th>Hora</th><th>Orden</th><th>Cliente</th><th>Localidad</th><th>Estado</th><th>Montadores</th><th class="num">Importe (líneas 4)</th><th>Cobrado al cliente</th><th class="noprint">Añadir</th></tr>';
   for (const d of dias) {
-    h += '<tr class="dia"><th colspan="7">'+new Date(d+"T12:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"})+'</th></tr>';
+    h += '<tr class="dia"><th colspan="9">'+new Date(d+"T12:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"})+'</th></tr>';
     const delDia = filas.filter(o => String(o.fecha_prev_montaje).slice(0,10) === d);
     const equipos = [...new Set(delDia.map(claveEquipo))].sort((a,b) => (a === SIN_EQ) - (b === SIN_EQ) || a.localeCompare(b));
     for (const eq of equipos) {
       const delEq = delDia.filter(o => claveEquipo(o) === eq).sort(porHora);
-      const selCam = eq === SIN_EQ ? '' : ' Camión: <select data-d="'+d+'" data-e="'+esc(eq)+'" onchange="elegirCamion(this)"><option value="">— sin elegir —</option>'+
-        camiones.map(c => '<option value="'+c.id+'"'+(rutasCam[d+"|"+eq] === c.id ? ' selected' : '')+'>'+esc(c.matricula + (c.nombre ? " · " + c.nombre : ""))+'</option>').join("")+'</select> ';
-      h += '<tr class="eq"><td colspan="7"><b>'+esc(eq)+'</b> <span class="muted">· '+delEq.length+' montaje'+(delEq.length>1?'s':'')+'</span> '+selCam+
-        (eq !== SIN_EQ ? '<button class="secondary" onclick="imprimirHoja(\''+d+'\',\''+eq.replace(/'/g,"")+'\',this)">Imprimir hoja (PDF con QR)</button>' : '')+'</td></tr>';
+      const selCam = eq === SIN_EQ ? '' : ' <span class="noprint">Camión: <select data-d="'+d+'" data-e="'+esc(eq)+'" onchange="elegirCamion(this)"><option value="">— sin elegir —</option>'+
+        camiones.map(c => '<option value="'+c.id+'"'+(rutasCam[d+"|"+eq] === c.id ? ' selected' : '')+'>'+esc(c.matricula + (c.nombre ? " · " + c.nombre : ""))+'</option>').join("")+'</select></span> ';
+      h += '<tr class="eq"><td colspan="9"><b>'+esc(eq)+'</b> <span class="muted">· '+delEq.length+' montaje'+(delEq.length>1?'s':'')+'</span> '+selCam+
+        (eq !== SIN_EQ ? '<button class="secondary noprint" onclick="imprimirHoja(\''+d+'\',\''+eq.replace(/'/g,"")+'\',this)">Imprimir hoja (PDF con QR)</button>' : '')+'</td></tr>';
       for (const o of delEq) {
         const asig = o.ordenes_montadores.map(a => '<span class="chip">'+esc(nom[a.montador_id] || "?")+'<button title="Quitar" onclick="quitar('+o.anyo+','+o.orden+',\''+a.montador_id+'\')">×</button></span>').join("");
         const opts = montadores.filter(m => !o.ordenes_montadores.some(a => a.montador_id === m.id)).map(m => '<option value="'+m.id+'">'+esc(m.nombre)+'</option>').join("");
-        h += '<tr class="'+(o.ordenes_montadores.length?'con':'sin')+'"><td><b>'+esc(o.horamont || "—")+'</b></td><td><a href="pedidos.html?anyo='+o.anyo+'&orden='+o.orden+'">'+o.anyo+'/'+o.orden+'</a></td><td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.localidad_cli)+'</td><td>'+esc(o.estado)+'</td><td>'+(asig||'<span class="muted">Sin montador</span>')+'</td><td><select onchange="anadir('+o.anyo+','+o.orden+',this)"><option value="">Elegir...</option>'+opts+'</select></td></tr>';
+        h += '<tr class="'+(o.ordenes_montadores.length?'con':'sin')+'"><td><b>'+esc(o.horamont || "—")+'</b></td><td><a href="pedidos.html?anyo='+o.anyo+'&orden='+o.orden+'">'+o.anyo+'/'+o.orden+'</a></td><td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.localidad_cli)+'</td><td>'+esc(o.estado)+'</td><td>'+(asig||'<span class="muted">Sin montador</span>')+'</td><td class="num">'+eur(importeOrden(o))+'</td><td>'+textoCobro(cobroOrden(o))+'</td><td class="noprint"><select onchange="anadir('+o.anyo+','+o.orden+',this)"><option value="">Elegir...</option>'+opts+'</select></td></tr>';
       }
+      h += filaSuma("Subtotal " + eq, delEq, "sub");
     }
+    h += filaSuma("TOTAL DÍA " + new Date(d+"T12:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"}), delDia, "tot");
   }
+  document.getElementById("cab_imp").textContent = "ALMMA · Listado de montajes · " + (fDia ? new Date(fDia+"T12:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long",year:"numeric"}) : document.getElementById("rango_semana").textContent);
   document.getElementById("montajes_tabla").innerHTML = h + '</table>';
+}
+function filaSuma(titulo, ords, clase){
+  const imp = ords.reduce((s,o) => s + importeOrden(o), 0), c = ords.map(cobroOrden);
+  const ef = c.reduce((s,x) => s + x.ef, 0), da = c.reduce((s,x) => s + x.da, 0), ot = c.reduce((s,x) => s + x.otro, 0);
+  const txt = ['Efectivo '+eur(ef), 'Datáfono '+eur(da)].concat(ot ? ['Otros '+eur(ot)] : []).join("<br>");
+  return '<tr class="'+clase+'"><td colspan="6">'+esc(titulo)+' <span class="muted">· '+ords.length+' montaje'+(ords.length>1?'s':'')+'</span></td><td class="num">'+eur(imp)+'</td><td>'+txt+'</td><td class="noprint"></td></tr>';
 }
 async function elegirCamion(sel){
   const dia = sel.dataset.d, equipo = sel.dataset.e;
