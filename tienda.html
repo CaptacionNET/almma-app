@@ -87,6 +87,7 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
     <span class="muted">Mercancía de vuestros fabricantes que ha llegado a nuestro almacén, con la orden a la que corresponde.</span>
     <span style="flex:1"></span>
     <select id="r_periodo" onchange="cargarRecibidos()"><option value="30">Últimos 30 días</option><option value="90" selected>Últimos 90 días</option><option value="365">Desde enero 2026</option></select>
+    <select id="r_fab" onchange="repintarRecibidos()"><option value="">Todos los fabricantes</option></select>
   </div>
   <div id="r_tabla"><span class="muted">Cargando...</span></div>
 </div>
@@ -337,7 +338,17 @@ async function cargarRecibidos(){
   const desde = new Date(Date.now() - dias * 864e5).toISOString().slice(0,10);
   const { data, error } = await client.rpc("mis_albaranes_recibidos", { p_desde: desde });
   if (error) { cont.innerHTML = '<span class="muted">No se pudo cargar: ' + esc(error.message) + '</span>'; return; }
-  cont.innerHTML = pintarRecibidos((data || []).filter(a => !tiendaSel || !a.tienda_id || a.tienda_id === tiendaSel));
+  recibidosCache = (data || []).filter(a => !tiendaSel || !a.tienda_id || a.tienda_id === tiendaSel);
+  const sel = document.getElementById("r_fab"), ant = sel.value;
+  const fabs = [...new Set(recibidosCache.filter(a => (a.ordenes || []).length).map(a => a.fabricante).filter(Boolean))].sort((x, y) => x.localeCompare(y, "es"));
+  sel.innerHTML = '<option value="">Todos los fabricantes</option>' + fabs.map(f => '<option value="' + esc(f) + '">' + esc(f) + '</option>').join("");
+  if (fabs.includes(ant)) sel.value = ant;
+  repintarRecibidos();
+}
+let recibidosCache = [];
+function repintarRecibidos(){
+  const f = document.getElementById("r_fab").value;
+  document.getElementById("r_tabla").innerHTML = pintarRecibidos(recibidosCache.filter(a => !f || a.fabricante === f));
 }
 
 /* Logo de la tienda (migracion/107_logo_de_la_tienda.sql) */

@@ -150,7 +150,7 @@ function cobroOrden(o){
   c.forEach(x => { if (x.forma === "efectivo") ef += Number(x.importe)||0; else da += Number(x.importe)||0; });
   if (!c.length && Number(o.importe_cobrado) > 0) {
     const f = String(o.tipo_cobro || "").toLowerCase();
-    if (f.includes("efect")) ef = Number(o.importe_cobrado); else if (f.includes("dat")) da = Number(o.importe_cobrado);
+    if (f === "e" || f.includes("efect")) ef = Number(o.importe_cobrado); else if (f === "da" || f.includes("dat")) da = Number(o.importe_cobrado);
     else { otro = Number(o.importe_cobrado); otroTxt = o.tipo_cobro || "sin forma"; }
   }
   return { ef, da, otro, otroTxt };
