@@ -299,7 +299,13 @@ function sugiere(gi){const g=ST[cur].grupos[gi],nk=g.o.find(k=>{const l=lineaPor
 function autoPeso(i){const s=ST[i],tp=Number(val(i,'peso_kg'))||0;if(!tp||!s.grupos.length)return;
   const sb=s.grupos.reduce((a,g)=>a+(g.b||0),0);
   s.grupos.forEach(g=>{if(g.pm)return;if(s.grupos.length===1)g.p=tp;else if(sb>0&&g.b>0)g.p=Math.round(tp*g.b/sb*10)/10;else g.p=null;});}
-function addLinea(k){toast('Añadir líneas nuevas a una orden desde aquí aún no está disponible: hazlo en pedidos.html y vuelve.');}
+function addLinea(k){const s=ST[cur],d=DOCS[cur],l=d.lineas[k];
+  const oid=s.ords.find(x=>x!=='NUEVA'&&ORDM[x]&&!bloq(ORDM[x]));if(!oid)return toast('Elige primero una orden existente (o usa «Orden nueva»).');
+  const key=oid+'#x'+(++s.xn);
+  s.extra.push({key,oid,desc:l.desc,cant:l.cant||1,fab:d.fabricante||''});
+  s.ign=s.ign.filter(x=>x!==k);s.sel={a:[],o:[]};
+  s.grupos.push({a:[k],o:[key],b:null,p:null});
+  pinta();toast('Línea añadida a la orden '+oid+'. Se creará de verdad al confirmar la entrada.');}
 function quita(id){const s=ST[cur];id=String(id);s.ords=s.ords.filter(x=>String(x)!==id);s.grupos=s.grupos.filter(g=>!g.o.some(k=>k.startsWith(id+'#')));s.extra=s.extra.filter(e=>String(e.oid)!==id);pinta();}
 function usa(id){if(!okTienda(ORDM[id],cur))return toast('Ese albarán es de '+DOCS[cur].grupo+': no puede ir a una orden de otra tienda.');if(bloq(ORDM[id]))return toast('Esa orden ya está montada: solo admite incidencias.');const s=ST[cur];s.ords=[id];s.extra=[];s.grupos=autoGrupos(cur);s.buscar=false;s.sel={a:[],o:[]};pinta();toast('Orden elegida. Revisa el casado de líneas.');}
 function anade(id){if(!okTienda(ORDM[id],cur))return toast('Ese albarán es de '+DOCS[cur].grupo+': no puede ir a una orden de otra tienda.');if(bloq(ORDM[id]))return toast('Esa orden ya está montada: solo admite incidencias.');const s=ST[cur];if(!s.ords.includes(id))s.ords.push(id);const aut=autoGrupos(cur);aut.forEach(g=>{if(g.o.some(k=>k.startsWith(id+'#'))&&!g.a.some(x=>s.grupos.some(h=>h.a.includes(x))))s.grupos.push(g);});s.buscar=false;pinta();}
@@ -519,7 +525,7 @@ async function descartar(){const d=DOCS[cur];if(!confirm(d.esHijo?'¿Descartar e
 let confirmando=false;
 async function confirma(){
   if(confirmando)return;const s=ST[cur],d=DOCS[cur];if(s.hecho)return;
-  if(s.extra.length)return toast('Añadir líneas nuevas a órdenes existentes desde aquí aún no está disponible.');
+  limpiaExtras();
   const crea=s.ords.includes('NUEVA');
   if(crea){
     if(!s.nueva.tienda)return toast('Elige la tienda de la orden nueva.');
@@ -529,17 +535,39 @@ async function confirma(){
     try{await creaOrdenNueva();}catch(e){confirmando=false;alert(e.message);pinta();return;}
     confirmando=false;
   }
-  const ops=[];
-  s.grupos.forEach(g=>{const n=g.o.length;g.o.forEach((key,j)=>{const [oid,idx]=String(key).split('#');const o=ORDM[oid],l=o&&o.l[+idx];if(!l)return;
-    ops.push({o,l,g,bultos:g.b==null?null:Math.floor(g.b/n)+(j<g.b%n?1:0),peso:g.p==null?null:Math.round(g.p/n*100)/100});});});
-  if(!ops.length)return toast('No hay líneas que registrar.');
+  const mkOps=()=>{const ops=[];
+    s.grupos.forEach(g=>{const n=g.o.length;g.o.forEach((key,j)=>{const [oid,idx]=String(key).split('#');const o=ORDM[oid],l=o&&o.l[+idx];if(!l)return;
+      ops.push({o,l,g,bultos:g.b==null?null:Math.floor(g.b/n)+(j<g.b%n?1:0),peso:g.p==null?null:Math.round(g.p/n*100)/100});});});return ops;};
+  let ops=mkOps();
+  const extrasUsadas=s.extra.filter(e=>s.grupos.some(g=>g.o.includes(e.key)));
+  if(!ops.length&&!extrasUsadas.length)return toast('No hay líneas que registrar.');
   const ubi=(val(cur,'ubicacion')||'').trim()||null,alb=(val(cur,'num_albaran')||'').trim()||null;
   const iso=aIso(val(cur,'fecha_sello_recibido'));const cuando=iso?iso+'T12:00:00':new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,19);
   const yaRec=ops.filter(x=>x.l[2]==='S').length;
-  let t='Vas a marcar como RECIBIDAS '+ops.length+' línea(s) de '+[...new Set(ops.map(x=>'#'+x.o.a+'/'+x.o.i))].join(', ')+'.\nRecibido el '+(iso?iso.split('-').reverse().join('/'):'hoy')+(ubi?' · ubicación «'+ubi+'»':'')+'.\nEsto modifica las órdenes y crea las entradas de almacén.';
+  let t='Vas a marcar como RECIBIDAS '+(ops.length+extrasUsadas.length)+' línea(s) de '+[...new Set(ops.map(x=>'#'+x.o.a+'/'+x.o.i).concat(extrasUsadas.map(e=>'#'+ORDM[e.oid].a+'/'+e.oid)))].join(', ')+'.\nRecibido el '+(iso?iso.split('-').reverse().join('/'):'hoy')+(ubi?' · ubicación «'+ubi+'»':'')+'.\nEsto modifica las órdenes y crea las entradas de almacén.';
+  if(extrasUsadas.length)t+='\n\nSe CREARÁN '+extrasUsadas.length+' línea(s) nueva(s) en la orden: '+extrasUsadas.map(e=>'«'+e.desc+'» en #'+e.oid).join(', ')+'.';
   if(!ubi)t+='\n\n¡Atención! No hay ubicación.';if(yaRec)t+='\n\n¡Atención! '+yaRec+' línea(s) ya estaban recibidas (se sobrescribirían sus datos).';
   if(!crea&&!confirm(t+'\n\n¿Confirmar?'))return;
   confirmando=true;const uid=(await client.auth.getUser()).data.user.id,errs=[],ahoraIso=new Date().toISOString();
+  if(extrasUsadas.length){   // primero se crean las líneas nuevas en las órdenes; si falla, no se toca nada más
+    try{
+      const fcod=await resuelveFabricante(d.fabricante);
+      const filas=[],cambios=[];
+      for(const oid of [...new Set(extrasUsadas.map(e=>e.oid))]){const o=ORDM[oid];
+        const ult=await client.from("linorden").select("linea").eq("anyo",o.a).eq("orden",o.i).order("linea",{ascending:false}).limit(1).maybeSingle();
+        if(ult.error)throw new Error(ult.error.message);
+        let linea=(ult.data&&ult.data.linea)||0;
+        extrasUsadas.filter(e=>e.oid===oid).forEach(e=>{const x=(s.edit||{})[e.key]||{},desc=x.desc!=null?x.desc:e.desc,cant=x.cant!=null?x.cant:e.cant;linea++;
+          filas.push({anyo:o.a,orden:o.i,linea,tipolinea:1,articulo:"18206",descripcion:desc,cantidad:cant||1,proveedor:fcod,porcentaje:100});
+          cambios.push({e,o,l:[desc,cant||1,'',d.fabricante||'',linea,"18206",fcod]});});}
+      const ins=await client.from("linorden").insert(filas);
+      if(ins.error)throw new Error(ins.error.message);
+      cambios.forEach(c=>{c.o.l.push(c.l);const nk=c.o.i+'#'+(c.o.l.length-1);
+        s.grupos.forEach(g=>{g.o=g.o.map(k=>k===c.e.key?nk:k);});});
+      s.extra=s.extra.filter(e=>!extrasUsadas.includes(e));
+      ops=mkOps();
+    }catch(e){confirmando=false;alert('No se pudieron crear las líneas nuevas (no se ha cambiado nada más): '+e.message);pinta();return;}
+  }
   for(const x of ops){
     const val1={ubicacion:ubi,bultos:x.bultos,albaran:alb,recibido:'S',recibido_at:cuando,recibido_por:uid};if(x.peso!==null)val1.peso_kg=x.peso;
     const u=await client.from("linorden").update(val1).eq("anyo",x.o.a).eq("orden",x.o.i).eq("linea",x.l[4]);
