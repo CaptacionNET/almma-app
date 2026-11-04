@@ -198,7 +198,7 @@ function pintarMontajes(){
       const selCam = eq === SIN_EQ ? '' : ' <span class="noprint">Camión: <select data-d="'+d+'" data-e="'+esc(eq)+'" onchange="elegirCamion(this)"><option value="">— sin elegir —</option>'+
         camiones.map(c => '<option value="'+c.id+'"'+(rutasCam[d+"|"+eq] === c.id ? ' selected' : '')+'>'+esc(c.matricula + (c.nombre ? " · " + c.nombre : ""))+'</option>').join("")+'</select></span> ';
       h += '<tr class="eq"><td colspan="9"><b>'+esc(eq)+'</b> <span class="muted">· '+delEq.length+' montaje'+(delEq.length>1?'s':'')+'</span> '+selCam+
-        (eq !== SIN_EQ ? '<button class="secondary noprint" onclick="imprimirHoja(\''+d+'\',\''+eq.replace(/'/g,"")+'\',this)">Imprimir hoja (PDF con QR)</button>' : '')+'</td></tr>';
+        (eq !== SIN_EQ ? '<button class="secondary noprint" onclick="imprimirHoja(\''+d+'\',\''+eq.replace(/'/g,"")+'\',this,false)" title="Borrador para revisar: sin QR y NO se envía a DeCA">Imprimir borrador</button> <button class="noprint" onclick="imprimirHoja(\''+d+'\',\''+eq.replace(/'/g,"")+'\',this,true)" title="Lo envía a DeCA (el montador lo ve) y abre el PDF con QR para imprimir">Enviar a DeCA e imprimir (con QR)</button>' : '')+'</td></tr>';
       for (const o of delEq) {
         const asig = o.ordenes_montadores.map(a => '<span class="chip">'+esc(nom[a.montador_id] || "?")+'<button title="Quitar" onclick="quitar('+o.anyo+','+o.orden+',\''+a.montador_id+'\')">×</button></span>').join("");
         const opts = montadores.filter(m => !o.ordenes_montadores.some(a => a.montador_id === m.id)).map(m => '<option value="'+m.id+'">'+esc(m.nombre)+'</option>').join("");
@@ -309,7 +309,12 @@ function envolver(font, size, texto, ancho){
   }
   if (cur) out.push(cur); return out.length ? out : [""];
 }
-async function imprimirHoja(dia, equipo, btn){
+async function imprimirHoja(dia, equipo, btn, enviar){
+  const nombreDeca = "Hoja " + equipo + " " + new Date(dia+"T12:00").toLocaleDateString("es-ES");
+  if (enviar) {   // aviso para no duplicar: ya hay una hoja de este equipo y día en DeCA
+    const { data: ya } = await client.from("deca_documentos").select("id").eq("nombre", nombreDeca).limit(1);
+    if (ya && ya.length && !confirm("Ya hay una hoja de " + equipo + " de ese día enviada a DeCA.\n\nSi continúas, se enviará OTRA más (la anterior se queda).\n\n¿Enviar de todos modos?")) return;
+  }
   const txtBtn = btn.textContent; btn.disabled = true; btn.textContent = "Generando...";
   try {
     const ords = ordenesSemana.filter(o => String(o.fecha_prev_montaje).slice(0,10) === dia && claveEquipo(o) === equipo).sort(porHora);
@@ -332,11 +337,11 @@ async function imprimirHoja(dia, equipo, btn){
     const cam = camiones.find(c => c.id === rutasCam[dia + "|" + equipo]);
     const { data:{ user } } = await client.auth.getUser();
     const ruta = Date.now() + "-HOJA_" + equipo.replace(/[^A-Za-z0-9._-]/g, "_") + "_" + dia + ".pdf";
-    const urlPublica = client.storage.from("deca-documentos").getPublicUrl(ruta).data.publicUrl;
+    const urlPublica = enviar ? client.storage.from("deca-documentos").getPublicUrl(ruta).data.publicUrl : null;
 
     const { PDFDocument, StandardFonts, rgb } = PDFLib, doc = await PDFDocument.create();
     const F = await doc.embedFont(StandardFonts.Helvetica), B = await doc.embedFont(StandardFonts.HelveticaBold);
-    const qr = await doc.embedPng(await fetch(generarQrDataUrl(urlPublica, 300)).then(r => r.arrayBuffer()));
+    const qr = enviar ? await doc.embedPng(await fetch(generarQrDataUrl(urlPublica, 300)).then(r => r.arrayBuffer())) : null;
     const W = 842, H = 595, M = 30, fechaLarga = new Date(dia + "T12:00").toLocaleDateString("es-ES", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
     const COL = { hora:M, orden:66, pedido:118, cli:222, tel:460, prov:548 }, L = { bul:66, ubi:100, desc:178, cant:500, fab:540 };
     // hasta el 05/06/2026 la empresa facturaba con el CIF de la sociedad; desde el 06/06/2026 con el de Arturo Vera Sierra
@@ -351,7 +356,8 @@ async function imprimirHoja(dia, equipo, btn){
       t("MONTADORES:", 400, H-38, 8, B); personas.forEach((s, i) => t(s, 400, H-50 - i*11, 9));
       t("CAMION: " + (cam ? cam.matricula : "________________"), M+200, H-82, 11, B);
       t("PESO TOTAL: " + pesoTotal.toLocaleString("es-ES") + " kg", M+200, H-64, 11, B);
-      page.drawImage(qr, { x: W-M-70, y: H-M-60, width: 70, height: 70 });
+      if (qr) page.drawImage(qr, { x: W-M-70, y: H-M-60, width: 70, height: 70 });
+      else { t("BORRADOR", W-M-100, H-M-20, 18, B); t("sin QR · no enviado a DeCA", W-M-130, H-M-36, 9); }
       y = H-104;
       page.drawRectangle({ x: M, y: y-4, width: W-2*M, height: 14, color: rgb(.86,.92,.99) });
       [["HORA",COL.hora],["ORDEN",COL.orden],["PEDIDO",COL.pedido],["CLIENTE / DIRECCIÓN",COL.cli],["TELÉFONO",COL.tel],["PROVEEDOR",COL.prov]].forEach(([s,x]) => t(s, x, y, 8, B));
@@ -388,9 +394,14 @@ async function imprimirHoja(dia, equipo, btn){
     }
     const pags = doc.getPages(); pags.forEach((p,i) => p.drawText("Página "+(i+1)+" de "+pags.length, { x: W-M-80, y: 14, size: 8, font: F }));
     const bytes = await doc.save();
+    if (!enviar) {
+      await abrirPdf(new Blob([bytes], { type:"application/pdf" }), "BORRADOR_" + equipo.replace(/[^A-Za-z0-9._-]/g, "_") + "_" + dia + ".pdf");
+      document.getElementById("hoja_msg").innerHTML = 'Borrador de <b>'+esc(equipo)+'</b> abierto. No se ha enviado a DeCA: cuando esté bien, pulsa «Enviar a DeCA e imprimir».';
+      btn.disabled = false; btn.textContent = txtBtn; return;
+    }
     const { error: eu } = await client.storage.from("deca-documentos").upload(ruta, new Blob([bytes], { type:"application/pdf" }), { contentType:"application/pdf" });
     if (eu) throw eu;
-    const { error: ef } = await client.from("deca_documentos").insert({ nombre: "Hoja " + equipo + " " + new Date(dia+"T12:00").toLocaleDateString("es-ES"), pdf_path: ruta, subido_por: user.id, fecha_documento: dia });
+    const { error: ef } = await client.from("deca_documentos").insert({ nombre: nombreDeca, pdf_path: ruta, subido_por: user.id, fecha_documento: dia });
     if (ef) throw ef;
     abrirNueva(urlPublica);
     document.getElementById("hoja_msg").innerHTML = 'Hoja de <b>'+esc(equipo)+'</b> lista: <a href="'+urlPublica+'" target="_blank">abrir PDF</a> (también está en la pantalla DeCA).';

@@ -126,6 +126,7 @@ header .quien{font-size:.8rem;opacity:.85;flex:1;white-space:nowrap;overflow:hid
 <div id="toast"></div>
 <input type="file" id="cam" accept="image/*" capture="environment" style="display:none">
 <input type="file" id="galeria" accept="image/*" multiple style="display:none">
+<input type="file" id="vid" accept="video/*" capture="environment" style="display:none">
 <input type="file" id="cam_inc" accept="image/*" capture="environment" style="display:none">
 <input type="file" id="gal_inc" accept="image/*" multiple style="display:none">
 
@@ -371,6 +372,7 @@ async function pedirUrls(rutas){
   } catch(_){}
 }
 const esImagen = r => /\.(jpe?g|png|webp|heic|gif)$/i.test(r || "");
+const esVideo = r => /\.(mp4|mov|webm|m4v|3gp)$/i.test(r || "");
 
 /* ---------- Inicio: una tarjeta por montaje ---------- */
 function verDia(n){ diaVista = n; [0,1,2,3].forEach(i => document.getElementById("d" + i).classList.toggle("on", n === i)); if (n === 3 && !fechaLibre) { const e = document.getElementById("fecha_libre"); fechaLibre = e.value || diaN(0); e.value = fechaLibre; cargarPaquete(); } pintar(); }
@@ -439,7 +441,7 @@ function tiraFotos(lista, cola_){
   // lista: [{ruta, texto}] ya enviadas; cola_: fotos esperando cobertura
   const mini = lista.map((f, i) => {
     const u = urls[f.ruta];
-    const cont = !esImagen(f.ruta) ? '📄<br>PDF' : u ? '<img src="' + u + '" alt="">' : (navigator.onLine ? "…" : "Sin cobertura");
+    const cont = esVideo(f.ruta) ? '🎥<br>Vídeo' : !esImagen(f.ruta) ? '📄<br>PDF' : u ? '<img src="' + u + '" alt="">' : (navigator.onLine ? "…" : "Sin cobertura");
     return '<div class="mini" onclick="abrirVisor(\'' + f.grupo + '\',' + i + ')"><div class="im">' + cont + '</div>' + (f.texto ? '<div class="pie_m">' + esc(f.texto) + '</div>' : "") + '</div>';
   }).join("");
   const pend = cola_.map(c => '<div class="mini"><div class="im">⏳<br>por enviar</div>' + (c.comentario ? '<div class="pie_m">' + esc(c.comentario) + '</div>' : "") + '</div>').join("");
@@ -602,7 +604,8 @@ function pintarDetalle(){
     '<div class="sec"><h3>📷 Mis fotos (' + (fotos.length + fotosCola.length) + ')</h3>' +
       (fotos.length || fotosCola.length ? tiraFotos(fotos, fotosCola) : '<div style="color:var(--gris);margin-bottom:8px">Todavía no has enviado fotos.</div>') +
       '<div class="botones"><button class="btn az" onclick="hacerFoto(\'' + k + '\',true)">📷 Cámara</button>' +
-      '<button class="btn az" onclick="hacerFoto(\'' + k + '\',false)">🖼 Fototeca</button></div></div>' +
+      '<button class="btn az" onclick="hacerFoto(\'' + k + '\',false)">🖼 Fototeca</button>' +
+      '<button class="btn az" onclick="hacerVideo(\'' + k + '\')">🎥 Vídeo (máx. 20 s)</button></div></div>' +
     (hecho ? bloqueFirma(o) : "") +
     '<div class="botones">' +
       '<button class="btn na" onclick="abrirIncidencia(\'' + k + '\')">⚠ Problema</button>' +
@@ -678,6 +681,31 @@ function mostrarFotoPend(){
   document.getElementById("pf_chips").innerHTML = DESC_RAPIDAS.map(t => '<button onclick="document.getElementById(\'pf_desc\').value=this.textContent">' + esc(t) + '</button>').join("");
   document.getElementById("p_foto").style.display = "block";
 }
+/* ---------- Vídeo: como mucho 20 segundos ---------- */
+const VIDEO_MAX_SEG = 20, VIDEO_MAX_MB = 150;
+function hacerVideo(k){ ordenFoto = buscar(k); const e = document.getElementById("vid"); e.value = ""; e.click(); }
+function duracionVideo(file){
+  return new Promise(ok => {
+    const v = document.createElement("video"), u = URL.createObjectURL(file);
+    const fin = d => { URL.revokeObjectURL(u); ok(d); };
+    v.preload = "metadata"; v.onloadedmetadata = () => fin(v.duration); v.onerror = () => fin(NaN);
+    setTimeout(() => fin(NaN), 8000); v.src = u;
+  });
+}
+document.getElementById("vid").addEventListener("change", async e => {
+  const f = e.target.files[0]; if (!f || !ordenFoto) return;
+  const o = ordenFoto;
+  if (f.size > VIDEO_MAX_MB * 1048576) { toast("El vídeo pesa demasiado (máximo " + VIDEO_MAX_MB + " MB). Graba uno más corto."); return; }
+  const d = await duracionVideo(f);
+  if (!isFinite(d)) { toast("No se ha podido leer el vídeo. Prueba a grabarlo otra vez."); return; }
+  if (d > VIDEO_MAX_SEG + 0.5) { toast("El vídeo dura " + Math.round(d) + " s. El máximo es " + VIDEO_MAX_SEG + " s: grábalo más corto."); return; }
+  const ext = /quicktime|mov/i.test(f.type) ? "mov" : /webm/i.test(f.type) ? "webm" : "mp4";
+  await colaAdd({ tipo:"foto", anyo:o.anyo, orden:o.orden, blob:f, contentType:f.type || "video/mp4", path:o.anyo + "/" + o.orden + "/fotos/" + Date.now() + "-" + Math.random().toString(36).slice(2, 8) + "." + ext,
+    comentario:"Vídeo", categoria:(o.estado === "incidencia" || enCola(o, "incidencia").length) ? "incidencia" : "entrega_ok", ts:Date.now() });
+  cola = await colaAll(); pintar(); estadoBarra();
+  toast(navigator.onLine ? "✔ Vídeo guardado, enviando…" : "✔ Vídeo guardado en el móvil. Se enviará cuando haya cobertura");
+  enviarCola(false);
+});
 async function guardarFotoPend(){
   const f = fotosPend.shift(); if (!f) return;
   const o = f.o, comentario = document.getElementById("pf_desc").value.trim() || null;
@@ -757,7 +785,7 @@ const esRed = e => !navigator.onLine || /fetch|network|timeout|load failed|abort
 async function enviarUno(it){
   if (it.tipo === "foto" || it.tipo === "firma") {
     if (!it.subido) {
-      const { error } = await client.storage.from("ordenes-adjuntos").upload(it.path, it.blob, { contentType: it.tipo === "foto" ? "image/jpeg" : "image/png" });
+      const { error } = await client.storage.from("ordenes-adjuntos").upload(it.path, it.blob, { contentType: it.contentType || (it.tipo === "foto" ? "image/jpeg" : "image/png") });
       if (error && !/already exists|duplicate|409/i.test(String(error.message) + String(error.statusCode))) throw error;
       it.subido = true; await colaPut(it);
     }

@@ -384,6 +384,43 @@ async function guardarPdfSoporte(anyo, orden, file) {
   return errFila ? errFila.message : null;
 }
 
+// --- ¿Ese cliente ya tiene una orden abierta? (para no duplicar órdenes al subir el PDF) ---
+const palabrasNombre = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(w => w.length > 1);
+async function ordenesAbiertasDelCliente(nombre) {
+  const A = palabrasNombre(nombre);
+  if (!A.length || !tiendaSel) return [];
+  const { data, error } = await client.from("ordenes")
+    .select("anyo, orden, nombre_cli, num_pedido, estado, fecha_creacion")
+    .eq("tienda_id", tiendaSel).not("estado", "in", "(completado,terminado_incidencia)")
+    .order("fecha_creacion", { ascending: false }).limit(2000);
+  if (error || !data) return [];   // si falla la búsqueda no se bloquea nada: se crea el pedido como siempre
+  return data.filter(o => {
+    const B = palabrasNombre(o.nombre_cli), com = A.filter(w => B.includes(w)).length;
+    return com >= 1 && com >= Math.min(2, A.length, B.length);
+  }).slice(0, 5);
+}
+const TXT_ESTADO = { en_proceso: "En proceso", recepcionado_parcial: "Recepción parcial", recepcionado_total: "Recepcionado", agendado: "Agendado", incidencia: "Incidencia" };
+// devuelve {anyo, orden} si elige una orden existente, "nueva" si quiere crear otra, o null si cancela
+function preguntarOrdenExistente(nombre, lista) {
+  return new Promise(resolve => {
+    const f = document.createElement("div");
+    f.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px";
+    f.innerHTML = '<div style="background:#fff;border-radius:10px;max-width:520px;width:100%;padding:18px 20px;max-height:90vh;overflow:auto">' +
+      '<h3 style="margin:0 0 8px">«' + esc(nombre) + '» ya tiene ' + (lista.length === 1 ? 'una orden abierta' : 'órdenes abiertas') + '</h3>' +
+      '<p style="margin:0 0 12px;color:#4b5563;font-size:14px">¿Quieres guardar el PDF que acabas de subir en ' + (lista.length === 1 ? 'esa orden' : 'una de ellas') + ' en vez de crear una orden nueva?</p>' +
+      lista.map((o, i) => '<button type="button" data-i="' + i + '" style="display:block;width:100%;text-align:left;margin-bottom:8px;padding:10px 12px">Sí, guardarlo en la orden <b>' + o.anyo + '/' + o.orden + '</b><br><span style="font-weight:400;font-size:12px">' +
+        esc(o.nombre_cli) + (o.num_pedido ? ' · pedido ' + esc(o.num_pedido) : '') + ' · ' + esc(TXT_ESTADO[o.estado] || o.estado) + ' · ' + esc(String(o.fecha_creacion || '').slice(0, 10).split('-').reverse().join('/')) + '</span></button>').join("") +
+      '<button type="button" class="secondary" data-nueva="1" style="display:block;width:100%;margin-bottom:8px;padding:10px 12px">No, crear una orden nueva</button>' +
+      '<button type="button" class="secondary" data-cancel="1" style="display:block;width:100%;padding:8px 12px">Cancelar</button></div>';
+    f.onclick = e => {
+      const b = e.target.closest("button"); if (!b) return;
+      f.remove();
+      resolve(b.dataset.nueva ? "nueva" : b.dataset.cancel ? null : lista[+b.dataset.i]);
+    };
+    document.body.appendChild(f);
+  });
+}
+
 async function crearPedido() {
   const errorBox = document.getElementById("error");
   const avisoBox = document.getElementById("aviso");
@@ -398,6 +435,25 @@ async function crearPedido() {
   const localidad_cli = document.getElementById("localidad_cli").value.trim();
   const telefono_cli = document.getElementById("telefono_cli").value.trim();
   const num_pedido = document.getElementById("num_pedido").value.trim();
+
+  // ¿ya tiene ese cliente una orden abierta? Si hay PDF, se ofrece guardarlo en ella en vez de duplicar
+  if (pdfAdjunto) {
+    const abiertas = await ordenesAbiertasDelCliente(nombre_cli);
+    if (abiertas.length) {
+      const eleccion = await preguntarOrdenExistente(nombre_cli, abiertas);
+      if (eleccion === null) return;   // cancelar: no se hace nada
+      if (eleccion !== "nueva") {
+        const fallo = await guardarPdfSoporte(eleccion.anyo, eleccion.orden, pdfAdjunto);
+        if (fallo) { errorBox.textContent = "No se pudo guardar el documento en la orden " + eleccion.anyo + "/" + eleccion.orden + ": " + fallo; errorBox.style.display = "block"; return; }
+        pdfAdjunto = null; pedidoCreado = true;
+        avisoBox.textContent = "Documento guardado en la orden " + eleccion.anyo + "/" + eleccion.orden + ". No se ha creado ninguna orden nueva ni se han añadido líneas: si falta algún artículo, avisa a ALMMA.";
+        avisoBox.style.display = "block";
+        cargarPedidos();
+        setTimeout(cerrarModalNuevo, 2500);
+        return;
+      }
+    }
+  }
 
   const { data, error } = await client.rpc("crear_pedido", {
     p_nombre_cli: nombre_cli,

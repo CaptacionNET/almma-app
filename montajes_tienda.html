@@ -91,7 +91,7 @@ async function abrir(i){
     k("Montaje realizado", o.fecha_montaje ? '<span class="ok">'+new Date(o.fecha_montaje).toLocaleString("es-ES")+'</span>' : "Aún no realizado") +
     '<div class="k">Artículos</div><div class="v">'+((li.data||[]).filter(l => l.tipolinea !== 4).map(l => (l.cantidad ?? "")+" × "+esc(l.descripcion)).join("<br>") || "—")+'</div>' +
     '<div class="k">Firma del cliente</div>' + (ents.length ? ents.map(e => '<div class="firma v">'+(e.u ? '<img src="'+e.u+'" alt="Firma" style="max-width:360px">' : '')+'<div class="muted">'+esc(e.firmante_nombre || "")+' · '+new Date(e.firmado_at).toLocaleString("es-ES")+(e.observaciones ? '<br>'+esc(e.observaciones) : '')+'</div></div>').join("") : '<div class="v muted">Sin firma todavía.</div>') +
-    '<div class="k">Fotos</div>' + (fots.length ? '<div class="fotos">'+fots.map(f => '<a href="'+f.u+'" target="_blank"><img src="'+f.u+'" alt="'+esc(f.categoria||"foto")+'"><div class="muted">'+esc(f.categoria||"")+' '+esc(f.comentario||"")+'</div></a>').join("")+'</div>' : '<div class="v muted">Sin fotos.</div>');
+    '<div class="k">Fotos</div>' + (fots.length ? '<div class="fotos">'+fots.map(f => /\.(mp4|mov|webm|m4v|3gp)$/i.test(f.storage_path) ? '<div><video src="'+f.u+'" controls preload="metadata" playsinline style="max-width:100%;border-radius:8px;background:#000"></video><div class="muted">'+esc(f.categoria||"")+' '+esc(f.comentario||"")+'</div></div>' : '<a href="'+f.u+'" target="_blank"><img src="'+f.u+'" alt="'+esc(f.categoria||"foto")+'"><div class="muted">'+esc(f.categoria||"")+' '+esc(f.comentario||"")+'</div></a>').join("")+'</div>' : '<div class="v muted">Sin fotos.</div>');
 }
 (async () => {
   const { data:{ user } } = await client.auth.getUser();
