@@ -243,6 +243,15 @@ const diaN = n => { const d = new Date(); d.setDate(d.getDate() + n); return ISO
 const diaSig = () => { const g = n => { const d = new Date(); d.setDate(d.getDate() + n); return d.getDay(); }; let n = 1; if (g(1) === 6 || g(1) === 0) while (g(n) !== 1) n++; return n; };   // último día que cubre «Mañana»
 const diasSig = () => { const l = []; for (let i = 1; i <= diaSig(); i++) l.push(diaN(i)); return l; };
 const NOMBRE_DIA = f => ["DOM","LUN","MAR","MIÉ","JUE","VIE","SÁB"][new Date(f + "T12:00:00").getDay()];
+/* Cuándo ve cada montador sus montajes (lo decide la oficina en Administración → Mi día; SQL 115).
+   Por defecto: el mismo día, a las 07:30. Si «día antes» está activo, los ve el día laborable anterior a esa hora. */
+let cfgVer = { antes:false, hora:"07:30" };
+function diaDeAviso(dia){ if (!cfgVer.antes) return dia; const d = new Date(dia + "T12:00:00"); do { d.setDate(d.getDate() - 1); } while (d.getDay() === 0 || d.getDay() === 6); return ISO(d); }
+function visibleAhora(o){
+  if (esAdmin) return true;
+  const ya = diaDeAviso(o.dia), hoy = diaN(0), n = new Date(), hhmm = String(n.getHours()).padStart(2,"0") + ":" + String(n.getMinutes()).padStart(2,"0");
+  return hoy > ya || (hoy === ya && hhmm >= cfgVer.hora);
+}
 let fechaLibre = null;   // solo administradores: cualquier otro día
 
 /* ---------- Almacén en el móvil (IndexedDB): datos del día y cola de envíos ---------- */
@@ -297,6 +306,7 @@ async function iniciar(){
   nombreMontador = (await kvGet("nombre")) || "";
   document.getElementById("quien").textContent = nombreMontador;
   paquete = await kvGet("paquete");
+  cfgVer = (await kvGet("cfgVer")) || cfgVer;
   cola = await colaAll();
   pintar(); estadoBarra();
   avisoInstalar();
@@ -309,6 +319,8 @@ async function cargarPaquete(){
     const { data: yo, error: e0 } = await client.from("montadores").select("id, nombre").eq("staff_user_id", uid).maybeSingle();
     if (e0) throw e0;
     if (!yo && !esAdmin) { mensaje("Tu usuario todavía no está enlazado con tu nombre de montador.<br>Avisa a la oficina."); return; }
+    if (yo && !esAdmin) { try { const r = await client.from("montadores").select("ve_dia_antes, hora_ver").eq("id", yo.id).maybeSingle();
+      if (!r.error && r.data) { cfgVer = { antes: !!r.data.ve_dia_antes, hora: String(r.data.hora_ver || "07:30").slice(0,5) }; await kvSet("cfgVer", cfgVer); } } catch (_) {} }
     if (yo) { nombreMontador = yo.nombre; await kvSet("nombre", yo.nombre); document.getElementById("quien").textContent = yo.nombre; }
     else { document.getElementById("quien").textContent = "Oficina"; if (!verTodos) verEquipos(true); }
     // los montadores solo reciben lo suyo (lo decide la seguridad de la base de datos); el administrador recibe todos los equipos
@@ -397,14 +409,20 @@ function pintar(){
   if (!paquete) { lista.innerHTML = '<div class="vacio">Cargando tus montajes…</div>'; return; }
   const sig = diasSig(), dias = [[diaN(-1)], [diaN(0)], sig, fechaLibre ? [fechaLibre] : []];
   document.getElementById("t2").textContent = sig.length === 1 ? "MAÑANA" : sig.map(NOMBRE_DIA).join(" + ");
-  const visibles = paquete.ordenes.filter(o => verTodos || o.mio || !esAdmin);
+  const todas = paquete.ordenes.filter(o => verTodos || o.mio || !esAdmin);
+  const visibles = todas.filter(visibleAhora);
+  const sinManana = !esAdmin && !cfgVer.antes;   // sin «ver el día antes», la pestaña de mañana no sale
+  document.getElementById("d2").style.display = sinManana ? "none" : "";
+  if (sinManana && diaVista === 2) { verDia(1); return; }
+  const ocultos = todas.filter(o => !visibleAhora(o) && dias[diaVista].includes(o.dia)).length;
   [0, 1, 2, 3].forEach(i => { const n = visibles.filter(o => dias[i].includes(o.dia)).length; document.getElementById("n" + i).textContent = (i === 3 && !dias[i].length) ? "" : n + (n === 1 ? " montaje" : " montajes"); });
   const hoy = visibles.filter(o => dias[diaVista].includes(o.dia)).sort((a,b) => {
     const ea = verTodos ? a.equipo.join(" + ") : "", eb = verTodos ? b.equipo.join(" + ") : "";
     return a.dia.localeCompare(b.dia) || ea.localeCompare(eb) || (a.horamont || "99").localeCompare(b.horamont || "99");
   });
   document.getElementById("pie").textContent = "Montajes cargados " + new Date(paquete.cargado).toLocaleString("es-ES", { weekday:"short", hour:"2-digit", minute:"2-digit" }) + (navigator.onLine ? "" : " · sin cobertura: se usa lo guardado");
-  if (!hoy.length) lista.innerHTML = '<div class="vacio">' + (() => { const q = ["ayer", "hoy", diasSig().length === 1 ? "mañana" : "esos días", "ese día"][diaVista], T = q.charAt(0).toUpperCase() + q.slice(1); return verTodos || diaVista === 3 ? T + " no hay montajes" : T + " no tienes montajes" + (diaVista === 1 ? " 🎉" : ""); })() + '</div>';
+  if (!hoy.length && ocultos) lista.innerHTML = "";   // lo que aún no les toca ver: se deja vacío, sin mensaje
+  else if (!hoy.length) lista.innerHTML = '<div class="vacio">' + (() => { const q = ["ayer", "hoy", diasSig().length === 1 ? "mañana" : "esos días", "ese día"][diaVista], T = q.charAt(0).toUpperCase() + q.slice(1); return verTodos || diaVista === 3 ? T + " no hay montajes" : T + " no tienes montajes" + (diaVista === 1 ? " 🎉" : ""); })() + '</div>';
   else {
     let grupo = null, diaPrev = null;
     lista.innerHTML = hoy.map(o => {
@@ -853,6 +871,8 @@ window.addEventListener("online", () => { estadoBarra(); enviarCola(false); carg
 window.addEventListener("offline", () => { estadoBarra(); pintar(); });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && navigator.onLine) { enviarCola(false); cargarPaquete(); } });
 setInterval(() => { if (navigator.onLine && cola.length) enviarCola(false); }, 30000);
+let firmaVisibles = "";   // cada minuto, si a esta hora aparecen montajes nuevos (la hora de «ver mis montajes»), se repinta la lista
+setInterval(() => { if (!paquete || esAdmin) return; const f = paquete.ordenes.filter(visibleAhora).length + "|" + diaN(0); if (firmaVisibles && f !== firmaVisibles) pintar(); firmaVisibles = f; }, 60000);
 
 /* ---------- Ayuda para poner el icono en la pantalla de inicio ---------- */
 let eventoInstalar = null;

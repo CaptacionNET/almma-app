@@ -70,6 +70,7 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
   <button class="tab" data-t="control">Control del sistema</button>
   <button class="tab" data-t="tarifas">Tarifas</button>
   <button class="tab" data-t="camiones">Camiones</button>
+  <button class="tab" data-t="miDia">Mi día (montadores)</button>
   <button class="tab" data-t="condiciones">Condiciones</button>
 </div>
 
@@ -147,6 +148,11 @@ tr.eq td{background:#eff6ff;border-top:2px solid #93c5fd;}
   <div id="co_tabla"><span class="muted">Cargando...</span></div>
 </div>
 
+<div class="panel" id="p_miDia">
+  <p class="muted" style="margin-top:0">Cuándo ve cada montador sus montajes en «Mi día». Por defecto: <b>el mismo día a las 07:30</b>. Si marcas «Ve el día antes», los ve el día laborable anterior (el viernes para el lunes) a la hora que elijas. Los montajes de días pasados siempre los ven.</p>
+  <div id="md_tabla"><span class="muted">Cargando...</span></div>
+</div>
+
 <div class="panel" id="p_camiones">
   <p class="muted" style="margin-top:0">Los camiones de la empresa. En «Listado de rutas» se elige cuál lleva cada equipo cada día, y su matrícula sale en la hoja de ruta (DeCA).</p>
   <div class="caja" style="margin-bottom:14px">
@@ -184,7 +190,23 @@ async function iniciar(){
   const r = await client.from("montadores").select("id, nombre, activo, especial, staff_user_id").eq("activo", true).order("especial").order("nombre");
   montadores = r.data || [];
   miMontador = (montadores.find(m => m.staff_user_id === user.id) || {}).id || null;
-  cargarResumen(); cargarUsuarios(); cargarControl(); cargarTarifas(); cargarCamiones(); cargarCondiciones();
+  cargarResumen(); cargarUsuarios(); cargarControl(); cargarTarifas(); cargarCamiones(); cargarMiDia(); cargarCondiciones();
+}
+
+/* ---------- Cuándo ve cada montador sus montajes (SQL 115) ---------- */
+async function cargarMiDia(){
+  const el = document.getElementById("md_tabla");
+  const r = await client.from("montadores").select("id, nombre, ve_dia_antes, hora_ver").eq("activo", true).eq("especial", false).order("nombre");
+  if (r.error) { el.innerHTML = '<span class="muted">Falta ejecutar el SQL 115 en Supabase.</span>'; return; }
+  el.innerHTML = '<table><tr><th>Montador</th><th>¿Ve el día antes?</th><th>Hora a la que lo ve</th><th></th></tr>' + r.data.map(m =>
+    '<tr><td>'+esc(m.nombre)+'</td><td><label><input type="checkbox" id="md_a_'+m.id+'"'+(m.ve_dia_antes?' checked':'')+'> Sí, el día laborable anterior</label></td>'+
+    '<td><input type="time" id="md_h_'+m.id+'" value="'+String(m.hora_ver || "07:30").slice(0,5)+'"></td>'+
+    '<td><button onclick="guardarMiDia(\''+m.id+'\')">Guardar</button> <span class="muted" id="md_ok_'+m.id+'"></span></td></tr>').join("") + '</table>';
+}
+async function guardarMiDia(id){
+  const hora = document.getElementById("md_h_"+id).value || "07:30";
+  const r = await client.from("montadores").update({ ve_dia_antes: document.getElementById("md_a_"+id).checked, hora_ver: hora }).eq("id", id);
+  document.getElementById("md_ok_"+id).textContent = r.error ? "Error: "+r.error.message : "✔ guardado";
 }
 
 /* ---------- Condiciones aceptadas por los administradores de tienda (SQL 76 y 105) ---------- */

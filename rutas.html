@@ -316,6 +316,7 @@ async function imprimirHoja(dia, equipo, btn, enviar){
     if (ya && ya.length && !confirm("Ya hay una hoja de " + equipo + " de ese día enviada a DeCA.\n\nSi continúas, se enviará OTRA más (la anterior se queda).\n\n¿Enviar de todos modos?")) return;
   }
   const txtBtn = btn.textContent; btn.disabled = true; btn.textContent = "Generando...";
+  const w = enviar ? null : ventanaPrevia();   // ventana abierta ya (con el clic) para que el navegador no la bloquee
   try {
     const ords = ordenesSemana.filter(o => String(o.fecha_prev_montaje).slice(0,10) === dia && claveEquipo(o) === equipo).sort(porHora);
     const porAnyo = {}; ords.forEach(o => (porAnyo[o.anyo] ||= []).push(o.orden));
@@ -395,7 +396,7 @@ async function imprimirHoja(dia, equipo, btn, enviar){
     const pags = doc.getPages(); pags.forEach((p,i) => p.drawText("Página "+(i+1)+" de "+pags.length, { x: W-M-80, y: 14, size: 8, font: F }));
     const bytes = await doc.save();
     if (!enviar) {
-      await abrirPdf(new Blob([bytes], { type:"application/pdf" }), "BORRADOR_" + equipo.replace(/[^A-Za-z0-9._-]/g, "_") + "_" + dia + ".pdf");
+      await abrirPdf(new Blob([bytes], { type:"application/pdf" }), "BORRADOR_" + equipo.replace(/[^A-Za-z0-9._-]/g, "_") + "_" + dia + ".pdf", w);
       document.getElementById("hoja_msg").innerHTML = 'Borrador de <b>'+esc(equipo)+'</b> abierto. No se ha enviado a DeCA: cuando esté bien, pulsa «Enviar a DeCA e imprimir».';
       btn.disabled = false; btn.textContent = txtBtn; return;
     }
@@ -405,7 +406,7 @@ async function imprimirHoja(dia, equipo, btn, enviar){
     if (ef) throw ef;
     abrirNueva(urlPublica);
     document.getElementById("hoja_msg").innerHTML = 'Hoja de <b>'+esc(equipo)+'</b> lista: <a href="'+urlPublica+'" target="_blank">abrir PDF</a> (también está en la pantalla DeCA).';
-  } catch (e) { alert("No se pudo generar la hoja: " + (e.message || e)); }
+  } catch (e) { if (w) w.close(); alert("No se pudo generar la hoja: " + (e.message || e)); }
   btn.disabled = false; btn.textContent = txtBtn;
 }
 

@@ -21,6 +21,8 @@
     const url = URL.createObjectURL(blob);
     setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
     if (w && !w.closed) { w.location.href = url; return; }
+    // en ordenador se abre el PDF en una pestaña (para imprimirlo); la hoja de «compartir» es solo del móvil
+    if (!esMovil()) { const v = window.open(url, "_blank"); if (!v) location.href = url; return; }
     if (navigator.canShare && navigator.canShare({ files: [fichero] })) {
       try { await navigator.share({ files: [fichero], title: nombre }); return; } catch (e) { if (e && e.name === "AbortError") return; }
     }
