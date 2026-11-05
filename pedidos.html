@@ -166,6 +166,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
 .chat-form{display:flex;gap:8px}.chat-form textarea{flex:1;padding:8px;border:1px solid #93c5fd;border-radius:6px;font:inherit;font-size:13px;resize:vertical;min-height:40px}
 .muted{color:#6b7280}</style>
 <link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="ALMMA"><script src="pwa.js" defer></script>
+<script src="campana.js"></script>
 </head>
 <body>
 
@@ -255,6 +256,10 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
   <div class="campo-mini" style="max-width:140px;">
     <label>Referencia de pedido</label>
     <input id="filtro_num_pedido" type="text" onkeydown="if(event.key==='Enter')cargarPedidos()">
+  </div>
+  <div class="campo-mini" style="max-width:200px;">
+    <label>Tienda</label>
+    <select id="filtro_tienda"><option value="">Todas las tiendas</option></select>
   </div>
   <div class="campo-mini" style="max-width:170px;">
     <label>Estado</label>
@@ -394,6 +399,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
     <button class="tab-btn" data-tab="tab_incidencias" onclick="cambiarTab('tab_incidencias')">Incidencias</button>
     <button class="tab-btn" data-tab="tab_historial" onclick="cambiarTab('tab_historial')">Historial</button>
     <button class="tab-btn" data-tab="tab_llamadas" onclick="cambiarTab('tab_llamadas')">Llamadas</button>
+    <button class="tab-btn" data-tab="tab_avisos_tienda" onclick="cambiarTab('tab_avisos_tienda')">Avisos tienda <span id="avisos_tienda_punto" style="display:none">🔔</span></button>
     <button class="tab-btn" data-tab="tab_chat" onclick="cambiarTab('tab_chat'); cargarChat(pedidoActivo.anyo, pedidoActivo.orden, 'almma')">Chat tienda <span id="chat_aviso" style="display:none;background:#dc2626;color:#fff;border-radius:10px;padding:0 7px;font-size:11px"></span></button>
   </div>
 
@@ -595,6 +601,16 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
     <div id="lista_historial" class="mini-list"></div>
   </div>
 
+  <!-- AVISOS CON LA TIENDA (migracion/114) -->
+  <div class="tab-panel" id="tab_avisos_tienda">
+    <div class="card-info" style="padding:12px;line-height:1.7">
+      <div><b>¿La tienda dice que se puede agendar?</b> <span id="at_agendar">—</span></div>
+      <div><b>¿Se ha avisado a la tienda de que la orden está completa?</b> <span id="at_completa">—</span></div>
+      <div style="margin-top:10px"><button onclick="avisarTiendaCompleta()">Avisar a la tienda: orden completa</button>
+      <div class="muted" style="margin-top:6px">Manda un aviso a la tienda y un mensaje en el chat de la orden. Úsalo cuando haya llegado toda la mercancía.</div></div>
+    </div>
+  </div>
+
   <!-- CHAT CON LA TIENDA -->
   <div class="tab-panel" id="tab_chat">
     <div class="chat" id="chat_lista"></div>
@@ -661,6 +677,10 @@ async function comprobarSesion() {
   if (staffRow.solo_montajes) { window.location.href = "montador.html"; return; }
   staffUserId = staffRow.user_id;
   await llenarSelectEstado("filtro_estado", "");
+  try {   // desplegable de tiendas del buscador
+    const ts = await cargarTodasTiendas();
+    document.getElementById("filtro_tienda").innerHTML = '<option value="">Todas las tiendas</option>' + ts.map(t => `<option value="${t.id}">${escMont(t.nombre)}</option>`).join("");
+  } catch (_) {}
   cargarAvisoServicios();
   await cargarPedidos();   // sin filtros no carga nada: avisa de que hay que buscar
   document.getElementById("anyo_desde").value = new Date().getFullYear();   // "Año desde" ya puesto; solo hay que pulsar Buscar
@@ -1257,6 +1277,7 @@ async function logout() {
 
 async function cargarPedidos() {
   const estado = document.getElementById("filtro_estado").value;
+  const tiendaFiltro = document.getElementById("filtro_tienda").value;
   const anyoDesde = parseInt(document.getElementById("anyo_desde").value, 10);
   const anyoHasta = parseInt(document.getElementById("anyo_hasta").value, 10);
   const pedido = parseInt(document.getElementById("filtro_pedido").value, 10);
@@ -1268,7 +1289,7 @@ async function cargarPedidos() {
   const prevHasta = document.getElementById("prev_hasta").value;
 
   // De inicio no se carga nada: hay que buscar (por número de orden, cliente, fechas, etc.)
-  if (!estado && isNaN(anyoDesde) && isNaN(anyoHasta) && isNaN(pedido) && !cliente && !telefono && !numPedido && isNaN(importe) && !prevDesde && !prevHasta) {
+  if (!estado && !tiendaFiltro && isNaN(anyoDesde) && isNaN(anyoHasta) && isNaN(pedido) && !cliente && !telefono && !numPedido && isNaN(importe) && !prevDesde && !prevHasta) {
     document.getElementById("aviso_carga").textContent = "Rellena algún filtro y pulsa \"Buscar\" para ver órdenes.";
     if (tabla) tabla.setData([]);
     return;
@@ -1301,6 +1322,7 @@ async function cargarPedidos() {
   // aunque esté guardado con espacios o guiones ("600 12 34 56" se encuentra escribiendo 600123456).
   if (telefono) { const pat = "*" + telefono.split("").join("*") + "*"; query = query.or(`telefono_cli.ilike.${pat},telefono2_cli.ilike.${pat}`); }
   if (estado) query = query.eq("estado", estado);
+  if (tiendaFiltro) query = query.eq("tienda_id", tiendaFiltro);
   if (prevDesde) query = query.gte("fecha_prev_montaje", prevDesde);
   if (prevHasta) query = query.lte("fecha_prev_montaje", prevHasta + "T23:59:59");
   if (!isNaN(importe)) query = query.eq("importe_total", importe);
@@ -1450,6 +1472,7 @@ async function abrirPanel(orden) {
   await cargarHistorial(o);
   await cargarLlamadas();
   avisoChat();
+  pintarAvisosTienda(o);
 
   document.getElementById("panel_detalle").style.display = "flex";
   document.getElementById("overlay").style.display = "block";
@@ -2223,6 +2246,22 @@ async function irAOrden(anyo, orden) {
 }
 
 
+// --- avisos con la tienda (migracion/114) ---
+function pintarAvisosTienda(o) {
+  const f = d => new Date(d).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" });
+  document.getElementById("at_agendar").innerHTML = o.listo_agendar ? '<b style="color:#047857">SÍ</b> · marcado el ' + f(o.listo_agendar_en) : "No";
+  document.getElementById("at_completa").innerHTML = o.tienda_avisada_completa_en ? '<b style="color:#047857">SÍ</b> · el ' + f(o.tienda_avisada_completa_en) : "No";
+  document.getElementById("avisos_tienda_punto").style.display = o.listo_agendar && o.estado !== "agendado" ? "inline" : "none";
+}
+async function avisarTiendaCompleta() {
+  if (!pedidoActivo || !confirm("¿Avisar a la tienda de que la orden está completa?")) return;
+  const { error } = await client.rpc("avisar_tienda_orden_completa", { p_anyo: pedidoActivo.anyo, p_orden: pedidoActivo.orden });
+  if (error) { alert("No se pudo avisar: " + error.message); return; }
+  const { data: o } = await client.from("ordenes").select("*").eq("anyo", pedidoActivo.anyo).eq("orden", pedidoActivo.orden).maybeSingle();
+  if (o) pintarAvisosTienda(o);
+  alert("Tienda avisada.");
+}
+
 // --- chat de la orden (migracion/60_chat_de_la_orden.sql) ---
 async function cargarChat(anyo, orden, soy) {
   const { data } = await client.from("mensajes_orden").select("id, autor_tipo, autor_nombre, texto, creado_en").eq("anyo", anyo).eq("orden", orden).order("creado_en");
@@ -2321,26 +2360,9 @@ comprobarSesion();
 const{data}=await client.from("staff").select("es_admin, es_montador").eq("user_id",user.id).maybeSingle();
 if(data&&data.es_admin)document.getElementById("btn_admin").style.display="";if(data&&data.es_montador){const bm=document.getElementById("btn_modo_mont");if(bm)bm.style.display="";}}catch(e){}})();
 
-// --- banner de mensajes sin leer (migracion/61_chat_ordenes_sin_leer.sql) ---
-(function () {
-  const enStaff = location.pathname.endsWith("pedidos.html");
-  const enlace = (a, o) => (enStaff ? "pedidos.html" : "orden_tienda.html") + "?anyo=" + a + "&orden=" + o;
-  async function pintarBanner() {
-    const { data, error } = await client.rpc("ordenes_con_chat_sin_leer");
-    let b = document.getElementById("banner_mensajes");
-    if (error || !data || !data.length) { if (b) b.remove(); return; }
-    if (!b) {
-      b = document.createElement("div"); b.id = "banner_mensajes";
-      b.style.cssText = "position:sticky;top:0;z-index:9999;background:#dc2626;color:#fff;padding:9px 16px;font:600 14px -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;text-align:center";
-      document.body.prepend(b);
-    }
-    const orden = data.slice().sort((x, y) => y.anyo - x.anyo || y.orden - x.orden);
-    b.innerHTML = "💬 MENSAJES SIN LEER (" + orden.length + (orden.length === 1 ? " orden" : " órdenes") + "): " +
-      orden.slice(0, 8).map(r => '<a style="color:#fff;text-decoration:underline;margin:0 6px" href="' + enlace(r.anyo, r.orden) + '">' + r.anyo + "/" + r.orden + "</a>").join("") +
-      (orden.length > 8 ? " y " + (orden.length - 8) + " más" : "");
-  }
-  pintarBanner(); setInterval(pintarBanner, 60000);
-})();
+// campanita de avisos (campana.js; migracion/114): incluye los mensajes de chat sin leer
+iniciarCampana(client, "staff");
+
 </script>
 </body>
 </html>

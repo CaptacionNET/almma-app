@@ -29,6 +29,7 @@ table{width:100%;border-collapse:collapse;font-size:13px;} th{background:#dbeafe
 .chat-form{display:flex;gap:8px}.chat-form textarea{flex:1;padding:8px;border:1px solid #93c5fd;border-radius:6px;font:inherit;font-size:13px;resize:vertical;min-height:40px}
 </style>
 <link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="ALMMA"><script src="pwa.js" defer></script>
+<script src="campana.js"></script>
 </head>
 <body>
 <div id="toolbar"><button onclick="volver()">&larr; Volver</button><button onclick="location.href='inicio.html'">🏠 Inicio</button><b id="titulo" style="color:#1e3a8a">Orden</b><span style="flex:1"></span><span class="muted">Consulta (puedes adjuntar documentos)</span></div>
@@ -89,8 +90,15 @@ function volver(){ location.href = destino; }
     '<div class="card"><b>Montaje</b><div id="montaje_cont" class="muted" style="margin-top:8px">Cargando…</div></div>'+
     '<div class="card"><b>Documentos adjuntos</b><div class="muted" style="margin:4px 0 10px">El PDF o las fotos de esta orden. Puedes añadir más (varios a la vez).</div><div id="docs_lista"></div>'+
     '<div style="margin-top:10px"><input type="file" id="docs_archivo" accept="application/pdf,image/*" multiple> <button id="docs_subir">Adjuntar</button></div></div>'+
+    '<div class="card"><b>Agendar el montaje</b><div class="muted" style="margin:4px 0 10px">Cuando el pedido esté listo para que ALMMA fije fecha de montaje, márcalo aquí y les llegará un aviso.</div>'+
+      '<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="listo_agendar" style="width:auto"> Se puede agendar el pedido</label></div>'+
     '<div class="card"><b>Chat con ALMMA</b><div class="muted" style="margin:4px 0 10px">Escribe aquí comentarios sobre esta orden; el personal de ALMMA te responderá.</div><div class="chat" id="chat_lista"></div>'+
     '<div class="chat-form"><textarea id="chat_texto" maxlength="2000" placeholder="Escribe un mensaje..."></textarea><button id="chat_enviar">Enviar</button></div></div>';
+  client.from("ordenes").select("listo_agendar").eq("anyo", anyo).eq("orden", orden).maybeSingle().then(r => { if (r.data) document.getElementById("listo_agendar").checked = !!r.data.listo_agendar; });
+  document.getElementById("listo_agendar").onchange = async e => {
+    const { error } = await client.rpc("marcar_listo_agendar", { p_anyo: anyo, p_orden: orden, p_listo: e.target.checked });
+    if (error) { alert("No se pudo guardar: " + error.message); e.target.checked = !e.target.checked; }
+  };
   document.getElementById("chat_enviar").onclick = () => enviarChat(anyo, orden, "tienda");
   await cargarChat(anyo, orden, "tienda");
   document.getElementById("docs_subir").onclick = () => subirDocumentos(anyo, orden);
@@ -194,26 +202,9 @@ async function subirDocumentos(anyo, orden) {
   }
 }
 
-// --- banner de mensajes sin leer (migracion/61_chat_ordenes_sin_leer.sql) ---
-(function () {
-  const enStaff = location.pathname.endsWith("pedidos.html");
-  const enlace = (a, o) => (enStaff ? "pedidos.html" : "orden_tienda.html") + "?anyo=" + a + "&orden=" + o;
-  async function pintarBanner() {
-    const { data, error } = await client.rpc("ordenes_con_chat_sin_leer");
-    let b = document.getElementById("banner_mensajes");
-    if (error || !data || !data.length) { if (b) b.remove(); return; }
-    if (!b) {
-      b = document.createElement("div"); b.id = "banner_mensajes";
-      b.style.cssText = "position:sticky;top:0;z-index:9999;background:#dc2626;color:#fff;padding:9px 16px;font:600 14px -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;text-align:center";
-      document.body.prepend(b);
-    }
-    const orden = data.slice().sort((x, y) => y.anyo - x.anyo || y.orden - x.orden);
-    b.innerHTML = "💬 MENSAJES SIN LEER (" + orden.length + (orden.length === 1 ? " orden" : " órdenes") + "): " +
-      orden.slice(0, 8).map(r => '<a style="color:#fff;text-decoration:underline;margin:0 6px" href="' + enlace(r.anyo, r.orden) + '">' + r.anyo + "/" + r.orden + "</a>").join("") +
-      (orden.length > 8 ? " y " + (orden.length - 8) + " más" : "");
-  }
-  pintarBanner(); setInterval(pintarBanner, 60000);
-})();
+// campanita de avisos (campana.js; migracion/114): incluye los mensajes de chat sin leer
+iniciarCampana(client, "tienda");
+
 </script>
 </body>
 </html>
