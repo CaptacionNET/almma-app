@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ALMMA - Administración</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="busqueda.js"></script>
 <script src="condiciones.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -498,10 +499,10 @@ async function cargarUsuarios(){
   pintarUsuarios();
 }
 function pintarUsuarios(){
-  const q = document.getElementById("uf_buscar").value.trim().toLowerCase(), t = document.getElementById("uf_tienda").value,
+  const q = normBusq(document.getElementById("uf_buscar").value), t = document.getElementById("uf_tienda").value,
         tp = document.getElementById("uf_tipo").value, es = document.getElementById("uf_estado").value;
   const f = (window._lista || []).filter(x =>
-    (!q || ((x.nombre||"") + " " + (x.email||"") + " " + (x.montador||"")).toLowerCase().includes(q)) &&
+    (!q || normBusqDato((x.nombre||"") + " " + (x.email||"") + " " + (x.montador||"")).includes(q)) &&
     (!t || x.tienda === t || (x.tiendas_extra||[]).some(e => e.nombre === t)) &&
     (!tp || x.tipo === tp) &&
     (es === "x" ? !!x.baja : (!x.baja && (!es || (es === "b") === !!x.bloqueado))));

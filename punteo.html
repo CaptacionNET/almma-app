@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ALMMA - Punteo de Ordenes</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="busqueda.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
 <style>
@@ -254,14 +255,14 @@ async function cargarPunteo() {
 }
 
 function aplicarFiltroTexto() {
-  const texto = document.getElementById("texto_busqueda").value.trim().toLowerCase();
+  const texto = normBusq(document.getElementById("texto_busqueda").value);
   const filtrados = texto
     ? datosCompletos.filter(r =>
-        (r.mercancia || "").toLowerCase().includes(texto) ||
-        (r.fabricante || "").toLowerCase().includes(texto) ||
-        (r.tienda || "").toLowerCase().includes(texto) ||
-        (r.dependiente || "").toLowerCase().includes(texto) ||
-        (r.pedido || "").toLowerCase().includes(texto)
+        normBusqDato(r.mercancia).includes(texto) ||
+        normBusqDato(r.fabricante).includes(texto) ||
+        normBusqDato(r.tienda).includes(texto) ||
+        normBusqDato(r.dependiente).includes(texto) ||
+        normBusqDato(r.pedido).includes(texto)
       )
     : datosCompletos;
 

@@ -8,6 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="albaran_hoja.js"></script>
 <style>
 :root{--text:#1f2430;--muted:#6b7280;--line:#cfd6e4;}
 *{box-sizing:border-box;}
@@ -65,7 +66,7 @@ body.previa .hoja::after{content:attr(data-marca);position:absolute;top:45%;left
 </head>
 <body>
 <div id="aviso_login" class="aviso-login" style="display:none"><span>¿Quieres ver más cosas, como todas tus facturas y pedidos? Inicia sesión con tu usuario de ALMMA.</span><a href="login.html">Iniciar sesión</a></div>
-<div id="barra"><button id="b_pdf" onclick="descargarPdf()">Descargar PDF</button><button class="sec" onclick="/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? descargarPdf() : window.print()">Imprimir</button><button class="sec" onclick="if(history.length>1&&!window.opener){history.back()}else{window.close()}">Cerrar</button><span id="estado"></span></div>
+<div id="barra"><button id="b_pdf" onclick="descargarPdf()">Descargar PDF</button><button id="b_alb" class="sec" style="display:none" onclick="conAlbaranes()">Descargar PDF con albaranes firmados</button><button class="sec" onclick="/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? descargarPdf() : window.print()">Imprimir</button><button class="sec" onclick="if(history.length>1&&!window.opener){history.back()}else{window.close()}">Cerrar</button><span id="estado"></span></div>
 <div id="hojas"></div>
 <script>
 const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
@@ -160,7 +161,44 @@ async function iniciar() {
   document.getElementById("estado").textContent = `${orden.length} factura(s) lista(s) para imprimir. Elige "Guardar como PDF" en el cuadro de impresión si prefieres un fichero.`;
   document.title = orden.length === 1 ? "Factura " + numeroFactura(orden[0], ss) : `Facturas (${orden.length})`;
   await rellenarQr();
+  if (params.get("albaranes") === "1") await anyadirAlbaranes(orden, lins || []);
+  else if (claves.length) document.getElementById("b_alb").style.display = "";
+  if (params.get("descargar") === "1") { await descargarPdf(); return; }
   if (params.get("auto") === "1" && !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) setTimeout(() => window.print(), 600);
+}
+
+function conAlbaranes() {
+  const p = new URLSearchParams(location.search); p.set("albaranes", "1"); p.set("descargar", "1"); p.delete("auto");
+  location.href = location.pathname.split("/").pop() + "?" + p.toString();
+}
+
+// Detrás de cada factura se adjuntan los albaranes de entrega (con la firma del cliente) de las órdenes que se facturan en ella.
+async function anyadirAlbaranes(facturas, lins) {
+  const est = document.getElementById("estado");
+  est.textContent = "Preparando los albaranes de entrega…";
+  const hojas = [...document.querySelectorAll("#hojas > .hoja")];
+  let total = 0;
+  for (let i = 0; i < facturas.length; i++) {
+    const c = facturas[i];
+    const claves = [...new Set(lins.filter(l => l.anyo === c.anyo && l.serie === c.serie && l.factura === c.factura && l.anyoord).map(l => `${l.anyoord}/${l.numeroord}`))];
+    let html = "";
+    for (const k of claves) {
+      const [a, n] = k.split("/").map(Number);
+      const [{ data: o }, { data: ls }, { data: en }] = await Promise.all([
+        client.from("ordenes").select("*").eq("anyo", a).eq("orden", n).maybeSingle(),
+        client.from("linorden").select("linea, tipolinea, articulo, descripcion, cantidad, bultos, peso_kg, ubicacion").eq("anyo", a).eq("orden", n).neq("tipolinea", 4).order("linea"),
+        client.from("entregas").select("firmante_nombre, firmado_at, firma_storage_path").eq("anyo", a).eq("orden", n).order("firmado_at", { ascending: false }).limit(1).maybeSingle(),
+      ]);
+      if (!o) continue;
+      const { data: t } = o.tienda_id ? await client.from("tiendas").select("*").eq("id", o.tienda_id).maybeSingle() : { data: null };
+      const { data: lg } = o.tienda_id ? await client.from("tiendas_logo").select("logo").eq("tienda_id", o.tienda_id).maybeSingle() : { data: null };
+      html += hojaAlbaran(o, { ...(t || {}), _logo: lg && lg.logo }, ls || [], en, await firmaEntregaDataUrl(client, en));
+      total++;
+    }
+    // el bloque de albaranes va justo después de la hoja de su factura
+    if (hojas[i] && html) hojas[i].insertAdjacentHTML("afterend", html);
+  }
+  est.textContent = `${facturas.length} factura(s) con ${total} albarán(es) de entrega adjunto(s).`;
 }
 
 // En el móvil (y en la web instalada en la pantalla de inicio) el botón de imprimir del navegador no siempre existe:

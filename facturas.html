@@ -372,7 +372,7 @@ async function cargarPendientes() {
   if (error) { g("aviso_p").textContent = "Error: " + error.message; return; }
   pend = (data || []).map((l, i) => ({ anyo: l.anyo, orden: l.orden, num_pedido: l.num_pedido, nombre_cli: l.nombre_cli, fecha_montaje: l.fecha_montaje, tienda_id: l.tienda_id,
     linea: l.linea, descripcion: l.descripcion, importe: Number(l.importe_cobrar), importe_base: l.importe, porcentaje: l.porcentaje,
-    cobrado: l.importe_cobrado, forma_cobro: l.tipo_cobro, marcada: false, idx: i }));
+    cobrado: l.importe_cobrado, forma_cobro: l.tipo_cobro, estado: l.estado, marcada: false, idx: i }));
   pintarPendientes();
   console.log(`pendientes: ${pend.length} líneas en ${Math.round(performance.now() - t0)} ms`);
 }
@@ -402,7 +402,7 @@ function pintarPendientes() {
       <td colspan="5">${t.codigo} · ${esc(t.nombre)} <span class="meta">${ls.length} líneas</span></td><td style="text-align:right;">${euros(sub)}</td></tr>`;
     ls.forEach(l => { const i = l.idx;
       h += `<tr class="lin-t4"><td><input type="checkbox" ${l.marcada ? "checked" : ""} onchange="marcarLinea(${i}, this.checked)"></td>
-        <td><a href="pedidos.html?anyo=${l.anyo}&orden=${l.orden}" target="_blank" style="color:var(--primary);font-weight:600;">${l.anyo}/${l.orden}</a> <span class="meta">línea ${l.linea}</span></td>
+        <td><a href="pedidos.html?anyo=${l.anyo}&orden=${l.orden}" target="_blank" style="color:var(--primary);font-weight:600;">${l.anyo}/${l.orden}</a> <span class="meta">línea ${l.linea}</span>${l.estado === "incidencia" ? ' <span style="background:#fee2e2;color:#991b1b;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700;">⚠ INCIDENCIA (sin terminar)</span>' : l.estado === "terminado_incidencia" ? ' <span style="background:#ffedd5;color:#9a3412;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700;">⚠ terminado con incidencia</span>' : ""}</td>
         <td>${esc(l.num_pedido)}</td><td>${esc(l.nombre_cli)}</td><td>${fechaES(l.fecha_montaje)}</td><td>${esc(l.descripcion)}</td>
         <td style="text-align:right;font-weight:600;">${euros(l.importe)}</td></tr>`; });
   });
@@ -686,9 +686,9 @@ function pintar() {
     { title: '<input type="checkbox" id="chk_todas" title="Seleccionar todas las del listado">', field: "id", width: 44, headerSort: false, hozAlign: "center",
       formatter: (c) => `<input type="checkbox" data-id="${c.getValue()}" ${seleccion.has(c.getValue()) ? "checked" : ""}>` },
     { title: "Nº factura", field: "numero", minWidth: 120, formatter: (c) => `<strong>${esc(c.getValue())}</strong>` },
-    { title: "Acciones", field: "id", width: 290, headerSort: false, formatter: (c) => {
+    { title: "Acciones", field: "id", width: 440, headerSort: false, formatter: (c) => {
         const d = c.getRow().getData(), id = d.id;
-        return `<button class="btn-mini" onclick="imprimirUna('${id}')">Imprimir</button> ` +
+        return `<button class="btn-mini" onclick="imprimirUna('${id}')">Imprimir</button> <button class="secondary btn-mini" onclick="window.open('factura_imprimir.html?ids=${id}&descargar=1','_blank')">PDF</button> <button class="secondary btn-mini" onclick="window.open('factura_imprimir.html?ids=${id}&albaranes=1&descargar=1','_blank')">PDF + albaranes</button> ` +
           (d.tipo_factura === "proforma" ? "" : `<button class="secondary btn-mini" onclick="abrirModal('${id}','rectificativa')">Rectificativa</button> <button class="secondary btn-mini" onclick="abrirModal('${id}','adicional')">Adicional</button>`);
       } },
     { title: "Fecha", field: "ffactura", width: 100, formatter: (c) => fechaES(c.getValue()), sorter: "string" },

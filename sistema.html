@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ALMMA - Sistema</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="busqueda.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
 <style>
@@ -438,8 +439,8 @@ async function buscarArticulos() {
   }
   aviso.textContent = "Buscando...";
   let q = client.from("articulos").select("*").order("articulo").limit(300);
-  if (codigo) q = q.ilike("articulo", `%${codigo}%`);
-  if (desc) q = q.ilike("descripcion", `%${desc}%`);
+  if (codigo) q = q.ilike("articulo", patronBusq(codigo));
+  if (desc) q = q.ilike("descripcion", patronBusq(desc));
   if (tienda) {
     const m = tienda.match(/^(\d+)/);   // "354" o "354 · TEMPUR SEALY": manda el código
     if (m) q = q.eq("proveedor", parseInt(m[1], 10));
@@ -474,7 +475,7 @@ async function buscarEnCatalogo() {
   if (cfg.requiereBusqueda) {
     if (texto.length < 2) { avisoBox.textContent = "Escribe al menos 2 caracteres."; renderTabla(cfg, []); return; }
     avisoBox.textContent = "Buscando...";
-    const or = cfg.buscarCampos.map(c => `${c}.ilike.%${texto}%`).join(",");
+    const or = cfg.buscarCampos.map(c => `${c}.ilike.${patronBusq(texto)}`).join(",");
     const { data, error } = await client.from(cfg.tabla).select("*").or(or).order(cfg.orden).limit(200);
     if (error) { avisoBox.textContent = "Error: " + error.message; return; }
     avisoBox.textContent = `${data.length} resultados.`;

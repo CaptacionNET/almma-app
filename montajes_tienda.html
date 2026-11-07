@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ALMMA - Montajes</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="busqueda.js"></script>
 <style>
 :root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
 *{box-sizing:border-box;}
@@ -65,8 +66,8 @@ async function cargar(){
   datos = data; pintar();
 }
 function pintar(){
-  const b = document.getElementById("buscar").value.trim().toLowerCase();
-  const l = datos.filter(o => !b || [o.nombre_cli,o.num_pedido,o.localidad_cli,o.anyo+"/"+o.orden].join(" ").toLowerCase().includes(b));
+  const b = normBusq(document.getElementById("buscar").value);
+  const l = datos.filter(o => !b || normBusqDato([o.nombre_cli,o.num_pedido,o.localidad_cli,o.anyo+"/"+o.orden].join(" ")).includes(b));
   const fecha = vista === "prox" ? "Montaje previsto" : "Montaje realizado";
   document.getElementById("tabla").innerHTML = l.length ? '<table><tr><th>'+fecha+'</th><th>Orden</th>'+(multi?'<th>Tienda</th>':'')+'<th>Cliente</th><th>Localidad</th><th>Referencia</th><th>Vendedor</th><th>Estado</th></tr>'+
     l.map((o,i) => '<tr class="fila" onclick="abrir('+datos.indexOf(o)+')"><td><b>'+(vista==="prox" ? fd(o.fecha_prev_montaje) + (o.horamont ? " · "+esc(o.horamont) : "") : new Date(o.fecha_montaje).toLocaleString("es-ES"))+'</b></td><td>'+o.anyo+'/'+o.orden+'</td>'+(multi?'<td>'+esc(o.tiendas?.nombre)+'</td>':'')+'<td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.localidad_cli)+'</td><td>'+esc(o.num_pedido)+'</td><td>'+esc(vendedores[o.dependiente_id] || "")+'</td><td>'+esc((o.estado||"").replace(/_/g," "))+'</td></tr>').join("")+'</table>'

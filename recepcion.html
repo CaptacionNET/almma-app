@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ALMMA - Recepción de mercancía</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="busqueda.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
@@ -475,7 +476,7 @@ async function buscarPedido() {
   const anyoMinimo = new Date().getFullYear() - 3;
   let consulta = client.from("ordenes")
     .select("anyo, orden, num_pedido, nombre_cli, tienda_id, tiendas ( nombre )")
-    .ilike("num_pedido", `%${numPedido}%`)
+    .ilike("num_pedido", patronBusq(numPedido))
     .order("anyo", { ascending: false }).order("orden", { ascending: false })
     .limit(20);
   if (!incluirAnteriores) consulta = consulta.gte("anyo", anyoMinimo);
@@ -693,7 +694,7 @@ document.getElementById("ent_fabricante_buscar").addEventListener("input", (e) =
   const caja = document.getElementById("ent_fabricante_sugerencias");
   if (texto.length < 2) { caja.style.display = "none"; return; }
   debounceFab = setTimeout(async () => {
-    const { data } = await client.from("fabricantes").select("codigo, nombre").ilike("nombre", `%${texto}%`).limit(15);
+    const { data } = await client.from("fabricantes").select("codigo, nombre").ilike("nombre", patronBusq(texto)).limit(15);
     caja.innerHTML = (data || []).map(f =>
       `<div data-cod="${f.codigo}" data-nom="${(f.nombre || "").replace(/"/g, "&quot;")}">${f.nombre}</div>`
     ).join("");
@@ -850,7 +851,7 @@ async function cargarMovimientos() {
   if (desde) consulta = consulta.gte("fechmov", desde);
   else if (!hayFiltros) consulta = consulta.gte("fechmov", hace2Meses.toISOString().slice(0, 10));
   if (hasta) consulta = consulta.lte("fechmov", hasta + "T23:59:59");
-  if (pedido) consulta = consulta.ilike("num_pedido", `%${pedido}%`);
+  if (pedido) consulta = consulta.ilike("num_pedido", patronBusq(pedido));
   if (codigoFab) consulta = consulta.eq("fabricante", codigoFab);
   const { data, error } = await consulta;
   if (error) { console.error(error); aviso.textContent = "Error: " + error.message; return; }

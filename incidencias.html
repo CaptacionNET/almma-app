@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ALMMA - Gestión de Incidencias</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="busqueda.js"></script>
 <script src="imprimir_movil.js"></script>
 <style>
 
@@ -174,8 +175,8 @@ async function cargar() {
   const { data, error } = await q;
   if (error) { $("aviso").textContent = "Error: " + error.message; return; }
   let lista = data || [];
-  const cli = $("f_cliente").value.trim().toLowerCase(), tie = $("f_tienda").value;
-  if (cli) lista = lista.filter(i => String(i.ordenes?.nombre_cli || "").toLowerCase().includes(cli));
+  const cli = normBusq($("f_cliente").value), tie = $("f_tienda").value;
+  if (cli) lista = lista.filter(i => normBusqDato(i.ordenes?.nombre_cli).includes(cli));
   if (tie) lista = lista.filter(i => i.ordenes?.tienda_id === tie);
   // fotos de las órdenes implicadas (las de la incidencia y las demás que subió el montador)
   const porAnyo = {}; lista.forEach(i => (porAnyo[i.anyo] ||= new Set()).add(i.orden));

@@ -324,7 +324,7 @@ async function cargarPaquete(){
     if (yo) { nombreMontador = yo.nombre; await kvSet("nombre", yo.nombre); document.getElementById("quien").textContent = yo.nombre; }
     else { document.getElementById("quien").textContent = "Oficina"; if (!verTodos) verEquipos(true); }
     // los montadores solo reciben lo suyo (lo decide la seguridad de la base de datos); el administrador recibe todos los equipos
-    const sel = "anyo, orden, importe_pendiente, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, telefono2_cli, num_pedido, estado, con_incidencia, fecha_prev_montaje, horamont, obs_albaran, equipo:ordenes_montadores(montador_id, montadores(nombre)), entregas(id, firmante_nombre, firmado_at, firma_storage_path), fotos:fotos_orden(id, storage_path, categoria, comentario, created_at)";
+    const sel = "anyo, orden, importe_pendiente, nombre_cli, domicilio_cli, localidad_cli, telefono_cli, telefono2_cli, num_pedido, estado, con_incidencia, fecha_prev_montaje, horamont, obs_albaran, equipo:ordenes_montadores(montador_id, montadores(nombre)), entregas(id, firmante_nombre, firmado_at, firma_storage_path), incidencias(id, tipo, descripcion, created_at), fotos:fotos_orden(id, storage_path, categoria, comentario, created_at)";
     const rangos = [[diaN(-1), diaN(diaSig() + 1)]];   // ayer … último día de «Mañana»
     if (esAdmin && fechaLibre && (fechaLibre < rangos[0][0] || fechaLibre >= rangos[0][1])) { const f2 = new Date(fechaLibre + "T12:00:00"); f2.setDate(f2.getDate() + 1); rangos.push([fechaLibre, ISO(f2)]); }
     let data = [], error = null;
@@ -360,6 +360,7 @@ async function cargarPaquete(){
       equipo:(o.equipo || []).map(e => e.montadores?.nombre).filter(Boolean),
       mio:!!yo && (o.equipo || []).some(e => e.montador_id === yo.id),
       hecho:(o.entregas || []).length > 0,
+      incidencias:(o.incidencias || []).sort((a,b) => String(a.created_at).localeCompare(String(b.created_at))),
       firmas:(o.entregas || []).filter(e => e.firma_storage_path).sort((a,b) => String(a.firmado_at).localeCompare(String(b.firmado_at))).map(e => ({ ruta:e.firma_storage_path, nombre:e.firmante_nombre, cuando:e.firmado_at })),
       fotos:(o.fotos || []).sort((a,b) => String(a.created_at).localeCompare(String(b.created_at))),
       docs:docs[o.anyo + "/" + o.orden] || [], servicios:servicios[o.anyo + "/" + o.orden] || [], lineas:lineas[o.anyo + "/" + o.orden] || []
@@ -586,6 +587,17 @@ function bloqueVendedor(o){
       (tl && tl !== tt ? '<a class="btn az" href="tel:' + tl + '">📞 Llamar al local</a>' : "") +
     '</div>' : "") + '</div>';
 }
+// Los avisos de problema que ya se han enviado (y los que esperan cobertura): para poder releer qué se puso
+function bloqueIncidencias(o){
+  const env = o.incidencias || [], pend = enCola(o, "incidencia");
+  if (!env.length && !pend.length) return "";
+  const caja = (m, t, cuando, extra) => '<div style="border:1px solid #fecaca;background:#fef2f2;border-radius:12px;padding:10px 12px;margin-bottom:8px"><b>' + esc(m || "Problema") + '</b>' +
+    (t ? '<div style="margin-top:4px;white-space:pre-wrap">' + esc(t) + '</div>' : "") +
+    '<div style="color:var(--gris);font-size:.85rem;margin-top:4px">' + esc(cuando) + (extra || "") + '</div></div>';
+  return '<div class="sec"><h3>⚠ Problemas avisados (' + (env.length + pend.length) + ')</h3>' +
+    env.map(i => caja(i.tipo, i.descripcion, i.created_at ? new Date(i.created_at).toLocaleString("es-ES", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }) : "", " · enviado a la oficina")).join("") +
+    pend.map(c => caja(c.motivo, c.texto, new Date(c.ts).toLocaleString("es-ES", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }), " · ⏳ por enviar (sin cobertura)")).join("") + '</div>';
+}
 function pintarDetalle(){
   const o = detalleK && buscar(detalleK); if (!o) return;
   const { hecho, incid } = situacion(o);
@@ -616,6 +628,7 @@ function pintarDetalle(){
     bloqueVendedor(o) +
     bloqueCobro(o) +
     bloqueServicios(o) +
+    bloqueIncidencias(o) +
     '<div class="sec"><h3>Qué hay que montar</h3>' + (arts ? '<div class="arts" style="margin:0">' + arts + '</div>' : '<div style="color:var(--gris)">Sin artículos.</div>') +
       (o.obs ? '<div class="obs">📝 ' + esc(o.obs) + '</div>' : "") + '</div>' +
     (docs.length ? '<div class="sec"><h3>📄 Documentos de la oficina (' + docs.length + ')</h3>' + tiraFotos(docs, []) + '</div>' : "") +

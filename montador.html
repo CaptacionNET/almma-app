@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ALMMA - Mis montajes</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="busqueda.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
 <script src="imprimir_movil.js"></script>
@@ -289,7 +290,7 @@ async function cargarMontajes() {
   // los rangos incluyen el día "hasta" entero
   if (fPrevDesde) consulta = consulta.gte("fecha_prev_montaje", fPrevDesde);
   if (fPrevHasta) { const [a, m, d] = trozos(fPrevHasta); consulta = consulta.lt("fecha_prev_montaje", diaTexto(new Date(a, m - 1, d + 1))); }
-  if (fCliente) consulta = consulta.ilike("nombre_cli", `%${fCliente}%`);
+  if (fCliente) consulta = consulta.ilike("nombre_cli", patronBusq(fCliente));
   if (fRealDesde) { const [a, m, d] = trozos(fRealDesde); consulta = consulta.gte("firmas.firmado_at", new Date(a, m - 1, d).toISOString()); }
   if (fRealHasta) { const [a, m, d] = trozos(fRealHasta); consulta = consulta.lt("firmas.firmado_at", new Date(a, m - 1, d + 1).toISOString()); }
   const { data: crudos, error } = await consulta

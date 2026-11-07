@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ALMMA - Mi tienda</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="busqueda.js"></script>
 <style>
 :root{--primary:#2563eb;--bg:#f5f6fa;--card:#fff;--border:#e2e4eb;--text:#1f2430;--muted:#6b7280;}
 *{box-sizing:border-box;}
@@ -64,6 +65,7 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
 
 <div class="panel activa" id="p_ordenes">
   <div class="barra"><input id="o_buscar" placeholder="Buscar cliente, referencia, nº..." oninput="pintarOrdenes()" style="width:320px">
+  <select id="o_vend" onchange="pintarOrdenes()" title="Filtrar por vendedor"><option value="">Todos los vendedores</option></select>
   <span class="muted">Desde</span> <input type="date" id="o_d" onchange="cargarOrdenes()"> <span class="muted">hasta</span> <input type="date" id="o_h" onchange="cargarOrdenes()"> <button class="secondary" onclick="limpiarFechas('o')">Quitar fechas</button></div>
   <div id="o_tabla"><span class="muted">Cargando...</span></div>
 </div>
@@ -79,6 +81,7 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
     <button id="m_b_prox" class="on" onclick="modoMontajes('prox')">Próximos montajes</button>
     <button id="m_b_pas" class="secondary" onclick="modoMontajes('pas')">Montajes realizados</button>
     <input id="m_buscar" placeholder="Buscar cliente, referencia, localidad..." oninput="pintarMontajes()" style="width:300px">
+    <select id="m_vend" onchange="pintarMontajes()" title="Filtrar por vendedor"><option value="">Todos los vendedores</option></select>
     <span class="muted">Desde</span> <input type="date" id="m_d" onchange="cargarMontajes()"> <span class="muted">hasta</span> <input type="date" id="m_h" onchange="cargarMontajes()"> <button class="secondary" onclick="limpiarFechas('m')">Quitar fechas</button>
   </div>
   <div id="m_tabla"><span class="muted">Cargando...</span></div>
@@ -222,9 +225,18 @@ async function cargarOrdenes(){
   if (error) { document.getElementById("o_tabla").innerHTML = '<span class="muted">Error: '+esc(error.message)+'</span>'; return; }
   ordenes = data; pintarOrdenes();
 }
+// Rellena el desplegable de vendedores con los que aparecen en la lista y conserva la elección
+function rellenarVendedores(selId, lista){
+  const sel = document.getElementById(selId), actual = sel.value;
+  const ids = [...new Set(lista.map(o => o.dependiente_id).filter(Boolean))].sort((a, b) => String(vendedores[a] || "").localeCompare(String(vendedores[b] || ""), "es"));
+  sel.innerHTML = '<option value="">Todos los vendedores</option>' + ids.map(id => '<option value="' + id + '">' + esc(vendedores[id] || "(sin nombre)") + '</option>').join("");
+  sel.value = ids.includes(actual) ? actual : "";
+}
 function pintarOrdenes(){
-  const b = document.getElementById("o_buscar").value.trim().toLowerCase();
-  const f = ordenes.filter(o => !b || [o.nombre_cli,o.num_pedido,o.anyo+"/"+o.orden].join(" ").toLowerCase().includes(b)).slice(0,500);
+  rellenarVendedores("o_vend", ordenes);
+  const vsel = document.getElementById("o_vend").value;
+  const b = normBusq(document.getElementById("o_buscar").value);
+  const f = ordenes.filter(o => (!vsel || o.dependiente_id === vsel) && (!b || normBusqDato([o.nombre_cli,o.num_pedido,o.anyo+"/"+o.orden].join(" ")).includes(b))).slice(0,500);
   document.getElementById("o_tabla").innerHTML = '<table><tr><th>Orden</th>'+(multi()?'<th>Tienda</th>':'')+'<th>Cliente</th><th>Referencia</th><th>Vendedor</th><th>Estado</th><th>Creada</th></tr>'+
     f.map(o => '<tr><td><a href="orden_tienda.html?anyo='+o.anyo+'&orden='+o.orden+'">'+o.anyo+'/'+o.orden+'</a>'+globo(o.anyo,o.orden)+'</td>'+(multi()?'<td>'+esc(o.tiendas?.nombre)+'</td>':'')+'<td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.num_pedido)+'</td><td>'+esc(vendedores[o.dependiente_id] || "")+'</td><td>'+esc((o.estado||"").replace(/_/g," "))+'</td><td>'+(o.fecha_creacion?new Date(o.fecha_creacion).toLocaleDateString("es-ES"):"")+'</td></tr>').join("")+'</table>'+
     '<div class="muted" style="margin-top:6px">'+f.length+' órdenes'+(ordenes.length>500?' (se muestran las 500 primeras; afina con el buscador)':'')+'</div>';
@@ -244,10 +256,10 @@ async function cargarFacturas(){
   facturas = data; pintarFacturas();
 }
 function pintarFacturas(){
-  const b = document.getElementById("f_buscar").value.trim().toLowerCase();
-  const data = facturas.filter(f => !b || (f.serie+"-"+f.anyo+"/"+f.factura).toLowerCase().includes(b)).slice(0,500);
+  const b = normBusq(document.getElementById("f_buscar").value);
+  const data = facturas.filter(f => !b || normBusqDato(f.serie+"-"+f.anyo+"/"+f.factura).includes(b)).slice(0,500);
   document.getElementById("f_tabla").innerHTML = data.length ? '<table><tr><th>Factura</th>'+(multi()?'<th>Tienda</th>':'')+'<th>Fecha</th><th>Base</th><th>IVA</th><th>Total</th><th></th></tr>'+
-    data.map(f => { const n = f.anyo+'-'+f.serie+'-'+f.factura; return '<tr><td>'+f.serie+'-'+f.anyo+'/'+f.factura+'</td>'+(multi()?'<td>'+esc(f.tiendas?.nombre)+'</td>':'')+'<td>'+(f.ffactura?new Date(f.ffactura).toLocaleDateString("es-ES"):"")+'</td><td>'+eur(f.impbruto)+'</td><td>'+eur(f.impiva)+'</td><td>'+eur(f.impneto)+'</td><td><a href="factura_imprimir.html?ids='+n+'" target="_blank">Ver / imprimir</a></td></tr>'; }).join("")+'</table>'
+    data.map(f => { const n = f.anyo+'-'+f.serie+'-'+f.factura; return '<tr><td>'+f.serie+'-'+f.anyo+'/'+f.factura+'</td>'+(multi()?'<td>'+esc(f.tiendas?.nombre)+'</td>':'')+'<td>'+(f.ffactura?new Date(f.ffactura).toLocaleDateString("es-ES"):"")+'</td><td>'+eur(f.impbruto)+'</td><td>'+eur(f.impiva)+'</td><td>'+eur(f.impneto)+'</td><td><a href="factura_imprimir.html?ids='+n+'" target="_blank">Ver / imprimir</a> · <a href="factura_imprimir.html?ids='+n+'&descargar=1" target="_blank">Descargar PDF</a> · <a href="factura_imprimir.html?ids='+n+'&albaranes=1&descargar=1" target="_blank">PDF con albaranes</a></td></tr>'; }).join("")+'</table>'
     : '<span class="muted">No hay facturas'+(facturas.length?' con ese filtro':' todavía')+'.</span>';
 }
 
@@ -281,8 +293,10 @@ async function cargarMontajes(){
   montajes = data; pintarMontajes();
 }
 function pintarMontajes(){
-  const b = document.getElementById("m_buscar").value.trim().toLowerCase();
-  const l = montajes.filter(o => !b || [o.nombre_cli,o.num_pedido,o.localidad_cli,o.anyo+"/"+o.orden].join(" ").toLowerCase().includes(b));
+  rellenarVendedores("m_vend", montajes);
+  const vsel = document.getElementById("m_vend").value;
+  const b = normBusq(document.getElementById("m_buscar").value);
+  const l = montajes.filter(o => (!vsel || o.dependiente_id === vsel) && (!b || normBusqDato([o.nombre_cli,o.num_pedido,o.localidad_cli,o.anyo+"/"+o.orden].join(" ")).includes(b)));
   const fecha = vistaM === "prox" ? "Montaje previsto" : "Montaje realizado";
   document.getElementById("m_tabla").innerHTML = l.length ? '<table><tr><th>'+fecha+'</th><th>Orden</th>'+(multi()?'<th>Tienda</th>':'')+'<th>Cliente</th><th>Localidad</th><th>Referencia</th><th>Vendedor</th><th>Estado</th></tr>'+
     l.map(o => '<tr class="fila" onclick="abrirMontaje('+montajes.indexOf(o)+')"><td><b>'+(vistaM==="prox" ? fdM(o.fecha_prev_montaje) + (o.horamont ? " · "+esc(o.horamont) : "") : new Date(o.fecha_montaje).toLocaleString("es-ES"))+'</b></td><td>'+o.anyo+'/'+o.orden+'</td>'+(multi()?'<td>'+esc(o.tiendas?.nombre)+'</td>':'')+'<td>'+esc(o.nombre_cli)+'</td><td>'+esc(o.localidad_cli)+'</td><td>'+esc(o.num_pedido)+'</td><td>'+esc(vendedores[o.dependiente_id] || "")+'</td><td>'+esc((o.estado||"").replace(/_/g," "))+'</td></tr>').join("")+'</table>'
