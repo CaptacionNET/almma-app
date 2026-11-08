@@ -33,7 +33,7 @@ body{margin:0;background:#e8ebf2;color:var(--text);font-family:-apple-system,Bli
 .datos b{color:var(--text);}
 table{width:100%;border-collapse:collapse;margin-top:14px;}
 thead{display:table-header-group;}
-tbody.orden{break-inside:avoid;page-break-inside:avoid;}
+tbody.orden,.cliente,.bajo,.rect,.resumen,tr{break-inside:avoid;page-break-inside:avoid;}
 tr.og td{background:#eef4ff;border-bottom:1px solid #cfdcf5;border-top:2px solid #cfdcf5;padding:6px 8px;}
 tr.cobrado td{background:#f0fdf4;color:#166534;border-bottom:1px solid #cfe8d6;}
 tr.og .sub{color:var(--muted);}
@@ -227,12 +227,22 @@ async function descargarPdf() {
       await new Promise(r => setTimeout(r, 30));
       const c = await html2canvas(hojas[i], { scale: 2, backgroundColor: "#ffffff", useCORS: true });
       const altoPag = Math.floor(c.width * 297 / 210);   // alto de una página A4 en píxeles de esta captura
-      for (let y = 0; y < c.height - 2; y += altoPag) {
+      // bloques que no se pueden partir: se cortan por encima de ellos, nunca por medio
+      const k = c.width / hojas[i].getBoundingClientRect().width, r0 = hojas[i].getBoundingClientRect().top;
+      const bloques = [...hojas[i].querySelectorAll("tbody.orden, .cliente, .bajo, .rect, .resumen, .cab")].map(e => {
+        const r = e.getBoundingClientRect(); return { t: (r.top - r0) * k, b: (r.bottom - r0) * k };
+      });
+      let y = 0;
+      while (y < c.height - 2) {
+        let fin = Math.min(y + altoPag, c.height);
+        if (fin < c.height) bloques.forEach(q => { if (q.t > y + 20 && q.t < fin && q.b > fin) fin = q.t; });
+        fin = Math.floor(fin);
         const trozo = document.createElement("canvas");
-        trozo.width = c.width; trozo.height = Math.min(altoPag, c.height - y);
+        trozo.width = c.width; trozo.height = fin - y;
         trozo.getContext("2d").drawImage(c, 0, y, c.width, trozo.height, 0, 0, c.width, trozo.height);
         if (!primera) pdf.addPage(); primera = false;
         pdf.addImage(trozo.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 210, trozo.height * 210 / c.width);
+        y = fin;
       }
     }
     const nombre = (document.title || "factura").replace(/[^\w\-]+/g, "_") + ".pdf";
