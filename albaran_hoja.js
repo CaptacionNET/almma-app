@@ -47,8 +47,7 @@
       <td>${esc(l.descripcion || l.articulo || "")}${l.articulo && l.descripcion ? `<div style="color:var(--muted);font-size:11px;">Ref. ${esc(l.articulo)}</div>` : ""}</td>
       <td class="num">${l.cantidad ?? ""}</td>
       <td class="num">${l.bultos ?? ""}</td>
-      <td class="num">${l.peso_kg ?? ""}</td>
-      <td>${esc(l.ubicacion || "")}</td></tr>`).join("");
+      <td class="num">${l.peso_kg ?? ""}</td></tr>`).join("");
     const loc = [t.cp, t.localidad].filter(Boolean).map(esc).join(" ") + (t.provincia ? " (" + esc(t.provincia) + ")" : "");
     const fechaDoc = entrega && entrega.firmado_at ? String(entrega.firmado_at).slice(0, 10) : hoy;
     const firmaHtml = entrega
@@ -72,11 +71,9 @@
     <div class="datos">
       <span>Orden: <b>${o.anyo}/${o.orden}</b></span>
       ${o.num_pedido ? `<span>Referencia de pedido: <b>${esc(o.num_pedido)}</b></span>` : ""}
-      ${o.fecha_recepcion ? `<span>Recepción: <b>${fechaES(o.fecha_recepcion)}</b></span>` : ""}
-      ${o.fecha_prev_montaje || o.horamont ? `<span>Montaje previsto: <b>${fechaES(o.fecha_prev_montaje)}${o.horamont && o.horamont !== "M" ? (o.fecha_prev_montaje ? " a las " : "") + esc(o.horamont) : ""}</b></span>` : (o.fecha_montaje ? `<span>Montaje: <b>${fechaES(o.fecha_montaje)}</b></span>` : "")}
     </div>
     <table>
-      <thead><tr><th>Artículo</th><th class="num">Cant.</th><th class="num">Bultos</th><th class="num">Peso kg</th><th>Ubicación</th></tr></thead>
+      <thead><tr><th>Artículo</th><th class="num">Cant.</th><th class="num">Bultos</th><th class="num">Peso kg</th></tr></thead>
       <tbody>${filas}</tbody>
     </table>
     <div style="margin-top:10px;text-align:right;">Total bultos: <b>${totBultos}</b> &nbsp;·&nbsp; Peso total: <b>${Math.round(totPeso * 100) / 100} kg</b></div>
