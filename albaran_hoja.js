@@ -41,13 +41,9 @@
   // o = orden, t = tienda (con _logo opcional), lins = líneas, entrega = fila de `entregas` (o null), firmaImg = data URL (o null)
   window.hojaAlbaran = function (o, t, lins, entrega, firmaImg) {
     const hoy = new Date().toISOString().slice(0, 10);
-    const totBultos = lins.reduce((a, l) => a + (Number(l.bultos) || 0), 0);
-    const totPeso = lins.reduce((a, l) => a + (Number(l.peso_kg) || 0), 0);
     const filas = lins.map(l => `<tr>
       <td>${esc(l.descripcion || l.articulo || "")}${l.articulo && l.descripcion ? `<div style="color:var(--muted);font-size:11px;">Ref. ${esc(l.articulo)}</div>` : ""}</td>
-      <td class="num">${l.cantidad ?? ""}</td>
-      <td class="num">${l.bultos ?? ""}</td>
-      <td class="num">${l.peso_kg ?? ""}</td></tr>`).join("");
+      <td class="num">${l.cantidad ?? ""}</td></tr>`).join("");
     const loc = [t.cp, t.localidad].filter(Boolean).map(esc).join(" ") + (t.provincia ? " (" + esc(t.provincia) + ")" : "");
     const fechaDoc = entrega && entrega.firmado_at ? String(entrega.firmado_at).slice(0, 10) : hoy;
     const firmaHtml = entrega
@@ -73,10 +69,9 @@
       ${o.num_pedido ? `<span>Referencia de pedido: <b>${esc(o.num_pedido)}</b></span>` : ""}
     </div>
     <table>
-      <thead><tr><th>Artículo</th><th class="num">Cant.</th><th class="num">Bultos</th><th class="num">Peso kg</th></tr></thead>
+      <thead><tr><th>Artículo</th><th class="num">Cant.</th></tr></thead>
       <tbody>${filas}</tbody>
     </table>
-    <div style="margin-top:10px;text-align:right;">Total bultos: <b>${totBultos}</b> &nbsp;·&nbsp; Peso total: <b>${Math.round(totPeso * 100) / 100} kg</b></div>
     ${o.obs_albaran ? `<div class="obs"><b>Observaciones:</b> ${esc(o.obs_albaran)}</div>` : ""}
     <div class="firmas">${firmaHtml}</div>
     <div class="nota">Con su firma, el firmante confirma haber recibido la mercancía relacionada en buen estado, salvo anotación en contrario.</div>
