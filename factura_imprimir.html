@@ -50,6 +50,11 @@ td.num,th.num{text-align:right;white-space:nowrap;}
 .aviso-login a{background:#fff;color:#1e3a8a;text-decoration:none;font-weight:700;padding:7px 14px;border-radius:6px;}
 .qr{display:flex;gap:10px;align-items:center;margin-top:14px;font-size:11px;color:var(--muted);line-height:1.4;}
 .qr svg{width:24mm;height:24mm;flex:none;border:1px solid var(--line);}
+.titulo .qr{flex-direction:column;align-items:flex-end;text-align:right;gap:4px;margin-top:8px;font-size:9px;max-width:42mm;margin-left:auto;}
+.titulo .qr svg{width:22mm;height:22mm;}
+.bajo{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-top:14px;}
+.bajo .totales{margin:0;flex:none;}
+.bajo .pie{margin:0;padding:0;border:0;flex:1;}
 .pie{margin-top:auto;padding-top:18px;color:var(--muted);line-height:1.5;border-top:1px solid #e6eaf2;font-size:12px;}
 .pie b{color:var(--text);}
 @page{size:A4;margin:0;}
@@ -309,19 +314,20 @@ function hoja(c, lineas, ss, originales, tiendaPorId, ordenPorClave) {
   return `<section class="hoja">
     <div class="cab">
       ${conCabecera ? `<div class="emisor"><strong>${esc(emisor.nombre)}</strong><br>NIF: ${esc(emisor.nif)}<br>${esc(emisor.direccion)}<br>${esc(emisor.cp_localidad)}</div>` : '<div class="sinmembrete"></div>'}
-      <div class="titulo"><div class="tipo">${TITULOS[c.tipo_factura] || "FACTURA"}</div><div class="num">Nº ${esc(numeroFactura(c, ss))}</div></div>
+      <div class="titulo"><div class="tipo">${TITULOS[c.tipo_factura] || "FACTURA"}</div><div class="num">Nº ${esc(numeroFactura(c, ss))}</div>${qrHueco(c)}</div>
     </div>
     <div class="datos"><span>Fecha: <b>${fechaES(c.ffactura)}</b></span></div>
     <div class="cliente"><div class="et">Cliente</div><strong>${esc(r.nombre)}</strong>${r.nombre_comercial && r.nombre_comercial !== r.nombre ? ` (${esc(r.nombre_comercial)})` : ""}<br>${r.cif ? "NIF/CIF: " + esc(r.cif) + "<br>" : ""}${esc(r.direccion)}${r.direccion ? "<br>" : ""}${[r.cp, r.localidad].filter(Boolean).map(esc).join(" ")}${r.provincia ? " (" + esc(r.provincia) + ")" : ""}</div>
     <div class="resumen"><span>Base imponible <b>${euros(c.impbruto)}</b></span>${proforma ? "" : `<span>IVA ${pct} % <b>${euros(c.impiva)}</b></span><span>Total <b>${euros(c.impneto)}</b></span>`}</div>
     ${c.rectifica_factura ? `<div class="rect"><strong>${c.tipo_factura === "rectificativa" ? "Rectifica" : "Amplía"} la factura ${esc(numeroFactura({ anyo: c.rectifica_anyo, serie: c.rectifica_serie, factura: c.rectifica_factura, tipo_factura: "ordinaria" }, ss))}${orig ? " de fecha " + fechaES(orig.ffactura) : ""}.</strong>${c.motivo ? "<br>Motivo: " + esc(c.motivo) : ""}</div>` : ""}
     <table><thead><tr><th class="num">Cant.</th><th>Concepto</th><th class="num">Base</th><th class="num">Importe</th></tr></thead>${cuerpo}</table>
-    <div class="totales">
-      <div><span>Base imponible</span><span>${euros(c.impbruto)}</span></div>
-      ${proforma ? "" : `<div><span>IVA ${pct} %</span><span>${euros(c.impiva)}</span></div><div class="total"><span>TOTAL</span><span>${euros(c.impneto)}</span></div>`}
+    <div class="bajo">
+      ${proforma ? "<div></div>" : `<div class="pie">${c.forma_pago ? `Forma de pago: <b>${esc(c.forma_pago)}</b><br>` : ""}${emisor.iban ? `Pago por transferencia a: <b>${esc(emisor.iban)}</b> (${esc(emisor.nombre)})<br>` : ""}${c.notas ? esc(c.notas) : ""}</div>`}
+      <div class="totales">
+        <div><span>Base imponible</span><span>${euros(c.impbruto)}</span></div>
+        ${proforma ? "" : `<div><span>IVA ${pct} %</span><span>${euros(c.impiva)}</span></div><div class="total"><span>TOTAL</span><span>${euros(c.impneto)}</span></div>`}
+      </div>
     </div>
-    ${qrHueco(c)}
-    ${proforma ? "" : `<div class="pie">${c.forma_pago ? `Forma de pago: <b>${esc(c.forma_pago)}</b><br>` : ""}${emisor.iban ? `Pago por transferencia a: <b>${esc(emisor.iban)}</b> (${esc(emisor.nombre)})<br>` : ""}${c.notas ? esc(c.notas) : ""}</div>`}
   </section>`;
 }
 iniciar();
