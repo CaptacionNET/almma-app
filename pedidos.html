@@ -1397,6 +1397,9 @@ async function abrirPanel(orden) {
   if (errFull) console.error("error recargando orden completa:", errFull);
   const o = full || orden;
   pedidoActivo = { anyo: o.anyo, orden: o.orden };
+  // la caja del albarán de salida de la orden anterior no debe quedarse abierta
+  const cajaAlb = document.getElementById("caja_albaran_salida"); if (cajaAlb) cajaAlb.style.display = "none";
+  const listaAlb = document.getElementById("lista_albaran_salida"); if (listaAlb) listaAlb.innerHTML = "";
 
   document.getElementById("d_titulo").textContent = `Orden ${o.anyo}/${o.orden}`;
   cambiarTab("tab_cabecera");
@@ -2219,14 +2222,28 @@ async function cargarHistorial(o) {
   const cont = document.getElementById("lista_historial");
   const partes = [];
 
-  if (o.anyo_ant && o.orden_ant) {
-    const { data: previa } = await client.from("ordenes").select("anyo, orden, nombre_cli, estado").eq("anyo", o.anyo_ant).eq("orden", o.orden_ant).maybeSingle();
-    if (previa) partes.push(`<div class="item">⬅ Viene de <a href="#" onclick="irAOrden(${previa.anyo},${previa.orden});return false;"><strong>${previa.anyo}/${previa.orden}</strong></a> — ${escMont(previa.nombre_cli || "")} (${escMont(previa.estado)})</div>`);
+  // TODAS las órdenes relacionadas (toda la cadena de traspasos a incidencia, hacia atrás y hacia delante)
+  const clave = (a, n) => a + "/" + n, vistas = new Set([clave(o.anyo, o.orden)]), relacionadas = [];
+  const cols = "anyo, orden, nombre_cli, estado, anyo_ant, orden_ant";
+  // hacia atrás: de quién viene (y de quién viene esa, etc.)
+  let cur = { anyo: o.anyo, orden: o.orden, anyo_ant: o.anyo_ant, orden_ant: o.orden_ant };
+  for (let i = 0; i < 30 && cur.anyo_ant && cur.orden_ant && !vistas.has(clave(cur.anyo_ant, cur.orden_ant)); i++) {
+    const { data: previa } = await client.from("ordenes").select(cols).eq("anyo", cur.anyo_ant).eq("orden", cur.orden_ant).maybeSingle();
+    if (!previa) break;
+    vistas.add(clave(previa.anyo, previa.orden)); relacionadas.unshift({ ...previa, rel: "ant" }); cur = previa;
   }
-
-  const { data: siguientes } = await client.from("ordenes").select("anyo, orden, nombre_cli, estado").eq("anyo_ant", o.anyo).eq("orden_ant", o.orden);
-  (siguientes || []).forEach(s => {
-    partes.push(`<div class="item">➡ Continúa en <a href="#" onclick="irAOrden(${s.anyo},${s.orden});return false;"><strong>${s.anyo}/${s.orden}</strong></a> — ${escMont(s.nombre_cli || "")} (${escMont(s.estado)})</div>`);
+  // hacia delante: todas las que continúan desde esta o desde cualquiera de las anteriores (ramas incluidas)
+  let nivel = [...relacionadas.map(r => r), { anyo: o.anyo, orden: o.orden }];
+  for (let i = 0; i < 30 && nivel.length; i++) {
+    const sig = [];
+    for (const n of nivel) {
+      const { data: hijas } = await client.from("ordenes").select(cols).eq("anyo_ant", n.anyo).eq("orden_ant", n.orden).order("anyo").order("orden");
+      (hijas || []).forEach(h => { if (!vistas.has(clave(h.anyo, h.orden))) { vistas.add(clave(h.anyo, h.orden)); relacionadas.push({ ...h, rel: "sig" }); sig.push(h); } });
+    }
+    nivel = sig;
+  }
+  relacionadas.forEach(r => {
+    partes.push(`<div class="item">${r.rel === "ant" ? "⬅ Viene de" : "➡ Continúa en"} <a href="#" onclick="irAOrden(${r.anyo},${r.orden});return false;"><strong>${r.anyo}/${r.orden}</strong></a> — ${escMont(r.nombre_cli || "")} (${escMont(r.estado)})</div>`);
   });
 
   const { data: ob } = await client.from("ordenes").select("observaciones").eq("anyo", o.anyo).eq("orden", o.orden).maybeSingle();

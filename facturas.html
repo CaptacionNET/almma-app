@@ -101,8 +101,10 @@ input,select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;f
 .tabulator .tabulator-row.f-proforma .tabulator-cell:first-child{border-left-color:#94a3b8;}
 .tabulator .tabulator-row.f-ordinaria .tabulator-cell:first-child{border-left-color:#16a34a;}
 .tabulator .tabulator-row.f-rectificativa{background:#fff5f5 !important;}
-.tab-origen{background:transparent;color:var(--muted);border:none;border-bottom:3px solid transparent;border-radius:0;padding:10px 16px;font-size:14px;}
-.tab-origen.activa{color:var(--primary);border-bottom-color:var(--primary);font-weight:600;}
+.pestanas{background:#1e40af;border-radius:8px 8px 0 0;padding-top:4px !important;}
+.tab-origen{background:transparent;color:#dbeafe;border:none;border-bottom:4px solid transparent;border-radius:6px 6px 0 0;padding:10px 18px;font-size:14px;font-weight:600;letter-spacing:.3px;}
+.tab-origen:hover{background:rgba(255,255,255,.12);}
+.tab-origen.activa{background:#fff;color:#1e40af;border-bottom-color:#f59e0b;font-weight:700;}
 .lbl-f{display:block;font-size:11px;color:var(--muted);font-weight:600;margin-bottom:4px;}
 .fila-tienda td{background:#eef2f8;font-weight:600;}
 .modal-f{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);align-items:flex-start;justify-content:center;padding:30px 16px;overflow-y:auto;z-index:60;}
@@ -445,27 +447,29 @@ function resumenEmision() {
     g("em_ok").disabled = true; g("em_pdf").disabled = true; return;
   }
   const pct = s.con_iva ? Number(s.iva_pct) : 0;
-  let tb = 0, ti = 0;
-  const filas = gr.map(x => { const iva = Math.round(x.base * pct) / 100; tb += x.base; ti += iva;
+  let tb = 0, ti = 0, tr = 0;
+  const filas = gr.map(x => { const iva = Math.round(x.base * pct) / 100, ret = retencionDe(s, x.base); tb += x.base; ti += iva; tr += ret;
     return `<tr><td>${x.t.codigo || ""} · ${esc(x.t.nombre)}</td><td style="text-align:right;">${x.ls.length}</td><td style="text-align:right;">${euros(x.base)}</td>` +
-      (s.es_proforma ? "" : `<td style="text-align:right;">${euros(iva)}</td><td style="text-align:right;"><strong>${euros(x.base + iva)}</strong></td>`) + "</tr>"; }).join("");
+      (s.es_proforma ? "" : `<td style="text-align:right;">${euros(iva)}</td><td style="text-align:right;"><strong>${euros(x.base + iva - ret)}</strong></td>`) + "</tr>"; }).join("");
   const emisor = s.es_proforma ? "<em>Proforma: sin cabecera ni IVA; las líneas quedan marcadas como facturadas.</em>"
     : `<strong>${esc(s.emisor_nombre)}</strong> · NIF ${esc(s.emisor_nif)} · ${esc(s.emisor_direccion)}, ${esc(s.emisor_cp_localidad)}<br>Cobro por transferencia a ${esc(s.emisor_iban)}`;
   g("em_resumen").innerHTML = `<div style="padding:10px 12px;background:#f8fafc;border:1px solid var(--border);border-radius:8px;margin-bottom:10px;"><span class="lbl-f">Emisor (serie ${s.codigo})</span>${emisor}<br>
       <span class="meta">Fecha de factura ${fechaES(g("fp_fecha").value)} · ${gr.length} ${s.es_proforma ? "proformas" : "facturas"} · IVA ${pct ? pct + " %" : "no se aplica"}</span></div>
     <table class="lineas-table"><tr><th>Tienda (una factura cada una)</th><th style="text-align:right;">Líneas</th><th style="text-align:right;">Base</th>${s.es_proforma ? "" : '<th style="text-align:right;">IVA</th><th style="text-align:right;">Total</th>'}</tr>${filas}
-    <tr><td><strong>TOTAL</strong></td><td style="text-align:right;"><strong>${gr.reduce((a, x) => a + x.ls.length, 0)}</strong></td><td style="text-align:right;"><strong>${euros(tb)}</strong></td>${s.es_proforma ? "" : `<td style="text-align:right;"><strong>${euros(ti)}</strong></td><td style="text-align:right;"><strong>${euros(tb + ti)}</strong></td>`}</tr></table>
+    <tr><td><strong>TOTAL</strong></td><td style="text-align:right;"><strong>${gr.reduce((a, x) => a + x.ls.length, 0)}</strong></td><td style="text-align:right;"><strong>${euros(tb)}</strong></td>${s.es_proforma ? "" : `<td style="text-align:right;"><strong>${euros(ti)}</strong></td><td style="text-align:right;"><strong>${euros(tb + ti - tr)}</strong></td>`}</tr></table>${tr ? `<p class="meta" style="margin:6px 0 0;">El total ya descuenta la retención del ${s.retencion_pct} % sobre la base (${euros(tr)}).</p>` : ""}
     <p class="meta" style="margin:8px 0 0;">${s.es_proforma ? "Las proformas se emiten directamente." : "Se guardará como BORRADOR: sin número y sin efecto. Podrás imprimirlo y, si está bien, contabilizarlo; si no, cancelarlo y las líneas vuelven a Pendientes."} Pulsa «Ver PDF» para revisar cómo quedará.</p>`;
   g("em_ok").textContent = s.es_proforma ? "Emitir proforma" : "Crear borrador";
   g("em_ok").disabled = !gr.length; g("em_pdf").disabled = !gr.length;
 }
+// retención (serie 3: 1 % sobre la base, no sobre el IVA); las proformas no la llevan
+function retencionDe(s, base) { return s && !s.es_proforma && Number(s.retencion_pct) > 0 ? Math.round(base * Number(s.retencion_pct)) / 100 : 0; }
 // PDF de prueba: se prepara en este navegador con los mismos datos y el mismo formato, SIN emitir nada ni gastar número
 function payloadPrevia(s) {
   const pct = s.con_iva ? Number(s.iva_pct) : 0, fecha = g("fp_fecha").value, cabs = [], lins = [];
   grupoSeleccion().forEach((x, i) => {
-    const iva = Math.round(x.base * pct) / 100;
+    const iva = Math.round(x.base * pct) / 100, ret = retencionDe(s, x.base);
     cabs.push({ anyo: Number(fecha.slice(0, 4)), serie: s.codigo, factura: 9000 + i, previa: true, tienda_id: x.tid, ffactura: fecha,
-      tipo_factura: s.es_proforma ? "proforma" : "ordinaria", impbruto: x.base, impiva: iva, impneto: x.base + iva, iva_pct: pct,
+      tipo_factura: s.es_proforma ? "proforma" : "ordinaria", impbruto: x.base, impiva: iva, retencion: ret, impneto: x.base + iva - ret, iva_pct: pct,
       forma_pago: g("fp_forma").value.trim() || x.t.forma_pago || null, notas: g("fp_notas").value.trim() || null,
       emisor: { nombre: s.emisor_nombre, nif: s.emisor_nif, direccion: s.emisor_direccion, cp_localidad: s.emisor_cp_localidad, iban: s.emisor_iban, con_cabecera: s.con_cabecera },
       receptor: { nombre: x.t.nombre, nombre_comercial: x.t.nombre_comercial, cif: x.t.cif, direccion: x.t.direccion, cp: x.t.cp, localidad: x.t.localidad, provincia: x.t.provincia } });
@@ -537,9 +541,9 @@ function totalLibre() {
   let base = 0;
   conceptos.forEach((c, i) => { const imp = r2(Number(c.cantidad || 0) * Number(c.precio || 0)); base += imp; const el = g("fl_imp_" + i); if (el) el.textContent = euros(imp); });
   base = r2(base);
-  const s = seriePorCodigo[g("fl_serie").value], pct = s && s.con_iva ? Number(s.iva_pct) : 0, iva = r2(base * pct / 100);
+  const s = seriePorCodigo[g("fl_serie").value], pct = s && s.con_iva ? Number(s.iva_pct) : 0, iva = r2(base * pct / 100), ret = retencionDe(s, base);
   g("fl_ok").textContent = s && s.es_proforma ? "Emitir proforma" : "Crear borrador";
-  g("fl_totales").innerHTML = `Base <strong>${euros(base)}</strong> · IVA ${pct} % <strong>${euros(iva)}</strong> · Total <strong>${euros(base + iva)}</strong>`;
+  g("fl_totales").innerHTML = `Base <strong>${euros(base)}</strong> · IVA ${pct} % <strong>${euros(iva)}</strong>${ret ? ` · Retención ${s.retencion_pct} % <strong>−${euros(ret)}</strong>` : ""} · Total <strong>${euros(base + iva - ret)}</strong>`;
 }
 // valida y devuelve { s, t, cab, lins, lineas } o null (con el error en pantalla)
 function datosLibre() {
@@ -552,9 +556,9 @@ function datosLibre() {
   if (conceptos.some(c => !c.descripcion.trim() || !Number(c.cantidad) || !Number(c.precio))) return err("Cada concepto necesita descripción, cantidad y precio (distintos de cero).");
   const fecha = hoyISO(), pct = s.con_iva ? Number(s.iva_pct) : 0;
   const lineas = conceptos.map(c => ({ descripcion: c.descripcion.trim(), cantidad: Number(c.cantidad), precio: Number(c.precio) }));
-  const base = r2(lineas.reduce((a, l) => a + r2(l.cantidad * l.precio), 0)), iva = r2(base * pct / 100);
+  const base = r2(lineas.reduce((a, l) => a + r2(l.cantidad * l.precio), 0)), iva = r2(base * pct / 100), ret = retencionDe(s, base);
   const cab = { anyo: Number(fecha.slice(0, 4)), serie: s.codigo, factura: 1, previa: true, tienda_id: t.id, ffactura: fecha, tipo_factura: s.es_proforma ? "proforma" : "ordinaria",
-    impbruto: base, impiva: iva, impneto: base + iva, iva_pct: pct, forma_pago: g("fl_forma").value.trim() || t.forma_pago || null, notas: g("fl_notas").value.trim() || null,
+    impbruto: base, impiva: iva, retencion: ret, impneto: base + iva - ret, iva_pct: pct, forma_pago: g("fl_forma").value.trim() || t.forma_pago || null, notas: g("fl_notas").value.trim() || null,
     emisor: { nombre: s.emisor_nombre, nif: s.emisor_nif, direccion: s.emisor_direccion, cp_localidad: s.emisor_cp_localidad, iban: s.emisor_iban, con_cabecera: s.con_cabecera },
     receptor: { nombre: t.nombre, nombre_comercial: t.nombre_comercial, cif: t.cif, direccion: t.direccion, cp: t.cp, localidad: t.localidad, provincia: t.provincia } };
   const lins = lineas.map((l, j) => ({ anyo: cab.anyo, serie: s.codigo, factura: 1, linea: j + 1, descripcion: l.descripcion, cantidad: l.cantidad, porcentaje: 100, importe: l.precio, importecobrar: r2(l.cantidad * l.precio) }));

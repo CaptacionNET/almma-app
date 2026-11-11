@@ -40,12 +40,11 @@
 
   // o = orden, t = tienda (con _logo opcional), lins = líneas, entrega = fila de `entregas` (o null), firmaImg = data URL (o null)
   window.hojaAlbaran = function (o, t, lins, entrega, firmaImg) {
-    const hoy = new Date().toISOString().slice(0, 10);
     const filas = lins.map(l => `<tr>
       <td>${esc(l.descripcion || l.articulo || "")}${l.articulo && l.descripcion ? `<div style="color:var(--muted);font-size:11px;">Ref. ${esc(l.articulo)}</div>` : ""}</td>
       <td class="num">${l.cantidad ?? ""}</td></tr>`).join("");
     const loc = [t.cp, t.localidad].filter(Boolean).map(esc).join(" ") + (t.provincia ? " (" + esc(t.provincia) + ")" : "");
-    const fechaDoc = entrega && entrega.firmado_at ? String(entrega.firmado_at).slice(0, 10) : hoy;
+    const fechaDoc = entrega && entrega.firmado_at ? String(entrega.firmado_at).slice(0, 10) : (o.fecha_prev_montaje ? String(o.fecha_prev_montaje).slice(0, 10) : "");
     const firmaHtml = entrega
       ? `<div class="firma">Firma del cliente${firmaImg ? `<img src="${firmaImg}" alt="Firma">` : ""}
           <div class="sub">Nombre: <b>${esc(entrega.firmante_nombre || "")}</b></div>
@@ -59,7 +58,7 @@
         ${t.telefono ? `<br>Tel.: ${esc(t.telefono)}` : ""}${t.email ? `<br>${esc(t.email)}` : ""}</div>
       <div class="titulo"><div class="tipo">ALBARÁN DE ENTREGA</div>
         <div class="num">Orden ${o.anyo}/${o.orden}</div>
-        <div style="color:var(--muted);margin-top:2px;">Fecha: ${fechaES(fechaDoc)}</div></div>
+        <div style="color:var(--muted);margin-top:2px;">Fecha: ${fechaDoc ? fechaES(fechaDoc) : "<b>SIN AGENDAR</b>"}</div></div>
     </div>
     <div class="caja"><div class="et">Cliente</div><strong>${esc(o.nombre_cli || "")}</strong>
       ${o.dni_cli ? `<br>DNI: ${esc(o.dni_cli)}` : ""}${o.domicilio_cli ? `<br>${esc(o.domicilio_cli)}` : ""}${o.localidad_cli ? `<br>${esc(o.localidad_cli)}` : ""}

@@ -331,7 +331,8 @@ async function leerPdfPedido() {
     // una línea por artículo del documento (si la función antigua devuelve "material", una sola)
     const lineas = (data.lineas && data.lineas.length) ? data.lineas : (data.material ? [{ cantidad: 1, descripcion: data.material }] : []);
     if (lineas.length) {
-      lineasNuevoPedido = lineas.map(l => ({ articulo: ARTICULO_GENERICO_PDF, descripcion: l.descripcion, cantidad: l.cantidad || 1 }));
+      // la cantidad tiene que ser un entero >= 1 (si la IA devuelve "2,5" o texto, el pedido no se podía crear)
+      lineasNuevoPedido = lineas.map(l => ({ articulo: ARTICULO_GENERICO_PDF, descripcion: String(l.descripcion || "").trim() || "Artículo del pedido", cantidad: Math.max(1, Math.round(parseFloat(String(l.cantidad).replace(",", ".")) || 1)) }));
       renderLineas();
     }
     pdfAdjunto = archivo;
@@ -422,6 +423,10 @@ function preguntarOrdenExistente(nombre, lista) {
 }
 
 async function crearPedido() {
+  try { await crearPedidoInterno(); }
+  catch (e) { const b = document.getElementById("error"); b.textContent = "No se pudo crear el pedido: " + (e && e.message ? e.message : e); b.style.display = "block"; }
+}
+async function crearPedidoInterno() {
   const errorBox = document.getElementById("error");
   const avisoBox = document.getElementById("aviso");
   errorBox.style.display = "none";
@@ -438,7 +443,8 @@ async function crearPedido() {
 
   // ¿ya tiene ese cliente una orden abierta? Si hay PDF, se ofrece guardarlo en ella en vez de duplicar
   if (pdfAdjunto) {
-    const abiertas = await ordenesAbiertasDelCliente(nombre_cli);
+    let abiertas = [];
+    try { abiertas = await ordenesAbiertasDelCliente(nombre_cli); } catch (_) { abiertas = []; }   // si falla esta comprobación, no se bloquea la creación
     if (abiertas.length) {
       const eleccion = await preguntarOrdenExistente(nombre_cli, abiertas);
       if (eleccion === null) return;   // cancelar: no se hace nada
@@ -461,7 +467,7 @@ async function crearPedido() {
     p_localidad_cli: localidad_cli,
     p_telefono_cli: telefono_cli,
     p_num_pedido: num_pedido,
-    p_lineas: lineasNuevoPedido.map(l => ({ articulo: l.articulo, descripcion: l.descripcion, cantidad: l.cantidad })),
+    p_lineas: lineasNuevoPedido.map(l => ({ articulo: l.articulo, descripcion: l.descripcion, cantidad: Math.max(1, Math.round(Number(l.cantidad) || 1)) })),
     p_tienda_id: tiendaSel || null,
   });
 

@@ -112,7 +112,7 @@ async function recargar(){
   S.liqDesde=(cfg.find(c=>c.anyo===ANYO)||{liq_desde:ANYO===ANYO_MIN?7:1}).liq_desde;   // 2026: desde julio; años nuevos: desde enero
   S.tarifas={};S.tarOrigen={};tar.forEach(x=>{S.tarifas[x.cliente]=+x.pct_montaje;S.tarOrigen[x.cliente]=x.origen||'';});
   const fa=fac.filter(f=>f.anyo===ANYO);
-  S.facturas=fa.map(f=>({id:f.id,cli:f.cliente,fecha:f.fecha,num:f.serie+'-'+f.numero,conc:f.concepto||'',total:+f.total,forma:f.forma_pago||'',fpago:f.fecha_pago,mont0:+f.montaje,auto:!!f.reparto_auto}));
+  S.facturas=fa.map(f=>({id:f.id,cli:f.cliente,fecha:f.fecha,num:f.serie+'-'+f.numero,conc:f.concepto||'',total:+f.total,ret:+f.retencion||0,forma:f.forma_pago||'',fpago:f.fecha_pago,mont0:+f.montaje,auto:!!f.reparto_auto}));
   const porId=Object.fromEntries(S.facturas.map(f=>[f.id,f]));
   S.cobros=cob.filter(c=>porId[c.factura_id]).map(c=>({id:c.id,fecha:c.fecha||'',cli:porId[c.factura_id].cli,num:porId[c.factura_id].num,imp:+c.importe,forma:c.forma_pago||'',obs:c.observaciones||''}));
   S.gastos=gas.filter(g=>g.anyo===ANYO).map(g=>({id:g.id,mes:g.mes,fecha:g.fecha,conc:g.concepto||'',prov:g.proveedor||'',cat:g.categoria,sop:g.soporta,imp:+g.importe,iva:g.iva_pct!=null?+g.iva_pct:undefined}));
@@ -156,7 +156,7 @@ function facturas(){
     const mont=f.auto?f.total*pctM(f.cli,f.fecha):f.mont0;
     const cobrado=r2(cob[f.cli+'|'+f.num]||0);
     const mes=mesDe(f.fecha);
-    return Object.assign({},f,{mont,alm:f.total-mont,cobrado,pend:r2(f.total-cobrado),mes,trim:'T'+Math.ceil(mes/3),dias:f.fpago?days360(f.fecha,f.fpago):0,socio:socioDe(f.num),serie:f.num.split('-')[0]});
+    return Object.assign({},f,{mont,alm:f.total-mont,cobrado,pend:r2(f.total-(f.ret||0)-cobrado),mes,trim:'T'+Math.ceil(mes/3),dias:f.fpago?days360(f.fecha,f.fpago):0,socio:socioDe(f.num),serie:f.num.split('-')[0]});
   });
 }
 function otrosParts(o){const p=S.tarifas[o.cli]!=null?pctM(o.cli,o.fecha||(ANYO+'-'+pad2(o.mes||1)+'-01')):null;return p!=null?{m:o.imp*p,a:o.imp*(1-p)}:{m:o.imp,a:0};}
@@ -320,7 +320,7 @@ function vLibro(){
   const F=listaLibro(),clientes=[...new Set(S.facturas.map(f=>f.cli))].sort();
   const T=F.reduce((t,f)=>({tot:t.tot+f.total,m:t.m+f.mont,a:t.a+f.alm,c:t.c+f.cobrado,p:t.p+f.pend}),{tot:0,m:0,a:0,c:0,p:0});
   const th=(k,t,n)=>`<th class="s ${n?'n':''}" data-sort="${k}">${t}${V.lib.sort===k?(V.lib.dir>0?' ▲':' ▼'):''}</th>`;
-  const rows=F.slice(0,300).map(f=>`<tr><td><b>${esc(fnum(f.num))}</b></td><td>${fdate(f.fecha)}</td><td class="clic" data-flt="${esc(f.cli)}">${esc(f.cli)}</td><td>${esc(f.conc)}</td><td class="n">${eur(f.total)}</td><td class="n">${eur(f.mont)}</td><td class="n">${eur(f.alm)}</td><td class="n">${eur(f.cobrado)}</td><td class="n">${f.pend>0.005?`<span class="chip ${f.pend<1?'w':'b'}">${eur(f.pend)}</span>`:'<span class="chip ok">cobrada</span>'}</td><td>${esc(f.forma)}</td><td>${fdate(f.fpago)}</td><td class="n">${f.fpago?f.dias:''}</td><td>${f.trim}</td><td>${f.pend>0.005?`<button class="sec peq" data-cobrar="${esc(f.num)}" data-cli="${esc(f.cli)}">✓ Marcar cobrada</button>`:''}</td></tr>`).join('');
+  const rows=F.slice(0,300).map(f=>`<tr><td><b>${esc(fnum(f.num))}</b></td><td>${fdate(f.fecha)}</td><td class="clic" data-flt="${esc(f.cli)}">${esc(f.cli)}</td><td>${esc(f.conc)}${f.ret?` <span class="chip w" title="Retención del 1 % sobre la base imponible: se resta de lo que paga el cliente">ret. 1 % −${eur(f.ret)}</span>`:''}</td><td class="n">${eur(f.total)}</td><td class="n">${eur(f.mont)}</td><td class="n">${eur(f.alm)}</td><td class="n">${eur(f.cobrado)}</td><td class="n">${f.pend>0.005?`<span class="chip ${f.pend<1?'w':'b'}">${eur(f.pend)}</span>`:'<span class="chip ok">cobrada</span>'}</td><td>${esc(f.forma)}</td><td>${fdate(f.fpago)}</td><td class="n">${f.fpago?f.dias:''}</td><td>${f.trim}</td><td>${f.pend>0.005?`<button class="sec peq" data-cobrar="${esc(f.num)}" data-cli="${esc(f.cli)}">✓ Marcar cobrada</button>`:''}</td></tr>`).join('');
   return cab('Libro de facturas — todos los clientes','Las más recientes arriba. Pulsa en un cliente para filtrar por él.','FACTURAS + Plantilla')+
   `<div class="bar"><div><label class="l">Buscar</label><input id="lq" value="${esc(V.lib.q)}" placeholder="cliente, nº, concepto…"></div>
   <div><label class="l">Cliente</label><select id="lcli"><option value="">Todos</option>${clientes.map(c=>`<option ${V.lib.cli===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
@@ -453,12 +453,12 @@ function formAdel(){const act=S.trab.filter(t=>!t.baja);abrir(`<h3>Registrar ade
 /* ===================== IVA Y MODELOS ===================== */
 const NODED=['IVA','IVA aplazado','Impuestos','Préstamos','Multas y sanciones'];
 function fiscal(tit){
-  const D=S.liqDesde,Q=[1,2,3,4].map(q=>({q,devB:0,devC:0,sopB:0,sopC:0,ing:0,gas:0}));
-  facturas().filter(f=>f.mes>=D&&f.mes<=MES_ACT&&f.socio===tit&&f.serie!=='5').forEach(f=>{const r=Q[Math.ceil(f.mes/3)-1],b=f.total/(1+IVA);r.ing+=b;r.devB+=b;r.devC+=f.total-b;});
+  const D=S.liqDesde,Q=[1,2,3,4].map(q=>({q,devB:0,devC:0,sopB:0,sopC:0,ing:0,gas:0,ret:0}));
+  facturas().filter(f=>f.mes>=D&&f.mes<=MES_ACT&&f.socio===tit&&f.serie!=='5').forEach(f=>{const r=Q[Math.ceil(f.mes/3)-1],b=f.total/(1+IVA);r.ing+=b;r.devB+=b;r.devC+=f.total-b;r.ret+=(f.ret||0);});
   S.gastos.filter(g=>g.mes>=D&&g.mes<=MES_ACT&&g.sop===tit).forEach(g=>{const r=Q[Math.ceil(g.mes/3)-1],iv=ivaGasto(g),b=g.imp/(1+iv/100);if(iv>0){r.sopB+=b;r.sopC+=g.imp-b;}if(!NODED.includes(g.cat))r.gas+=b;});
   S.nom.filter(n=>n.mes>=D&&n.mes<=MES_ACT&&n.sop===tit).forEach(n=>{Q[Math.ceil(n.mes/3)-1].gas+=n.base+n.extras+n.rec+n.sab+n.emb+n.irpf;});
-  let ai=0,ag=0,pagado=0;
-  Q.forEach(r=>{ai+=r.ing;ag+=r.gas;r.aci=ai;r.acg=ag;r.rend=ai-ag;r.cuota=Math.max(0,r.rend)*0.2;r.res303=r.devC-r.sopC;r.res130=r.cuota-pagado;pagado+=Math.max(0,r.res130);});
+  let ai=0,ag=0,pagado=0,ar=0;
+  Q.forEach(r=>{ai+=r.ing;ag+=r.gas;r.aci=ai;r.acg=ag;r.rend=ai-ag;r.cuota=Math.max(0,r.rend)*0.2;r.res303=r.devC-r.sopC;ar+=r.ret;r.acr=ar;r.res130=r.cuota-r.acr-pagado;pagado+=Math.max(0,r.res130);});
   return Q;
 }
 function vIva(){
@@ -490,7 +490,8 @@ function vIva(){
   <tr><td>Gastos deducibles acumulados (sin IVA, con nóminas)</td>${Q.map(q=>celda(q,x=>eur(x.acg))).join('')}</tr>
   <tr><td>Rendimiento neto acumulado</td>${Q.map(q=>celda(q,x=>eur(x.rend))).join('')}</tr>
   <tr><td>20 % del rendimiento</td>${Q.map(q=>celda(q,x=>eur(x.cuota))).join('')}</tr>
-  <tr class="tot"><td>A INGRESAR (menos lo ya pagado en trimestres anteriores)</td>${Q.map(q=>celda(q,x=>`<b>${eur(x.res130)}</b>`)).join('')}</tr>
+  <tr><td>Retenciones soportadas acumuladas (1 % de la serie 3)</td>${Q.map(q=>celda(q,x=>x.acr?'−'+eur(x.acr):eur(0))).join('')}</tr>
+  <tr class="tot"><td>A INGRESAR (menos retenciones y lo ya pagado en trimestres anteriores)</td>${Q.map(q=>celda(q,x=>`<b>${eur(x.res130)}</b>`)).join('')}</tr>
   </tbody></table></div>
   <div class="nota az">Enero–junio no entran en ningún modelo y las <b>proformas (serie 5)</b> quedan siempre fuera. Por eso el 130 acumula solo desde ${MES[S.liqDesde-1].toLowerCase()} y no equivale al 130 real del año.</div>
   <h3>Modelo 347 — clientes con más de 3.005,06 € en el año</h3>
@@ -499,11 +500,11 @@ function vIva(){
 }
 
 /* ===================== LIBRO MAYOR ===================== */
-const PGC={'430':'Clientes','705':'Prestaciones de servicios','477':'H.P. IVA repercutido','472':'H.P. IVA soportado','4750':'H.P. acreedora por IVA','4751':'H.P. acreedora por retenciones','572':'Bancos y efectivo (tesorería)','600':'Compras de mercaderías','602':'Compras de otros aprovisionamientos','621':'Arrendamientos y cánones','622':'Reparaciones y conservación','623':'Servicios de profesionales','625':'Primas de seguros','626':'Servicios bancarios','628':'Suministros','629':'Otros servicios','640':'Sueldos y salarios','642':'Seguridad Social a cargo de la empresa','465':'Remuneraciones pendientes de pago','460':'Anticipos de remuneraciones','520':'Deudas a c/p con entidades de crédito','678':'Gastos excepcionales'};
+const PGC={'430':'Clientes','473':'H.P. retenciones y pagos a cuenta','705':'Prestaciones de servicios','477':'H.P. IVA repercutido','472':'H.P. IVA soportado','4750':'H.P. acreedora por IVA','4751':'H.P. acreedora por retenciones','572':'Bancos y efectivo (tesorería)','600':'Compras de mercaderías','602':'Compras de otros aprovisionamientos','621':'Arrendamientos y cánones','622':'Reparaciones y conservación','623':'Servicios de profesionales','625':'Primas de seguros','626':'Servicios bancarios','628':'Suministros','629':'Otros servicios','640':'Sueldos y salarios','642':'Seguridad Social a cargo de la empresa','465':'Remuneraciones pendientes de pago','460':'Anticipos de remuneraciones','520':'Deudas a c/p con entidades de crédito','678':'Gastos excepcionales'};
 const CTA_CAT={'Dietas y desplazamientos':'629','Seguridad Social':'642','Seguros':'625','Gasoil':'628','Mecánico / Vehículos':'622','Proveedores':'600','IVA':'4750','IVA aplazado':'4750','Impuestos':'4751','Préstamos':'520','Telefonía / Internet':'629','Suministros':'628','Gestoría / Asesoría':'623','Material y herramientas':'602','Alquileres':'621','Multas y sanciones':'678','Comisiones bancarias':'626','Otros':'629'};
 function asientos(){
   const A=[];
-  facturas().filter(f=>f.mes>=S.liqDesde&&f.mes<=MES_ACT&&f.serie!=='5').forEach(f=>{const l=[{c:'430',d:f.total,h:0}];{const b=r2(f.total/(1+IVA));l.push({c:'705',d:0,h:b},{c:'477',d:0,h:r2(f.total-b)});}A.push({f:f.fecha,tit:f.socio,ref:'Factura '+fnum(f.num),desc:f.cli,l});});
+  facturas().filter(f=>f.mes>=S.liqDesde&&f.mes<=MES_ACT&&f.serie!=='5').forEach(f=>{const l=[{c:'430',d:r2(f.total-(f.ret||0)),h:0}];if(f.ret)l.push({c:'473',d:f.ret,h:0});{const b=r2(f.total/(1+IVA));l.push({c:'705',d:0,h:b},{c:'477',d:0,h:r2(f.total-b)});}A.push({f:f.fecha,tit:f.socio,ref:'Factura '+fnum(f.num),desc:f.cli,l});});
   S.cobros.filter(c=>{const fa=S.facturas.find(z=>z.cli===c.cli&&z.num===c.num);return fa&&mesDe(fa.fecha)>=S.liqDesde&&c.num.split('-')[0]!=='5';}).forEach(c=>A.push({f:c.fecha||S.facturas.find(z=>z.cli===c.cli&&z.num===c.num).fecha,tit:socioDe(c.num),ref:'Cobro '+fnum(c.num),desc:c.cli+' · '+(c.forma||''),l:[{c:'572',d:c.imp,h:0},{c:'430',d:0,h:c.imp}]}));
   S.gastos.filter(g=>g.mes>=S.liqDesde&&g.mes<=MES_ACT).forEach(g=>{const iv=ivaGasto(g),b=r2(g.imp/(1+iv/100)),l=[{c:CTA_CAT[g.cat]||'629',d:b,h:0}];if(iv>0)l.push({c:'472',d:r2(g.imp-b),h:0});l.push({c:'572',d:0,h:g.imp});A.push({f:g.fecha||finMes(g.mes),tit:g.sop,ref:'Gasto · '+g.cat,desc:[g.conc,g.prov].filter(Boolean).join(' · '),l});});
   S.nom.filter(n=>n.mes>=S.liqDesde&&n.mes<=MES_ACT).forEach(n=>{const t=n.base+n.extras+n.rec+n.sab+n.emb+n.irpf;if(!t)return;const ad=S.adelantos.filter(a=>a.nombre===n.nombre&&a.mes===n.mes).reduce((s,a)=>s+a.imp,0);

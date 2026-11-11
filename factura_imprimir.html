@@ -289,6 +289,7 @@ function hoja(c, lineas, ss, originales, tiendaPorId, ordenPorClave) {
   const conCabecera = !proforma && emisor.con_cabecera !== false && !!emisor.nombre;
   const r = c.receptor || tiendaPorId[c.tienda_id] || {};
   const orig = c.rectifica_factura ? originales.find(o => o.anyo === c.rectifica_anyo && o.serie === c.rectifica_serie && o.factura === c.rectifica_factura) : null;
+  const retPct = x => x.impbruto ? Math.round(Math.abs(x.retencion) / Math.abs(x.impbruto) * 10000) / 100 : 0;
   const pct = c.iva_pct ?? (c.impbruto ? Math.round(c.impiva / c.impbruto * 10000) / 100 : 0);
 
   // cada línea completa sus datos con los de la orden si la factura no los guardó
@@ -328,14 +329,14 @@ function hoja(c, lineas, ss, originales, tiendaPorId, ordenPorClave) {
     </div>
     <div class="datos"><span>Fecha: <b>${fechaES(c.ffactura)}</b></span></div>
     <div class="cliente"><div class="et">Cliente</div><strong>${esc(r.nombre)}</strong>${r.nombre_comercial && r.nombre_comercial !== r.nombre ? ` (${esc(r.nombre_comercial)})` : ""}<br>${r.cif ? "NIF/CIF: " + esc(r.cif) + "<br>" : ""}${esc(r.direccion)}${r.direccion ? "<br>" : ""}${[r.cp, r.localidad].filter(Boolean).map(esc).join(" ")}${r.provincia ? " (" + esc(r.provincia) + ")" : ""}</div>
-    <div class="resumen"><span>Base imponible <b>${euros(c.impbruto)}</b></span>${proforma ? "" : `<span>IVA ${pct} % <b>${euros(c.impiva)}</b></span><span>Total <b>${euros(c.impneto)}</b></span>`}</div>
+    <div class="resumen"><span>Base imponible <b>${euros(c.impbruto)}</b></span>${proforma ? "" : `<span>IVA ${pct} % <b>${euros(c.impiva)}</b></span>${c.retencion ? `<span>Retención ${retPct(c)} % <b>−${euros(c.retencion)}</b></span>` : ""}<span>Total <b>${euros(c.impneto)}</b></span>`}</div>
     ${c.rectifica_factura ? `<div class="rect"><strong>${c.tipo_factura === "rectificativa" ? "Rectifica" : "Amplía"} la factura ${esc(numeroFactura({ anyo: c.rectifica_anyo, serie: c.rectifica_serie, factura: c.rectifica_factura, tipo_factura: "ordinaria" }, ss))}${orig ? " de fecha " + fechaES(orig.ffactura) : ""}.</strong>${c.motivo ? "<br>Motivo: " + esc(c.motivo) : ""}</div>` : ""}
     <table><thead><tr><th class="num">Cant.</th><th>Concepto</th><th class="num">Base</th><th class="num">Importe</th></tr></thead>${cuerpo}</table>
     <div class="bajo">
       ${proforma ? "<div></div>" : `<div class="pie">${c.forma_pago ? `Forma de pago: <b>${esc(c.forma_pago)}</b><br>` : ""}${emisor.iban ? `Pago por transferencia a: <b>${esc(emisor.iban)}</b> (${esc(emisor.nombre)})<br>` : ""}${c.notas ? esc(c.notas) : ""}</div>`}
       <div class="totales">
         <div><span>Base imponible</span><span>${euros(c.impbruto)}</span></div>
-        ${proforma ? "" : `<div><span>IVA ${pct} %</span><span>${euros(c.impiva)}</span></div><div class="total"><span>TOTAL</span><span>${euros(c.impneto)}</span></div>`}
+        ${proforma ? "" : `<div><span>IVA ${pct} %</span><span>${euros(c.impiva)}</span></div>${c.retencion ? `<div><span>Retención ${retPct(c)} % (sobre la base)</span><span>−${euros(c.retencion)}</span></div>` : ""}<div class="total"><span>TOTAL</span><span>${euros(c.impneto)}</span></div>`}
       </div>
     </div>
   </section>`;
