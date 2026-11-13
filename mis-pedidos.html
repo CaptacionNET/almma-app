@@ -134,6 +134,7 @@ body.emb{background:transparent;} body.emb > *:not(#modal_nuevo){display:none !i
       <div class="campo" style="grid-column:1/-1;">
         <label for="domicilio_cli">Dirección</label>
         <input id="domicilio_cli">
+        <div id="km_cli"></div>
       </div>
       <div class="campo">
         <label for="localidad_cli">Localidad</label>
@@ -155,11 +156,14 @@ body.emb{background:transparent;} body.emb > *:not(#modal_nuevo){display:none !i
 </div>
 
 <script src="condiciones.js"></script>
+<script src="distancia.js"></script>
 <script>
 const client = supabase.createClient(
   "https://uamgbtbsxbrgymhqalak.supabase.co",
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k"
 );
+// aviso de distancia tienda -> cliente (distancia.js): más de 30 km se marca en rojo
+const distCli = DistanciaTienda.vincular({ client, dir: "domicilio_cli", loc: "localidad_cli", caja: "km_cli", tiendaId: () => tiendaSel || (dependiente && dependiente.tienda_id) });
 
 let tabla = null;
 let dependiente = null;

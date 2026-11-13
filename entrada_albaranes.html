@@ -406,7 +406,7 @@ async function cargarOrdenes(){
   const tiendas=await paginar(()=>client.from("tiendas").select("id,nombre"));
   const fabs=await paginar(()=>client.from("fabricantes").select("codigo,nombre"));
   const minPorAnyo={};ords.forEach(o=>{if(!(o.anyo in minPorAnyo)||o.orden<minPorAnyo[o.anyo])minPorAnyo[o.anyo]=o.orden;});
-  let lins=[];for(const a of Object.keys(minPorAnyo))lins=lins.concat(await paginar(()=>client.from("linorden").select("anyo,orden,linea,articulo,descripcion,cantidad,recibido,proveedor").eq("anyo",a).eq("tipolinea",1).gte("orden",minPorAnyo[a]).order("orden").order("linea")));
+  let lins=[];for(const a of Object.keys(minPorAnyo))lins=lins.concat(await paginar(()=>client.from("linorden").select("anyo,orden,linea,articulo,descripcion,cantidad,recibido,proveedor").eq("anyo",a).or("tipolinea.eq.1,tipolinea.is.null").gte("orden",minPorAnyo[a]).order("orden").order("linea")));
   try{const e=await client.from("fabricantes_equivalentes").select("nombre_a,nombre_b");if(e.data)e.data.forEach(x=>FAB_EQUIV.push([norm(x.nombre_a),norm(x.nombre_b)]));}catch(_){}
   const tN={};tiendas.forEach(t=>tN[t.id]=t.nombre);const fN={};fabs.forEach(f=>fN[f.codigo]=f.nombre);
   const porOrd={};lins.forEach(l=>{(porOrd[l.anyo+"/"+l.orden]=porOrd[l.anyo+"/"+l.orden]||[]).push(l);});

@@ -114,6 +114,9 @@ tr.fila{cursor:pointer;} tr.fila:hover td{background:#eff6ff;}
   <div class="caja"><b>Teléfonos de la tienda</b>
     <div class="muted" style="margin:4px 0 8px">Los ven los montadores en su móvil para poder llamaros si tienen una duda con un pedido. El móvil de cada vendedor se cambia en su ficha (botón Editar).</div>
     <div id="tt_caja"><span class="muted">Cargando...</span></div></div>
+  <div class="caja"><b>Órdenes de los vendedores</b>
+    <div class="muted" style="margin:4px 0 8px">Por defecto cada vendedor solo ve sus propias órdenes. Si activas esta opción, todos los vendedores verán todas las órdenes de la tienda (las de ahora y las anteriores). Tú, como administrador, siempre ves todas.</div>
+    <div id="vt_caja"><span class="muted">Cargando...</span></div></div>
   <div class="caja"><b>Emails de la tienda</b>
     <div class="muted" style="margin:4px 0 8px">Cada casilla admite uno o varios emails separados por coma (máximo 3). Facturación: donde se enviarán vuestras facturas. Incidencias y administración: para los avisos de cada tipo. El email de cada vendedor se cambia en su ficha.</div>
     <div id="te_caja"><span class="muted">Cargando...</span></div></div>
@@ -429,6 +432,20 @@ async function guardarTelTienda(id){
   const { error } = await client.rpc("guardar_telefonos_tienda", { p_tienda_id: id, p_telefono: document.getElementById("tt1_" + id).value, p_telefono2: document.getElementById("tt2_" + id).value });
   alert(error ? "No se pudo guardar: " + error.message : "Teléfonos de la tienda guardados.");
 }
+/* Vendedores que ven todas las órdenes (migracion/119) */
+async function cargarVerTodo(){
+  const caja = document.getElementById("vt_caja");
+  const { data, error } = await client.rpc("mis_ajustes_tienda");
+  if (error) { caja.innerHTML = '<span class="muted">Todavía no está disponible (falta ejecutar el SQL 119).</span>'; return; }
+  const mias = (data || []).filter(t => !tiendaSel || t.tienda_id === tiendaSel);
+  caja.innerHTML = mias.map(t => '<label style="display:flex;gap:8px;align-items:center;margin-bottom:6px">' +
+    '<input type="checkbox" style="width:auto" ' + (t.vendedores_ven_todo ? 'checked ' : '') + 'onchange="guardarVerTodo(\'' + t.tienda_id + '\', this)"> ' +
+    'Todos los vendedores ven todas las órdenes' + (multi() ? ' de <b>' + esc(t.tienda) + '</b>' : '') + '</label>').join("") || '<span class="muted">Sin datos.</span>';
+}
+async function guardarVerTodo(id, chk){
+  const { error } = await client.rpc("guardar_vendedores_ven_todo", { p_tienda_id: id, p_valor: chk.checked });
+  if (error) { alert("No se pudo guardar: " + error.message); chk.checked = !chk.checked; }
+}
 /* Emails de la tienda (migracion/80_emails_de_la_tienda.sql) */
 async function cargarEmails(){
   const cajaT = document.getElementById("te_caja");
@@ -455,7 +472,7 @@ const nomTienda = id => (misTiendas.find(t => t.id === id) || {}).nombre || "";
 function pintarChips(){ document.getElementById("f_tiendas").innerHTML = misTiendas.map(t => { const on = tiendasFicha.includes(t.id); return '<button type="button" onclick="clicTienda(\'' + t.id + '\')" style="border-radius:20px;padding:7px 14px;border:1px solid ' + (on ? '#1e40af;background:#1e40af;color:#fff' : '#93c5fd;background:#eff6ff;color:#1e3a8a') + ';font-weight:600">' + (on ? "✓ " : "") + esc(t.nombre) + '</button>'; }).join(""); }
 function clicTienda(id){ tiendasFicha = tiendasFicha.includes(id) ? tiendasFicha.filter(x => x !== id) : tiendasFicha.concat(id); pintarChips(); }
 async function cargarEquipo(){
-  cargarTelefonos(); cargarEmails(); cargarLogos();
+  cargarTelefonos(); cargarEmails(); cargarLogos(); cargarVerTodo();
   const [r, c] = await Promise.all([client.rpc("mi_equipo"), llamar({ accion:"listar" })]);
   if (r.error) { document.getElementById("e_tabla").innerHTML = '<span class="muted">No se pudo cargar el equipo: ' + esc(r.error.message) + '. ¿Está ejecutado el SQL 84?</span>'; return; }
   equipo = r.data || [];

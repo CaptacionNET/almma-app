@@ -341,6 +341,25 @@ function hoja(c, lineas, ss, originales, tiendaPorId, ordenPorClave) {
     </div>
   </section>`;
 }
+// Impresión a doble cara: cada factura (con sus albaranes detrás) debe ocupar un número PAR de páginas,
+// así la siguiente factura (otro cliente) empieza siempre en una hoja nueva y no en el reverso de la anterior.
+// Justo antes de imprimir se cuentan las páginas de cada grupo y, si salen impares, se añade una página en blanco.
+function _paginasA4(h) { return Math.max(1, Math.ceil((h.offsetHeight - 2) / (297 * 96 / 25.4))); }
+window.addEventListener("beforeprint", () => {
+  document.querySelectorAll(".relleno-par").forEach(e => e.remove());
+  const hojas = [...document.querySelectorAll("#hojas > .hoja")];
+  let pags = 0;
+  hojas.forEach((h, i) => {
+    pags += _paginasA4(h);
+    const sig = hojas[i + 1];
+    const finDeGrupo = !sig || !sig.classList.contains("alb");   // tras la factura vienen sus albaranes (.alb); luego, otra factura
+    if (finDeGrupo) {
+      if (pags % 2 === 1 && sig) h.insertAdjacentHTML("afterend", '<div class="relleno-par" style="height:1px;page-break-after:always;break-after:page;"></div>');
+      pags = 0;
+    }
+  });
+});
+window.addEventListener("afterprint", () => document.querySelectorAll(".relleno-par").forEach(e => e.remove()));
 iniciar();
 </script>
 </body>

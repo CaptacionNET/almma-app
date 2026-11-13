@@ -89,19 +89,27 @@ function volver(){ location.href = destino; }
     ((ci.data || []).length ? '<div class="card"><b>Citas de montaje</b><table style="margin-top:8px"><tr><th>Fecha y hora</th><th>Estado</th></tr>'+ci.data.map(c => '<tr><td>'+new Date(c.fecha_hora).toLocaleString("es-ES")+'</td><td>'+esc(c.estado)+'</td></tr>').join("")+'</table></div>' : "") +
     '<div class="card"><b>Montaje</b><div id="montaje_cont" class="muted" style="margin-top:8px">Cargando…</div></div>'+
     '<div class="card"><b>Documentos adjuntos</b><div class="muted" style="margin:4px 0 10px">El PDF o las fotos de esta orden. Puedes añadir más (varios a la vez).</div><div id="docs_lista"></div>'+
-    '<div style="margin-top:10px"><input type="file" id="docs_archivo" accept="application/pdf,image/*" multiple> <button id="docs_subir">Adjuntar</button></div></div>'+
+    (["completado","terminado_incidencia"].includes(o.estado)
+      ? '<div class="muted" style="margin-top:10px">Esta orden está cerrada: ya no se pueden adjuntar archivos. Si necesitas algo, escríbelo en el chat con ALMMA.</div></div>'
+      : '<div style="margin-top:10px"><input type="file" id="docs_archivo" accept="application/pdf,image/*" multiple> <button id="docs_subir">Adjuntar</button></div></div>')+
     '<div class="card"><b>Agendar el montaje</b><div class="muted" style="margin:4px 0 10px">Cuando el pedido esté listo para que ALMMA fije fecha de montaje, márcalo aquí y les llegará un aviso.</div>'+
       '<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="listo_agendar" style="width:auto"> Se puede agendar el pedido</label></div>'+
     '<div class="card"><b>Chat con ALMMA</b><div class="muted" style="margin:4px 0 10px">Escribe aquí comentarios sobre esta orden; el personal de ALMMA te responderá.</div><div class="chat" id="chat_lista"></div>'+
-    '<div class="chat-form"><textarea id="chat_texto" maxlength="2000" placeholder="Escribe un mensaje..."></textarea><button id="chat_enviar">Enviar</button></div></div>';
+    '<div class="chat-form"><textarea id="chat_texto" maxlength="2000" placeholder="Escribe un mensaje..."></textarea><button id="chat_enviar">Enviar</button></div>'+
+    '<div style="margin-top:8px"><button class="secondary" id="chat_nolei" title="Devuelve los últimos mensajes a «sin leer» para que los vea tu compañero">Marcar como no leído</button></div></div>';
   client.from("ordenes").select("listo_agendar").eq("anyo", anyo).eq("orden", orden).maybeSingle().then(r => { if (r.data) document.getElementById("listo_agendar").checked = !!r.data.listo_agendar; });
   document.getElementById("listo_agendar").onchange = async e => {
     const { error } = await client.rpc("marcar_listo_agendar", { p_anyo: anyo, p_orden: orden, p_listo: e.target.checked });
     if (error) { alert("No se pudo guardar: " + error.message); e.target.checked = !e.target.checked; }
   };
   document.getElementById("chat_enviar").onclick = () => enviarChat(anyo, orden, "tienda");
+  document.getElementById("chat_nolei").onclick = async () => {
+    const { error } = await client.rpc("marcar_chat_no_leido", { p_anyo: anyo, p_orden: orden });
+    alert(error ? "No se pudo marcar: " + error.message : "Hecho: el chat queda como NO LEÍDO para tus compañeros. No vuelvas a abrir esta orden hasta que lo lean, o se marcará como leído otra vez.");
+  };
   await cargarChat(anyo, orden, "tienda");
-  document.getElementById("docs_subir").onclick = () => subirDocumentos(anyo, orden);
+  const btnSubir = document.getElementById("docs_subir");   // no existe si la orden está cerrada
+  if (btnSubir) btnSubir.onclick = () => subirDocumentos(anyo, orden);
   await cargarDocumentos(anyo, orden);
   // fotos y firma del montaje (solo lectura)
   try {

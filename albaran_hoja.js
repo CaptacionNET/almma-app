@@ -38,8 +38,24 @@
     } catch (e) { return null; }
   };
 
+  // Junta las líneas que son el mismo artículo (misma referencia y descripción) en una sola, sumando las cantidades.
+  // Sirve cuando al leer el pedido de la tienda se han duplicado líneas.
+  const norm = (s) => String(s ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  window.agruparLineasAlbaran = function (lins) {
+    const grupos = new Map();
+    lins.forEach(l => {
+      const k = norm(l.articulo) + "|" + norm(l.descripcion);
+      const g = grupos.get(k);
+      if (g) g.cantidad = (Number(g.cantidad) || 0) + (Number(l.cantidad) || 0);
+      else grupos.set(k, { ...l, cantidad: l.cantidad == null ? null : Number(l.cantidad) });
+    });
+    return [...grupos.values()];
+  };
+
   // o = orden, t = tienda (con _logo opcional), lins = líneas, entrega = fila de `entregas` (o null), firmaImg = data URL (o null)
-  window.hojaAlbaran = function (o, t, lins, entrega, firmaImg) {
+  // opciones.agrupar = true -> las líneas iguales se juntan en una
+  window.hojaAlbaran = function (o, t, lins, entrega, firmaImg, opciones) {
+    if (opciones && opciones.agrupar) lins = window.agruparLineasAlbaran(lins);
     const filas = lins.map(l => `<tr>
       <td>${esc(l.descripcion || l.articulo || "")}${l.articulo && l.descripcion ? `<div style="color:var(--muted);font-size:11px;">Ref. ${esc(l.articulo)}</div>` : ""}</td>
       <td class="num">${l.cantidad ?? ""}</td></tr>`).join("");

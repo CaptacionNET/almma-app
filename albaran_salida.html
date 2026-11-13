@@ -47,7 +47,7 @@ td.num,th.num{text-align:right;white-space:nowrap;}
 </style>
 </head>
 <body>
-<div id="barra"><button onclick="imprimirAlbaran()">Imprimir / Guardar PDF</button><button class="sec" onclick="window.close()">Cerrar</button><span id="estado">Cargando…</span></div>
+<div id="barra"><button onclick="imprimirAlbaran()">Imprimir / Guardar PDF</button><button class="sec" onclick="window.close()">Cerrar</button><label style="display:flex;gap:6px;align-items:center;font-size:13px;cursor:pointer" title="Junta en una sola línea los artículos repetidos, sumando las cantidades"><input type="checkbox" id="chk_agrupar" onchange="pintarAlbaran()" style="width:auto"> Agrupar líneas iguales</label><span id="estado">Cargando…</span></div>
 <div id="hojas"></div>
 <script>
 const client = supabase.createClient("https://uamgbtbsxbrgymhqalak.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhbWdidGJzeGJyZ3ltaHFhbGFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTMyOTIsImV4cCI6MjA5OTg4OTI5Mn0.0OClM8yZmfkiXynOkGLQiLRX-XZjkkP63z5UfIgck8k");
@@ -55,6 +55,12 @@ const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").
 const fechaES = (v) => v ? String(v).slice(8, 10) + "/" + String(v).slice(5, 7) + "/" + String(v).slice(0, 4) : "";
 const estado = (t) => { document.getElementById("estado").textContent = t; };
 
+let datosAlb = null;
+function pintarAlbaran() {
+  if (!datosAlb) return;
+  const d = datosAlb;
+  document.getElementById("hojas").innerHTML = hojaAlbaran(d.o, d.t, d.lins, d.entrega, d.firmaImg, { agrupar: document.getElementById("chk_agrupar").checked });
+}
 async function iniciar() {
   const { data: { user } } = await client.auth.getUser();
   if (!user) { location.href = "login.html?volver=" + encodeURIComponent(location.pathname.split("/").pop() + location.search); return; }
@@ -74,7 +80,8 @@ async function iniciar() {
   const { data: entrega } = await client.from("entregas").select("firmante_nombre, firmado_at, firma_storage_path")
     .eq("anyo", anyo).eq("orden", orden).order("firmado_at", { ascending: false }).limit(1).maybeSingle();
   const firmaImg = await firmaEntregaDataUrl(client, entrega);   // si el montador ya recogió la firma, sale en el albarán
-  document.getElementById("hojas").innerHTML = hojaAlbaran(o, { ...(t || {}), _logo: lg && lg.logo }, lins || [], entrega, firmaImg);
+  datosAlb = { o, t: { ...(t || {}), _logo: lg && lg.logo }, lins: lins || [], entrega, firmaImg };
+  pintarAlbaran();
   const ref = `${anyo}/${orden}`;
   document.title = "Albarán de entrega " + ref;
   estado("Albarán de entrega de la orden " + ref);

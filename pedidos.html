@@ -6,6 +6,7 @@
 <title>ALMMA - Pedidos</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="busqueda.js"></script>
+<script src="distancia.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
@@ -351,6 +352,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
       <div class="campo">
         <label for="no_domicilio_cli">Dirección</label>
         <input id="no_domicilio_cli">
+        <div id="no_km"></div>
       </div>
       <div class="campo">
         <label for="no_localidad_cli">Localidad</label>
@@ -421,7 +423,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
     <h4 style="margin-bottom:6px;">Datos Cliente</h4>
     <div class="form-grid">
       <div class="campo" style="grid-column:1/3;"><label>Nombre</label><input id="ch_nombre_cli"></div>
-      <div class="campo" style="grid-column:1/3;"><label>Dirección</label><input id="ch_domicilio_cli"></div>
+      <div class="campo" style="grid-column:1/3;"><label>Dirección</label><input id="ch_domicilio_cli"><div id="ch_km"></div></div>
       <div class="campo"><label>Localidad</label><input id="ch_localidad_cli"></div>
       <div class="campo"><label>Provincia (cód.)</label><input id="ch_provincia_cli" type="number"></div>
       <div class="campo"><label>Teléfono</label><input id="ch_telefono_cli"></div>
@@ -616,6 +618,7 @@ input,select,textarea{padding:8px 10px;border:1px solid var(--border);border-rad
   <div class="tab-panel" id="tab_chat">
     <div class="chat" id="chat_lista"></div>
     <div class="chat-form"><textarea id="chat_texto" maxlength="2000" placeholder="Responder a la tienda..."></textarea><button onclick="enviarChat(pedidoActivo.anyo, pedidoActivo.orden, 'almma')">Enviar</button></div>
+    <div style="margin-top:8px"><button class="secondary" onclick="marcarChatNoLeido(pedidoActivo.anyo, pedidoActivo.orden)" title="Devuelve los últimos mensajes de la tienda a «sin leer» para que los vea otro compañero">Marcar como no leído</button></div>
   </div>
 
   <!-- LLAMADAS -->
@@ -822,6 +825,7 @@ function elegirTiendaNuevaOrden() {
   const sel = document.getElementById("no_tienda");
   const id = sel.value;
   if (!id) return;
+  setTimeout(() => distNueva && distNueva.refrescar(), 0);
   const t = tiendasNuevaOrden.find(x => x.id === id);
   if (!t) return;
   tiendaNuevaOrdenElegida = t;
@@ -1210,7 +1214,11 @@ async function llenarSelectTipoLinea() {
   document.getElementById("label_articulo").textContent = "Artículo";
 }
 
+// aviso de distancia tienda -> cliente (distancia.js): más de 30 km se marca en rojo
+const distNueva = DistanciaTienda.vincular({ client, dir: "no_domicilio_cli", loc: "no_localidad_cli", caja: "no_km", tiendaId: () => document.getElementById("no_tienda").value });
+const distCab = DistanciaTienda.vincular({ client, dir: "ch_domicilio_cli", loc: "ch_localidad_cli", caja: "ch_km", tiendaId: () => document.getElementById("ch_tienda").value });
 function cambioTiendaCabecera() {
+  setTimeout(() => distCab.refrescar(), 0);
   const tiendaId = document.getElementById("ch_tienda").value;
   llenarSelectDependiente(tiendaId, null);
   articuloSeleccionado = null;
@@ -1427,6 +1435,7 @@ async function abrirPanel(orden) {
   document.getElementById("ch_telefono_cli").value = o.telefono_cli || "";
   document.getElementById("ch_telefono2_cli").value = o.telefono2_cli || "";
   document.getElementById("ch_dni_cli").value = o.dni_cli || "";
+  distCab.refrescar();
   document.getElementById("ch_fecha_creacion").textContent = o.fecha_creacion ? new Date(o.fecha_creacion).toLocaleString("es-ES") : "0/0/0";
   document.getElementById("ch_fecha_prev_recepcion").value = fechaInput(o.fecha_prev_recepcion);
   document.getElementById("ch_fecha_recepcion").value = fechaInput(o.fecha_recepcion);
@@ -2289,6 +2298,10 @@ async function cargarChat(anyo, orden, soy) {
     '</div>' + escMont(m.texto) + '</div>').join("") || '<div class="muted">Aún no hay mensajes. Escribe el primero.</div>';
   cont.scrollTop = cont.scrollHeight;
   await client.rpc("marcar_chat_leido", { p_anyo: anyo, p_orden: orden });
+}
+async function marcarChatNoLeido(anyo, orden) {
+  const { error } = await client.rpc("marcar_chat_no_leido", { p_anyo: anyo, p_orden: orden });
+  alert(error ? "No se pudo marcar: " + error.message : "Hecho: el chat queda como NO LEÍDO para el resto del equipo. No vuelvas a abrir esta orden hasta que lo lean, o se marcará como leído otra vez.");
 }
 async function enviarChat(anyo, orden, soy) {
   const ta = document.getElementById("chat_texto"), texto = ta.value.trim();
